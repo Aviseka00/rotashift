@@ -22,22 +22,52 @@ function $(id) {
   return document.getElementById(id);
 }
 
+/** Normalize request path so Bearer / 401 handling works with relative or absolute URLs. */
+function apiPathname(path) {
+  try {
+    return new URL(path, window.location.origin).pathname;
+  } catch {
+    return String(path).split("?")[0] || path;
+  }
+}
+
 function show(el, on) {
   el.classList.toggle("hidden", !on);
 }
 
 async function api(path, opts = {}) {
+  const pathname = apiPathname(path);
   const headers = { ...(opts.headers || {}) };
   if (!(opts.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
-  if (state.token) {
+  if (state.token && pathname !== "/api/auth/login" && pathname !== "/api/auth/register") {
     headers.Authorization = `Bearer ${state.token}`;
   }
   const r = await fetch(path, { ...opts, headers });
   if (r.status === 401) {
+    const text401 = await r.text();
+    let data401 = null;
+    try {
+      data401 = text401 ? JSON.parse(text401) : null;
+    } catch {
+      data401 = null;
+    }
+    const detail401 =
+      data401 && typeof data401 === "object" && data401.detail !== undefined
+        ? Array.isArray(data401.detail)
+          ? data401.detail.map((x) => x.msg || JSON.stringify(x)).join("; ")
+          : String(data401.detail)
+        : null;
+    // Legacy: login used 401; now 400. Still treat auth credential paths as "not a stale session".
+    if (pathname === "/api/auth/login" || pathname === "/api/auth/register") {
+      throw new Error(detail401 || "Invalid credentials");
+    }
     logout();
-    throw new Error("Session expired — please log in again.");
+    throw new Error(
+      detail401 ||
+        "Saved login no longer matches this server — sign in again. (New database or changed ROTASHIFT_SECRET_KEY invalidates the old token.)",
+    );
   }
   const text = await r.text();
   let data = null;
@@ -318,6 +348,114 @@ function setDefaultTableRange() {
   $("table-end").value = end.toISOString().slice(0, 10);
 }
 
+function matrixShiftCodes() {
+  const keys = Object.keys(state.shiftLegend || {});
+  if (keys.length) return keys.map((c) => c.toUpperCase()).sort();
+  return ["A", "B", "C", "G"];
+}
+
+function paintMatrixDataCell(td, code, editable) {
+  td.replaceChildren();
+  td.className = "";
+  const c = (code || "").trim().toUpperCase();
+  td.dataset.shiftCode = c;
+  if (c) {
+    td.textContent = c;
+    td.classList.add(`cell-${c.toLowerCase()}`);
+  } else {
+    td.textContent = "—";
+  }
+  if (editable) {
+    td.classList.add("matrix-cell-editable");
+    td.title = "Tap to set shift";
+  }
+}
+
+function restoreOpenMatrixCellEditor() {
+  const sel = document.querySelector("#matrix-body select.matrix-cell-select");
+  if (!sel) return;
+  const td = sel.closest("td");
+  if (td) paintMatrixDataCell(td, td.dataset.shiftCode, true);
+}
+
+async function saveMatrixCellShift(td, shiftCode) {
+  const emp = td.dataset.employeeId;
+  const date = td.dataset.date;
+  if (!emp || !date) return;
+  const payload = {
+    assignments: [{ employee_id: emp, date, shift_code: shiftCode }],
+  };
+  if (state.user.role === "admin") {
+    const dept = $("table-dept")?.value;
+    if (!dept) throw new Error("Choose a department (admin).");
+    payload.department_id = dept;
+  }
+  await api("/api/shifts/bulk", { method: "POST", body: JSON.stringify(payload) });
+  if (state.calendar) state.calendar.refetchEvents();
+  await refreshTable();
+}
+
+function openMatrixCellEditor(td) {
+  if (!td || td.classList.contains("sticky")) return;
+  restoreOpenMatrixCellEditor();
+  const current = (td.dataset.shiftCode || "").trim().toUpperCase();
+  const sel = document.createElement("select");
+  sel.className = "matrix-cell-select";
+  sel.setAttribute("aria-label", "Shift for this day");
+  matrixShiftCodes().forEach((code) => {
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = code;
+    sel.appendChild(o);
+  });
+  if (current && [...sel.options].some((o) => o.value === current)) sel.value = current;
+  else sel.selectedIndex = 0;
+
+  td.replaceChildren();
+  td.appendChild(sel);
+  sel.focus();
+
+  let committed = false;
+  sel.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      sel.blur();
+    }
+  });
+  sel.addEventListener("change", async () => {
+    committed = true;
+    const code = sel.value;
+    try {
+      await saveMatrixCellShift(td, code);
+    } catch (e) {
+      alert(e.message || String(e));
+      paintMatrixDataCell(td, td.dataset.shiftCode, true);
+    }
+  });
+  sel.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (committed) return;
+      if (td.querySelector("select.matrix-cell-select")) paintMatrixDataCell(td, td.dataset.shiftCode, true);
+    }, 0);
+  });
+}
+
+function initMatrixTableCellEditor() {
+  const tbody = $("matrix-body");
+  if (!tbody || tbody.dataset.editDelegation === "1") return;
+  tbody.dataset.editDelegation = "1";
+  tbody.addEventListener("click", (ev) => {
+    const role = state.user?.role;
+    if (!role || !["manager", "admin"].includes(role)) return;
+    const td = ev.target.closest("td");
+    if (!td || !tbody.contains(td) || td.classList.contains("sticky")) return;
+    if (!td.dataset.date || !td.dataset.employeeId) return;
+    if (td.querySelector("select.matrix-cell-select")) return;
+    if (ev.target.closest("select")) return;
+    openMatrixCellEditor(td);
+  });
+}
+
 async function refreshTable() {
   const params = new URLSearchParams({
     start: $("table-start").value,
@@ -354,15 +492,13 @@ async function refreshTable() {
     td0.classList.add("sticky");
     td0.textContent = `${row.full_name} (${row.employee_id})`;
     tr.appendChild(td0);
+    const canEditMatrix = ["manager", "admin"].includes(state.user?.role);
     (data.dates || []).forEach((d) => {
       const td = document.createElement("td");
+      td.dataset.date = d;
+      td.dataset.employeeId = row.employee_id;
       const code = row.cells[d];
-      if (code) {
-        td.textContent = code;
-        td.classList.add(`cell-${code.toLowerCase()}`);
-      } else {
-        td.textContent = "—";
-      }
+      paintMatrixDataCell(td, code || "", canEditMatrix);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -718,12 +854,13 @@ async function refreshAdminDeptList() {
 }
 
 async function refreshAdminUsers() {
-  if (state.user.role !== "admin") return;
+  if (state.user?.role !== "admin") return;
+  const wrap = $("admin-users");
+  if (!wrap) return;
   const filt = $("admin-user-dept-filter")?.value || "";
   let url = "/api/users";
   if (filt) url += `?department_id=${encodeURIComponent(filt)}`;
   const data = await api(url);
-  const wrap = $("admin-users");
   wrap.innerHTML = "";
   const tbl = document.createElement("table");
   tbl.className = "matrix";
@@ -857,7 +994,7 @@ function activateDashTab(dashId, tabId) {
 }
 
 function applyRoleVisibility() {
-  const role = state.user.role;
+  const role = state.user?.role || "employee";
   show($("dash-employee"), role === "employee");
   show($("dash-manager"), role === "manager");
   show($("dash-admin"), role === "admin");
@@ -963,8 +1100,13 @@ async function tryRestoreSession() {
   if (!state.token) return;
   try {
     await bootAuthenticated();
-  } catch {
+  } catch (e) {
     logout();
+    const le = $("login-err");
+    if (le && e?.message) {
+      le.textContent = e.message;
+      le.classList.remove("hidden");
+    }
   }
 }
 
@@ -974,6 +1116,11 @@ $("tab-login").addEventListener("click", () => {
   $("tab-register").classList.remove("active");
   show($("panel-login"), true);
   show($("panel-register"), false);
+  const ler = $("login-err");
+  if (ler) {
+    ler.classList.add("hidden");
+    ler.textContent = "";
+  }
 });
 $("tab-register").addEventListener("click", () => {
   $("tab-register").classList.add("active");
@@ -1014,7 +1161,12 @@ $("login-btn").addEventListener("click", async () => {
     };
     const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(body) });
     setToken(data.access_token, data.user);
-    await bootAuthenticated();
+    try {
+      await bootAuthenticated();
+    } catch (bootErr) {
+      logout();
+      throw bootErr;
+    }
   } catch (e) {
     $("login-err").textContent = e.message;
     $("login-err").classList.remove("hidden");
@@ -1055,7 +1207,12 @@ $("register-btn").addEventListener("click", async () => {
     }
     const data = await api("/api/auth/register", { method: "POST", body: JSON.stringify(body) });
     setToken(data.access_token, data.user);
-    await bootAuthenticated();
+    try {
+      await bootAuthenticated();
+    } catch (bootErr) {
+      logout();
+      throw bootErr;
+    }
   } catch (e) {
     $("reg-err").textContent = e.message;
     $("reg-err").classList.remove("hidden");
@@ -1255,6 +1412,8 @@ $("export-btn").addEventListener("click", async () => {
 });
 
 $("admin-records-refresh")?.addEventListener("click", () => refreshAdminRequestLog());
+
+initMatrixTableCellEditor();
 
 tryRestoreSession();
 if (!state.token) {

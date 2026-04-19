@@ -72,6 +72,13 @@ class LoginBody(BaseModel):
     password: str
 
 
+def _normalized_role(user: dict) -> str:
+    r = user.get("role")
+    if r in ("employee", "manager", "admin"):
+        return r
+    return "employee"
+
+
 @router.post("/register")
 async def register(body: RegisterBody):
     db = get_db()
@@ -122,17 +129,30 @@ async def register(body: RegisterBody):
 async def login(body: LoginBody):
     db = get_db()
     emp = body.employee_id.strip().upper()
+    if not emp:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credentials")
     user = await db.users.find_one({"employee_id": emp})
-    if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid credentials — check Employee ID and password, or register if this is a new database.",
+        )
+    pw_hash = user.get("password_hash") or ""
+    try:
+        password_ok = bool(pw_hash) and verify_password(body.password, pw_hash)
+    except Exception:
+        password_ok = False
+    if not password_ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid credentials")
 
     dept: Optional[dict] = None
     if user.get("department_id"):
         dept = await db.departments.find_one({"_id": user["department_id"]})
 
+    role = _normalized_role(user)
     token = create_access_token(
         str(user["_id"]),
-        user["role"],
+        role,
         user["employee_id"],
         str(user["department_id"]) if user.get("department_id") else None,
     )
@@ -143,7 +163,7 @@ async def login(body: LoginBody):
             "id": str(user["_id"]),
             "employee_id": user["employee_id"],
             "full_name": user["full_name"],
-            "role": user["role"],
+            "role": role,
             "department_id": str(user["department_id"]) if user.get("department_id") else None,
             "department_name": dept["name"] if dept else None,
         },
@@ -160,7 +180,7 @@ async def me(user=Depends(get_current_user)):
         "id": str(user["_id"]),
         "employee_id": user["employee_id"],
         "full_name": user["full_name"],
-        "role": user["role"],
+        "role": _normalized_role(user),
         "department_id": user["department_id"],
         "department_name": dept["name"] if dept else None,
     }

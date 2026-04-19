@@ -1,0 +1,35 @@
+# Render Blueprint — https://render.com/docs/infrastructure-as-code
+# After pushing to GitHub: New → Blueprint → connect repo, then set secret env vars in the dashboard.
+
+services:
+  - type: web
+    name: rotashift
+    runtime: python
+    region: frankfurt # change if you prefer another region
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /health/live
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: ROTASHIFT_ENV
+        value: production
+      # Set these in the dashboard (Secrets) — do not commit real values:
+      - key: ROTASHIFT_SECRET_KEY
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: ROTASHIFT_REGISTER_CODE_MANAGER
+        sync: false
+      - key: ROTASHIFT_REGISTER_CODE_ADMIN
+        sync: false
+      # Optional:
+      # - key: ROTASHIFT_DB
+      #   value: rotashift
+      # - key: ROTASHIFT_ADMIN_EMPLOYEE_ID
+      #   sync: false
+      # - key: ROTASHIFT_ADMIN_PASSWORD
+      #   sync: false
+      # - key: CORS_ORIGINS
+      #   value: https://rotashift.onrender.com
