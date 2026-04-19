@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError, OperationFailure
 
-from app.config import REGISTER_CODE_ADMIN, REGISTER_CODE_MANAGER
+from app.config import DB_NAME, REGISTER_CODE_ADMIN, REGISTER_CODE_MANAGER
 from app.database import get_db
 from app.deps import (
     create_access_token,
@@ -123,6 +123,7 @@ async def register(body: RegisterBody):
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Database could not save the account (check MongoDB user permissions). {e}",
         ) from e
+    print(f"RotaShift REGISTER_OK database={DB_NAME!r} employee_id={emp!r} user_id={res.inserted_id!r}")
     token = create_access_token(
         str(res.inserted_id),
         body.role,

@@ -7,6 +7,7 @@ Web app for department shift rosters, leave requests, and manager/admin approval
 - The app uses the database named **`ROTASHIFT_DB`** (default: **`rotashift`**), **not** necessarily the database name in your `MONGO_URI` path. Many Atlas strings look like `...mongodb.net/test` — you must still open the **`rotashift`** database (or whatever you set `ROTASHIFT_DB` to) in **Atlas → Browse Collections**.
 - User accounts are in the **`users`** collection (`rotashift.users` in Compass).
 - To confirm what the running server uses, open **`GET /api/meta/registration`** on your deployed site and read **`mongo_database`** and **`mongo_users_collection`**, or check Render logs on startup for a line like `database='rotashift'`.
+- The same JSON includes **`user_count`**, **`department_count`**, and **`mongo_cluster_host`** (hostname from `MONGO_URI`, no password). After you register once, **`user_count` should go up**. If it stays **0** but Atlas [Data Explorer](https://cloud.mongodb.com/) shows users, **Render’s `MONGO_URI` points at a different cluster** than the one you’re viewing — fix the secret and redeploy. If **`mongo_cluster_host`** matches your cluster but **`user_count`** increases in JSON while Atlas still shows **0** documents, refresh Atlas or clear any **filter** on the `users` collection query bar.
 
 ## Share with your team for testing
 
