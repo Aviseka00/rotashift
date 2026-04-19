@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
@@ -78,6 +78,17 @@ def index():
     return FileResponse(ROOT / "static" / "index.html")
 
 
+@app.head("/")
+def index_head():
+    """Render and other probes often use HEAD; avoid 405 in logs."""
+    return Response(status_code=200, media_type="text/html")
+
+
 @app.get("/app")
 def app_page():
     return FileResponse(ROOT / "static" / "index.html")
+
+
+@app.head("/app")
+def app_page_head():
+    return Response(status_code=200, media_type="text/html")
