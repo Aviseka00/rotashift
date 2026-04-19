@@ -1,12 +1,29 @@
 import os
 from datetime import datetime, timezone
 
+from pymongo.errors import DuplicateKeyError
+
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import hash_password
 
 
 DEFAULT_DEPARTMENTS = ["rota", "cholera", "malaria", "shigella"]
+
+
+async def ensure_default_departments_exist(db) -> None:
+    """Create seed departments if missing (idempotent). Safe to call from registration, not only startup."""
+    now = datetime.now(timezone.utc)
+    for n in DEFAULT_DEPARTMENTS:
+        name = (n or "").lower().strip()
+        if not name:
+            continue
+        if await db.departments.find_one({"name": name}):
+            continue
+        try:
+            await db.departments.insert_one({"name": name, "created_at": now})
+        except DuplicateKeyError:
+            pass
 
 
 async def ensure_indexes_and_seed():
@@ -17,11 +34,7 @@ async def ensure_indexes_and_seed():
     await db.leave_requests.create_index([("department_id", 1), ("status", 1)])
     await db.shift_change_requests.create_index([("department_id", 1), ("status", 1)])
 
-    if await db.departments.count_documents({}) == 0:
-        now = datetime.now(timezone.utc)
-        await db.departments.insert_many(
-            [{"name": n.lower().strip(), "created_at": now} for n in DEFAULT_DEPARTMENTS]
-        )
+    await ensure_default_departments_exist(db)
 
     # Comma- or space-separated IDs, e.g. ROTASHIFT_ADMIN_EMPLOYEE_ID=001,007,MASTER
     # For each existing user: set role to admin. For missing users: insert if ROTASHIFT_ADMIN_PASSWORD is set.

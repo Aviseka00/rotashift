@@ -5,6 +5,7 @@ from typing import Literal, Optional
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.config import REGISTER_CODE_ADMIN, REGISTER_CODE_MANAGER
 from app.database import get_db
@@ -14,6 +15,7 @@ from app.deps import (
     hash_password,
     verify_password,
 )
+from app.seed import ensure_default_departments_exist
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -59,7 +61,7 @@ def assert_registration_allowed(role: str, registration_code: Optional[str]) -> 
 
 
 class RegisterBody(BaseModel):
-    employee_id: str = Field(..., min_length=2, max_length=64)
+    employee_id: str = Field(..., min_length=1, max_length=64)
     password: str = Field(..., min_length=6, max_length=128)
     full_name: str = Field(..., min_length=1, max_length=120)
     department_name: str = Field(..., min_length=1, max_length=120)
@@ -83,7 +85,12 @@ def _normalized_role(user: dict) -> str:
 async def register(body: RegisterBody):
     db = get_db()
     emp = body.employee_id.strip().upper()
+    if not emp:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee ID is required.")
     dept_name = body.department_name.strip().lower()
+    if not dept_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department is required.")
+    await ensure_default_departments_exist(db)
     dept = await db.departments.find_one({"name": dept_name})
     if not dept:
         raise HTTPException(
@@ -104,7 +111,18 @@ async def register(body: RegisterBody):
         "role": body.role,
         "created_at": datetime.now(timezone.utc),
     }
-    res = await db.users.insert_one(doc)
+    try:
+        res = await db.users.insert_one(doc)
+    except DuplicateKeyError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Employee ID already registered",
+        ) from None
+    except OperationFailure as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database could not save the account (check MongoDB user permissions). {e}",
+        ) from e
     token = create_access_token(
         str(res.inserted_id),
         body.role,

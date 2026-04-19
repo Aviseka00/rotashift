@@ -83,10 +83,20 @@ async function api(path, opts = {}) {
     data = text;
   }
   if (!r.ok) {
-    let msg = r.statusText;
-    if (data && typeof data === "object" && data.detail !== undefined) {
-      const d = data.detail;
-      msg = Array.isArray(d) ? d.map((x) => x.msg || JSON.stringify(x)).join("; ") : String(d);
+    let msg = r.statusText || `HTTP ${r.status}`;
+    if (data && typeof data === "object") {
+      if (data.detail !== undefined) {
+        const d = data.detail;
+        msg = Array.isArray(d)
+          ? d
+              .map((x) =>
+                typeof x === "string" ? x : x.msg || x.message || JSON.stringify(x),
+              )
+              .join("; ")
+          : String(d);
+      } else if (data.message) {
+        msg = String(data.message);
+      }
     }
     throw new Error(msg);
   }
@@ -1292,10 +1302,16 @@ $("register-btn").addEventListener("click", async () => {
         "Administrator registration is not enabled on this server. Set ROTASHIFT_REGISTER_CODE_ADMIN in .env or environment and restart.",
       );
     }
+    const empId = $("reg-emp").value.trim();
+    if (!empId) throw new Error("Enter an employee ID.");
+    const fullName = $("reg-name").value.trim();
+    if (!fullName) throw new Error("Enter your full name.");
+    const pw = $("reg-pass").value;
+    if (!pw || pw.length < 6) throw new Error("Password must be at least 6 characters.");
     const body = {
-      employee_id: $("reg-emp").value.trim(),
-      password: $("reg-pass").value,
-      full_name: $("reg-name").value.trim(),
+      employee_id: empId,
+      password: pw,
+      full_name: fullName,
       department_name: deptName,
       role: regState.role,
     };
