@@ -22,4 +22,6 @@ def registration_policy():
     return {
         "manager_registration_enabled": bool(REGISTER_CODE_MANAGER),
         "admin_registration_enabled": bool(REGISTER_CODE_ADMIN),
+        # Lets the sign-up form list departments even if GET /api/departments fails (cold start, stale token, etc.).
+        "default_department_names": list(DEFAULT_DEPARTMENTS),
     }

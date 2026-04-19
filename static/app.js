@@ -41,7 +41,12 @@ async function api(path, opts = {}) {
   if (!(opts.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
-  if (state.token && pathname !== "/api/auth/login" && pathname !== "/api/auth/register") {
+  const skipAuthHeader =
+    pathname === "/api/auth/login" ||
+    pathname === "/api/auth/register" ||
+    pathname === "/api/departments" ||
+    pathname.startsWith("/api/meta/");
+  if (state.token && !skipAuthHeader) {
     headers.Authorization = `Bearer ${state.token}`;
   }
   const r = await fetch(path, { ...opts, headers });
@@ -175,17 +180,17 @@ async function loadDepartments() {
     sel.appendChild(empty);
     state.departments.forEach((d) => {
       const o = document.createElement("option");
-      o.value = d.id;
-      o.textContent = d.name;
+      if (id === "reg-dept") {
+        o.value = (d.name || "").toLowerCase();
+        o.textContent = d.name || o.value;
+      } else {
+        o.value = d.id;
+        o.textContent = d.name;
+      }
       sel.appendChild(o);
     });
     if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
   });
-}
-
-function departmentNameById(id) {
-  const d = state.departments.find((x) => x.id === id);
-  return d ? d.name : "";
 }
 
 /**
@@ -195,6 +200,34 @@ function departmentNameById(id) {
  *   has disabled that path — used when opening Register, never right before Submit, or the
  *   chosen role could be wiped and registration would succeed as employee.)
  */
+const FALLBACK_DEPT_NAMES = ["rota", "cholera", "malaria", "shigella"];
+
+function ensureRegisterDeptOptionsFromMeta() {
+  const sel = $("reg-dept");
+  if (!sel) return;
+  const fromApi = state.departments?.length > 0;
+  const hasChoice = [...sel.options].some((o) => o.value);
+  if (fromApi || hasChoice) return;
+  const names = regState.meta?.default_department_names?.length
+    ? regState.meta.default_department_names
+    : FALLBACK_DEPT_NAMES;
+  sel.innerHTML = "";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "Select department…";
+  sel.appendChild(empty);
+  names.forEach((n) => {
+    const v = String(n || "")
+      .trim()
+      .toLowerCase();
+    if (!v) return;
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = v;
+    sel.appendChild(o);
+  });
+}
+
 async function loadRegistrationMeta(options = {}) {
   const downgradeRole = options.downgradeRole !== false;
   try {
@@ -206,10 +239,15 @@ async function loadRegistrationMeta(options = {}) {
     regState.meta = {
       manager_registration_enabled: true,
       admin_registration_enabled: true,
+      default_department_names: FALLBACK_DEPT_NAMES,
     };
+  }
+  if (!Array.isArray(regState.meta.default_department_names) || !regState.meta.default_department_names.length) {
+    regState.meta.default_department_names = FALLBACK_DEPT_NAMES;
   }
   syncRegRoleAfterMeta({ downgradeRole });
   updateRegistrationFormUi();
+  ensureRegisterDeptOptionsFromMeta();
 }
 
 function syncRegRoleAfterMeta(opts = {}) {
@@ -1127,8 +1165,15 @@ $("tab-register").addEventListener("click", () => {
   $("tab-login").classList.remove("active");
   show($("panel-login"), false);
   show($("panel-register"), true);
-  loadDepartments().catch(() => {});
-  loadRegistrationMeta().catch(() => {});
+  $("reg-err")?.classList.add("hidden");
+  (async () => {
+    try {
+      await loadDepartments();
+    } catch {
+      /* e.g. cold start / network; department list may come from registration meta */
+    }
+    await loadRegistrationMeta();
+  })();
 });
 
 document.querySelectorAll("#reg-role-tabs button").forEach((btn) => {
@@ -1178,8 +1223,7 @@ $("register-btn").addEventListener("click", async () => {
   try {
     await loadRegistrationMeta({ downgradeRole: false });
 
-    const deptId = $("reg-dept").value;
-    const deptName = departmentNameById(deptId);
+    const deptName = ($("reg-dept").value || "").trim().toLowerCase();
     if (!deptName) throw new Error("Select a department.");
     if (regState.role === "manager" && !regState.meta.manager_registration_enabled) {
       throw new Error(

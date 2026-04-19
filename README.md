@@ -107,6 +107,12 @@ Render’s **free** web tier is enough for demos (the service **sleeps after idl
 - Logs in Render → often **`MONGO_URI`** wrong or Atlas firewall blocking.
 - Logs mentioning **secret key** → set `ROTASHIFT_SECRET_KEY` to a non‑placeholder value.
 
+### 4) If registration still fails after deploy
+
+- **Redeploy** after pulling the latest `main` (fixes for sign-up + service worker are in the app).
+- Ask testers to **hard-refresh** or **clear site data** for your Render URL (an old service worker or `localStorage` token from a previous deploy can block the department list).
+- **Employee** signup needs a real department name (e.g. `rota`); **manager/admin** need the invite codes you set in Render.
+
 ### Other hosts
 
 The **`Dockerfile`** works on any container host (Fly.io, Railway, Google Cloud Run, etc.) with `PORT` set and the same environment variables as above.
