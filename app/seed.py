@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
@@ -24,6 +24,9 @@ async def ensure_default_departments_exist(db) -> None:
             await db.departments.insert_one({"name": name, "created_at": now})
         except DuplicateKeyError:
             pass
+        except OperationFailure:
+            # e.g. Atlas user lacks insert permission — let caller surface a clear HTTP error
+            raise
 
 
 async def ensure_indexes_and_seed():

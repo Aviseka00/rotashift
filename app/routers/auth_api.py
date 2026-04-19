@@ -5,7 +5,7 @@ from typing import Literal, Optional
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from pymongo.errors import DuplicateKeyError, OperationFailure
+from pymongo.errors import DuplicateKeyError, OperationFailure, PyMongoError
 
 from app.config import DB_NAME, REGISTER_CODE_ADMIN, REGISTER_CODE_MANAGER
 from app.database import get_db
@@ -83,65 +83,99 @@ def _normalized_role(user: dict) -> str:
 
 @router.post("/register")
 async def register(body: RegisterBody):
-    db = get_db()
     emp = body.employee_id.strip().upper()
     if not emp:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee ID is required.")
     dept_name = body.department_name.strip().lower()
     if not dept_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department is required.")
-    await ensure_default_departments_exist(db)
-    dept = await db.departments.find_one({"name": dept_name})
-    if not dept:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unknown department. Ask an administrator to create it or pick an existing one.",
-        )
-    existing = await db.users.find_one({"employee_id": emp})
-    if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee ID already registered")
 
-    assert_registration_allowed(body.role, body.registration_code)
-
-    doc = {
-        "employee_id": emp,
-        "password_hash": hash_password(body.password),
-        "full_name": body.full_name.strip(),
-        "department_id": dept["_id"],
-        "role": body.role,
-        "created_at": datetime.now(timezone.utc),
-    }
     try:
-        res = await db.users.insert_one(doc)
+        assert_registration_allowed(body.role, body.registration_code)
+        db = get_db()
+        await ensure_default_departments_exist(db)
+        dept = await db.departments.find_one({"name": dept_name})
+        if not dept:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unknown department. Ask an administrator to create it or pick an existing one.",
+            )
+        existing = await db.users.find_one({"employee_id": emp})
+        if existing:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee ID already registered")
+
+        try:
+            pw_hash = hash_password(body.password)
+        except (ValueError, TypeError, OSError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Could not process password (try a shorter password or different characters): {e}",
+            ) from e
+
+        doc = {
+            "employee_id": emp,
+            "password_hash": pw_hash,
+            "full_name": body.full_name.strip(),
+            "department_id": dept["_id"],
+            "role": body.role,
+            "created_at": datetime.now(timezone.utc),
+        }
+        try:
+            res = await db.users.insert_one(doc)
+        except DuplicateKeyError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Employee ID already registered",
+            ) from None
+        except OperationFailure as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Database could not save the account (check MongoDB user permissions). {e}",
+            ) from e
+
+        print(f"RotaShift REGISTER_OK database={DB_NAME!r} employee_id={emp!r} user_id={res.inserted_id!r}")
+        try:
+            token = create_access_token(
+                str(res.inserted_id),
+                body.role,
+                emp,
+                str(dept["_id"]),
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Account was created but sign-in token could not be issued: {type(e).__name__}: {e}",
+            ) from e
+
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "id": str(res.inserted_id),
+                "employee_id": emp,
+                "full_name": doc["full_name"],
+                "role": body.role,
+                "department_id": str(dept["_id"]),
+                "department_name": dept["name"],
+            },
+        }
+    except HTTPException:
+        raise
     except DuplicateKeyError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Employee ID already registered",
         ) from None
-    except OperationFailure as e:
+    except PyMongoError as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database could not save the account (check MongoDB user permissions). {e}",
+            detail=f"MongoDB error during registration: {type(e).__name__}: {e}",
         ) from e
-    print(f"RotaShift REGISTER_OK database={DB_NAME!r} employee_id={emp!r} user_id={res.inserted_id!r}")
-    token = create_access_token(
-        str(res.inserted_id),
-        body.role,
-        emp,
-        str(dept["_id"]),
-    )
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "user": {
-            "id": str(res.inserted_id),
-            "employee_id": emp,
-            "full_name": doc["full_name"],
-            "role": body.role,
-            "department_id": str(dept["_id"]),
-            "department_name": dept["name"],
-        },
-    }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {type(e).__name__}: {e}",
+        ) from e
 
 
 @router.post("/login")
