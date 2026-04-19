@@ -32,6 +32,7 @@ function apiPathname(path) {
 }
 
 function show(el, on) {
+  if (!el) return;
   el.classList.toggle("hidden", !on);
 }
 
@@ -310,10 +311,11 @@ function updateRegistrationFormUi() {
 }
 
 function updateDashboardBanner() {
-  const role = state.user.role;
+  const role = state.user?.role || "employee";
   const banner = $("dashboard-banner");
   const title = $("dashboard-title");
   const sub = $("dashboard-sub");
+  if (!banner || !title || !sub) return;
   banner.classList.remove("employee", "manager", "admin");
   banner.classList.add(role);
   title.textContent =
@@ -333,6 +335,13 @@ function updateDashboardBanner() {
 
 function initCalendar() {
   const el = $("calendar");
+  if (!el) return;
+  if (typeof FullCalendar === "undefined" || !FullCalendar.Calendar) {
+    el.innerHTML =
+      '<p class="error">The calendar could not load (FullCalendar blocked or offline). Allow <strong>cdn.jsdelivr.net</strong> in your browser or network, then refresh. You can still use the table and other tabs.</p>';
+    state.calendar = null;
+    return;
+  }
   if (state.calendar) {
     state.calendar.destroy();
   }
@@ -993,12 +1002,15 @@ function mountShiftPanels(role) {
     return;
   }
   if (role === "manager") {
-    $("mgr-shift-slot").appendChild(sm);
-    $("mgr-approval-slot").appendChild(ap);
+    const ms = $("mgr-shift-slot");
+    const mas = $("mgr-approval-slot");
+    if (ms) ms.appendChild(sm);
+    if (mas) mas.appendChild(ap);
     return;
   }
   if (role === "admin") {
-    $("adm-shift-slot").appendChild(sm);
+    const ads = $("adm-shift-slot");
+    if (ads) ads.appendChild(sm);
     const apTab = $("adm-approval-tab-slot");
     if (apTab) apTab.appendChild(ap);
   }
@@ -1041,10 +1053,13 @@ function applyRoleVisibility() {
   show($("admin-table-ctl"), role === "admin");
   show($("bulk-dept-row"), role === "admin");
   show($("mgr-admin-dept-row"), role === "admin");
-  $("cal-scope-hint").textContent =
-    role === "admin"
-      ? "Choose a department to load its shared calendar."
-      : "You see everyone in your department — shifts and approved leave.";
+  const calHint = $("cal-scope-hint");
+  if (calHint) {
+    calHint.textContent =
+      role === "admin"
+        ? "Choose a department to load its shared calendar."
+        : "You see everyone in your department — shifts and approved leave.";
+  }
   const apprHint = $("approvals-scope-hint");
   if (apprHint) {
     apprHint.textContent =
@@ -1076,20 +1091,37 @@ async function bootAuthenticated() {
     me.full_name,
   )}</strong> · ${escapeHtml(me.employee_id)} · ${escapeHtml(me.department_name || "")}`;
 
-  await loadMeta();
-  await loadDepartments();
+  const softFail = (label, err) => {
+    console.error(`[RotaShift boot] ${label}:`, err);
+  };
+
+  try {
+    await loadMeta();
+  } catch (e) {
+    softFail("loadMeta", e);
+  }
+  try {
+    await loadDepartments();
+  } catch (e) {
+    softFail("loadDepartments", e);
+  }
 
   mountScheduleForRole(state.user.role);
   mountShiftPanels(state.user.role);
 
   if (state.user.role === "admin") {
     const pick = $("cal-dept");
-    pick.onchange = () => {
-      state.calendar.refetchEvents();
-    };
-    $("table-dept").onchange = () => refreshTable();
-    if (!pick.value && state.departments[0]) pick.value = state.departments[0].id;
-    if (!$("table-dept").value && state.departments[0]) $("table-dept").value = state.departments[0].id;
+    if (pick) {
+      pick.onchange = () => {
+        state.calendar?.refetchEvents();
+      };
+      if (!pick.value && state.departments[0]) pick.value = state.departments[0].id;
+    }
+    const tableDept = $("table-dept");
+    if (tableDept) {
+      tableDept.onchange = () => refreshTable();
+      if (!tableDept.value && state.departments[0]) tableDept.value = state.departments[0].id;
+    }
     const mgrDept = $("mgr-roster-dept");
     if (mgrDept && state.departments[0] && !mgrDept.value) mgrDept.value = state.departments[0].id;
     if (mgrDept) {
@@ -1108,16 +1140,34 @@ async function bootAuthenticated() {
     $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
   }
   setDefaultTableRange();
-  initCalendar();
-  await refreshTable();
-  await refreshManagerRoster();
-  await refreshManagerQueues();
-  await refreshAdminUsers();
-  await refreshEmployeeRequestLog();
-  await refreshAdminDeptList();
-  await refreshAdminRequestLog();
+  try {
+    initCalendar();
+  } catch (e) {
+    softFail("initCalendar", e);
+    const calEl = $("calendar");
+    if (calEl) {
+      calEl.innerHTML = `<p class="error">Calendar failed to start: ${escapeHtml(e.message || String(e))}</p>`;
+    }
+    state.calendar = null;
+  }
 
-  $("table-refresh").onclick = () => refreshTable();
+  const refreshSafe = async (label, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      softFail(label, e);
+    }
+  };
+  await refreshSafe("refreshTable", () => refreshTable());
+  await refreshSafe("refreshManagerRoster", () => refreshManagerRoster());
+  await refreshSafe("refreshManagerQueues", () => refreshManagerQueues());
+  await refreshSafe("refreshAdminUsers", () => refreshAdminUsers());
+  await refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog());
+  await refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList());
+  await refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog());
+
+  const tr = $("table-refresh");
+  if (tr) tr.onclick = () => refreshTable();
 
   const auf = $("admin-user-dept-filter");
   if (auf) auf.onchange = () => refreshAdminUsers();
@@ -1208,6 +1258,7 @@ $("login-btn").addEventListener("click", async () => {
     setToken(data.access_token, data.user);
     try {
       await bootAuthenticated();
+      $("app-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (bootErr) {
       logout();
       throw bootErr;
@@ -1219,7 +1270,13 @@ $("login-btn").addEventListener("click", async () => {
 });
 
 $("register-btn").addEventListener("click", async () => {
+  const regBtn = $("register-btn");
   $("reg-err").classList.add("hidden");
+  const prevLabel = regBtn?.textContent;
+  if (regBtn) {
+    regBtn.disabled = true;
+    regBtn.textContent = "Creating account…";
+  }
   try {
     await loadRegistrationMeta({ downgradeRole: false });
 
@@ -1253,6 +1310,7 @@ $("register-btn").addEventListener("click", async () => {
     setToken(data.access_token, data.user);
     try {
       await bootAuthenticated();
+      $("app-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (bootErr) {
       logout();
       throw bootErr;
@@ -1260,6 +1318,11 @@ $("register-btn").addEventListener("click", async () => {
   } catch (e) {
     $("reg-err").textContent = e.message;
     $("reg-err").classList.remove("hidden");
+  } finally {
+    if (regBtn) {
+      regBtn.disabled = false;
+      regBtn.textContent = prevLabel || "Create account";
+    }
   }
 });
 
