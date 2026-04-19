@@ -3,6 +3,7 @@
 from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 
+from app.config import DB_NAME
 from app.database import get_client
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -24,4 +25,4 @@ async def ready():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={"status": "not_ready", "detail": str(e)},
         )
-    return {"status": "ready", "mongodb": "ok"}
+    return {"status": "ready", "mongodb": "ok", "database": DB_NAME}

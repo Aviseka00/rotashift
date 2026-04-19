@@ -6,7 +6,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
-from app.config import CORS_ORIGINS_RAW, DEFAULT_PLACEHOLDER_SECRET, ROTASHIFT_ENV, SECRET_KEY
+from app.config import (
+    CORS_ORIGINS_RAW,
+    DB_NAME,
+    DEFAULT_PLACEHOLDER_SECRET,
+    ROTASHIFT_ENV,
+    SECRET_KEY,
+)
 from app.routers import admin_api, auth_api, departments_api, health_api, meta_api, requests_api, shifts_api, users_api
 from app.seed import ensure_indexes_and_seed
 
@@ -20,6 +26,7 @@ async def lifespan(app: FastAPI):
         )
     try:
         await ensure_indexes_and_seed()
+        print(f"RotaShift: MongoDB OK — database={DB_NAME!r} (users are in the {DB_NAME!r}.users collection).")
     except Exception as e:
         print("\n" + "=" * 60)
         print("RotaShift: MongoDB connection failed — the app cannot start.")

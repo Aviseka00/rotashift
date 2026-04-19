@@ -2,6 +2,12 @@
 
 Web app for department shift rosters, leave requests, and manager/admin approvals (FastAPI + MongoDB + static UI).
 
+## Where user data is in MongoDB
+
+- The app uses the database named **`ROTASHIFT_DB`** (default: **`rotashift`**), **not** necessarily the database name in your `MONGO_URI` path. Many Atlas strings look like `...mongodb.net/test` — you must still open the **`rotashift`** database (or whatever you set `ROTASHIFT_DB` to) in **Atlas → Browse Collections**.
+- User accounts are in the **`users`** collection (`rotashift.users` in Compass).
+- To confirm what the running server uses, open **`GET /api/meta/registration`** on your deployed site and read **`mongo_database`** and **`mongo_users_collection`**, or check Render logs on startup for a line like `database='rotashift'`.
+
 ## Share with your team for testing
 
 ### Option A — Docker (recommended)
