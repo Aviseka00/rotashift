@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.idea/
+.vscode/
+.cursor/
+*.log
+/mongo_data/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Local / personal
+*.docx

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="description" content="RotaShift — department calendars, shifts, leave and approvals." />
+    <title>RotaShift</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.css" rel="stylesheet" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">RotaShift</div>
+      <div id="user-slot" class="hint"></div>
+      <div>
+        <button type="button" id="logout-btn" class="btn secondary hidden">Log out</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <div id="install-slot"></div>
+
+      <section id="auth-section" class="card">
+        <div class="tabs">
+          <button type="button" id="tab-login" class="active">Log in</button>
+          <button type="button" id="tab-register">Register</button>
+        </div>
+        <div id="panel-login">
+          <div class="row">
+            <div>
+              <label for="login-emp">Employee ID</label>
+              <input id="login-emp" autocomplete="username" />
+            </div>
+            <div>
+              <label for="login-pass">Password</label>
+              <input id="login-pass" type="password" autocomplete="current-password" />
+            </div>
+          </div>
+          <button type="button" id="login-btn" class="btn">Log in</button>
+          <div id="login-err" class="error hidden"></div>
+        </div>
+        <div id="panel-register" class="hidden">
+          <p class="hint" style="margin-bottom: 0.75rem">
+            Pick who you are registering as. <strong>Manager</strong> and <strong>Administrator</strong> must enter the
+            invite code in the section below (your organisation issues these codes).
+          </p>
+          <div class="reg-role-tabs" id="reg-role-tabs">
+            <button type="button" data-role="employee" class="active">Team member</button>
+            <button type="button" data-role="manager">Manager</button>
+            <button type="button" data-role="admin">Administrator</button>
+          </div>
+          <div class="row">
+            <div>
+              <label for="reg-emp">Employee ID</label>
+              <input id="reg-emp" autocomplete="username" />
+            </div>
+            <div>
+              <label for="reg-name">Full name</label>
+              <input id="reg-name" autocomplete="name" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="reg-dept">Department</label>
+              <select id="reg-dept"></select>
+            </div>
+            <div>
+              <label for="reg-pass">Password</label>
+              <input id="reg-pass" type="password" autocomplete="new-password" />
+            </div>
+          </div>
+
+          <div id="reg-invite-panel" class="reg-invite-panel hidden" aria-live="polite">
+            <h3 class="reg-invite-heading" id="reg-invite-heading">Organisation invite code</h3>
+            <p class="hint reg-invite-lead" id="reg-invite-lead"></p>
+            <label for="reg-code" class="reg-code-main-label" id="reg-code-label">Invite code</label>
+            <div class="reg-code-input-wrap">
+              <input
+                id="reg-code"
+                type="password"
+                autocomplete="off"
+                placeholder="Enter or paste your invite code here"
+                spellcheck="false"
+              />
+              <button type="button" class="btn secondary reg-code-toggle" id="reg-code-toggle">Show</button>
+            </div>
+            <p class="hint reg-invite-foot" id="reg-code-hint"></p>
+          </div>
+          <p class="hint">
+            Departments classify your team (e.g. rota, cholera, malaria, shigella). Administrators can add
+            new departments anytime.
+          </p>
+          <button type="button" id="register-btn" class="btn">Create account</button>
+          <div id="reg-err" class="error hidden"></div>
+        </div>
+      </section>
+
+      <section id="app-section" class="hidden">
+        <div id="dashboard-banner" class="dashboard-banner hidden">
+          <h1 id="dashboard-title"></h1>
+          <p id="dashboard-sub" class="hint"></p>
+        </div>
+
+        <!-- Employee: Schedule | My requests -->
+        <div id="dash-employee" class="dash-shell hidden">
+          <nav class="dash-nav" aria-label="Employee dashboard">
+            <button type="button" class="dash-tab active" data-dash="employee" data-tab="schedule">Schedule</button>
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="requests">My requests</button>
+          </nav>
+          <div class="dash-pane active" data-dash="employee" data-tab="schedule">
+            <div class="sched-mount" id="emp-sched-mount"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="employee" data-tab="requests">
+            <div id="employee-tools" class="card">
+              <h2>Your requests</h2>
+              <div id="emp-request-notice" class="notice-banner hidden" role="status" aria-live="polite"></div>
+
+              <h3 style="font-size: 1rem">Leave</h3>
+              <div class="row">
+                <div>
+                  <label for="leave-start">Start</label>
+                  <input type="date" id="leave-start" />
+                </div>
+                <div>
+                  <label for="leave-end">End</label>
+                  <input type="date" id="leave-end" />
+                </div>
+              </div>
+              <label for="leave-reason">Reason</label>
+              <textarea id="leave-reason"></textarea>
+              <button type="button" id="leave-submit" class="btn">Submit leave request</button>
+
+              <h3 style="margin-top: 1rem; font-size: 1rem">Shift change</h3>
+              <div class="row">
+                <div>
+                  <label for="chg-date">Date</label>
+                  <input type="date" id="chg-date" />
+                </div>
+                <div>
+                  <label for="chg-from">From</label>
+                  <select id="chg-from"></select>
+                </div>
+                <div>
+                  <label for="chg-to">To</label>
+                  <select id="chg-to"></select>
+                </div>
+              </div>
+              <label for="chg-reason">Reason</label>
+              <textarea id="chg-reason"></textarea>
+              <button type="button" id="chg-submit" class="btn">Submit shift change</button>
+
+              <hr class="mgr-section-rule" />
+
+              <h3 style="margin-top: 1rem; font-size: 1rem">Request log &amp; status</h3>
+              <p class="hint">
+                Every leave and shift-change request is listed here with its current status (pending, approved, or
+                rejected). Updated when your manager acts on it.
+              </p>
+              <button type="button" id="emp-log-refresh" class="btn secondary">Refresh status</button>
+              <div id="emp-request-log" class="emp-request-log"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manager: Schedule | Manage shifts | Approvals -->
+        <div id="dash-manager" class="dash-shell hidden">
+          <nav class="dash-nav" aria-label="Manager dashboard">
+            <button type="button" class="dash-tab active" data-dash="manager" data-tab="schedule">Schedule</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
+          </nav>
+          <div class="dash-pane active" data-dash="manager" data-tab="schedule">
+            <div class="sched-mount" id="mgr-sched-mount"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="manager" data-tab="shifts">
+            <div id="mgr-shift-slot"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="manager" data-tab="approvals">
+            <div id="mgr-approval-slot"></div>
+          </div>
+        </div>
+
+        <!-- Admin: Departments → People → Approvals → Activity → Schedule → Shifts -->
+        <div id="dash-admin" class="dash-shell hidden">
+          <nav class="dash-nav dash-nav-admin" aria-label="Administrator dashboard">
+            <button type="button" class="dash-tab active" data-dash="admin" data-tab="org">Departments</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="people">People</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="approvals">Approvals</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="records">Activity</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="schedule">Schedule</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="shifts">Manage shifts</button>
+          </nav>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="schedule">
+            <div class="sched-mount" id="adm-sched-mount"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="people">
+            <div class="card">
+              <h2>Add employee or manager</h2>
+              <p class="hint">Create an account without self-registration. They log in with Employee ID and password.</p>
+              <div class="row">
+                <div>
+                  <label for="admin-add-emp">Employee ID</label>
+                  <input id="admin-add-emp" autocomplete="off" />
+                </div>
+                <div>
+                  <label for="admin-add-name">Full name</label>
+                  <input id="admin-add-name" />
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label for="admin-add-pass">Temporary password</label>
+                  <input id="admin-add-pass" type="password" autocomplete="new-password" />
+                </div>
+                <div>
+                  <label for="admin-add-dept">Department</label>
+                  <select id="admin-add-dept"></select>
+                </div>
+                <div>
+                  <label for="admin-add-role">Role</label>
+                  <select id="admin-add-role">
+                    <option value="employee">Employee</option>
+                    <option value="manager">Manager</option>
+                    <option value="admin">Administrator</option>
+                  </select>
+                </div>
+              </div>
+              <button type="button" id="admin-add-submit" class="btn">Create user</button>
+              <div id="admin-add-msg" class="hint"></div>
+
+              <h3 style="margin-top: 1.25rem; font-size: 1rem">All users (every department)</h3>
+              <div class="row">
+                <div>
+                  <label for="admin-user-dept-filter">Filter by department</label>
+                  <select id="admin-user-dept-filter"></select>
+                </div>
+              </div>
+              <p class="hint">
+                Set role to <strong>employee</strong> or <strong>manager</strong> (or administrator). Delete removes the
+                account permanently.
+              </p>
+              <div id="admin-users"></div>
+            </div>
+          </div>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="approvals">
+            <div id="adm-approval-tab-slot"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="records">
+            <div class="card">
+              <h2>Activity — all leave &amp; shift requests</h2>
+              <p class="hint">
+                Every department: pending, approved, and rejected, with who decided and when. Filter by department or use
+                “All departments”.
+              </p>
+              <div class="row">
+                <div>
+                  <label for="admin-records-dept">Department</label>
+                  <select id="admin-records-dept"></select>
+                </div>
+                <div style="flex: 0 0 auto; align-self: flex-end">
+                  <button type="button" id="admin-records-refresh" class="btn secondary">Refresh tables</button>
+                </div>
+              </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Leave requests</h3>
+              <div class="table-scroll admin-records-wrap">
+                <div id="admin-records-leave"></div>
+              </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
+              <div class="table-scroll admin-records-wrap">
+                <div id="admin-records-shift"></div>
+              </div>
+            </div>
+          </div>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="shifts">
+            <div id="adm-shift-slot"></div>
+          </div>
+          <div class="dash-pane active" data-dash="admin" data-tab="org">
+            <div id="admin-dash-overview" class="card admin-dash-overview hidden">
+              <h2 class="admin-overview-title">Quick summary</h2>
+              <p class="hint" id="admin-pending-summary">—</p>
+              <div class="row admin-dash-shortcuts">
+                <button type="button" class="btn secondary" id="admin-go-schedule">Schedule &amp; calendar</button>
+                <button type="button" class="btn secondary" id="admin-go-people">People &amp; roles</button>
+                <button type="button" class="btn secondary" id="admin-go-approvals">Approvals queue</button>
+                <button type="button" class="btn secondary" id="admin-go-records">All activity</button>
+                <button type="button" class="btn secondary" id="admin-go-shifts">Manage shifts</button>
+              </div>
+            </div>
+            <div class="card">
+              <h2>Departments</h2>
+              <div class="row">
+                <div>
+                  <label for="new-dept-name">New department name</label>
+                  <input id="new-dept-name" placeholder="e.g. typhoid" />
+                </div>
+                <div style="flex: 0 0 auto">
+                  <button type="button" id="create-dept-btn" class="btn">Create department</button>
+                </div>
+              </div>
+              <div id="dept-msg" class="hint"></div>
+
+              <h3 style="margin-top: 1rem; font-size: 1rem">Existing departments</h3>
+              <p class="hint">Deleting a department removes it from lists; users in that department lose their department link.</p>
+              <div id="admin-dept-list"></div>
+
+              <h3 style="margin-top: 1rem; font-size: 1rem">Backup</h3>
+              <p class="hint">Download a JSON snapshot of departments, users (no passwords), shifts, and requests.</p>
+              <button type="button" id="export-btn" class="btn secondary">Download JSON export</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend legend-after-dash" id="shift-legend"></div>
+
+        <!-- Moved between dashboards: calendar + table -->
+        <div id="schedule-block">
+          <div class="card grid grid-2 landscape-compact">
+            <div>
+              <h2>Department calendar</h2>
+              <div id="admin-cal-ctl" class="row hidden">
+                <div>
+                  <label for="cal-dept">Department (admin)</label>
+                  <select id="cal-dept"></select>
+                </div>
+              </div>
+              <p class="hint" id="cal-scope-hint"></p>
+              <div id="calendar"></div>
+            </div>
+            <div>
+              <h2>Landscape table view</h2>
+              <p class="hint">
+                On a phone or tablet, rotate to landscape — calendar and staff × dates grid appear side by side when the
+                screen is wide enough.
+              </p>
+              <div class="row">
+                <div>
+                  <label for="table-start">From</label>
+                  <input type="date" id="table-start" />
+                </div>
+                <div>
+                  <label for="table-end">To</label>
+                  <input type="date" id="table-end" />
+                </div>
+                <div style="flex: 0 0 auto">
+                  <button type="button" id="table-refresh" class="btn secondary">Refresh table</button>
+                </div>
+              </div>
+              <div id="admin-table-ctl" class="row hidden">
+                <div>
+                  <label for="table-dept">Department (admin)</label>
+                  <select id="table-dept"></select>
+                </div>
+              </div>
+              <div class="table-scroll">
+                <table class="matrix" id="matrix-table">
+                  <thead id="matrix-head"></thead>
+                  <tbody id="matrix-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stays hidden for employees; manager/admin move these into their tabs on login -->
+        <div id="parked-mgr-panels" class="hidden" aria-hidden="true">
+        <div id="panel-shift-mgmt">
+          <div class="card">
+            <h2>Department team &amp; shift assignment</h2>
+
+            <div id="mgr-admin-dept-row" class="row hidden">
+              <div>
+                <label for="mgr-roster-dept">Department</label>
+                <select id="mgr-roster-dept"></select>
+              </div>
+            </div>
+
+            <h3 style="font-size: 1rem; margin-bottom: 0.35rem">Team in your department</h3>
+            <p class="hint" id="mgr-roster-hint">Everyone registered under your department.</p>
+            <div class="table-scroll roster-table-wrap">
+              <table class="matrix roster-table">
+                <thead>
+                  <tr>
+                    <th>Employee ID</th>
+                    <th>Name</th>
+                    <th>Role</th>
+                  </tr>
+                </thead>
+                <tbody id="mgr-roster-body"></tbody>
+              </table>
+            </div>
+            <button type="button" id="mgr-roster-refresh" class="btn secondary">Refresh team list</button>
+
+            <h3 style="margin-top: 1.25rem; font-size: 1rem">Assign shift (A, B, C, or G)</h3>
+            <p class="hint">Pick a team member, date, and shift band.</p>
+            <div class="row mgr-assign-row">
+              <div>
+                <label for="mgr-assign-member">Team member</label>
+                <select id="mgr-assign-member"></select>
+              </div>
+              <div>
+                <label for="mgr-assign-date">Date</label>
+                <input type="date" id="mgr-assign-date" />
+              </div>
+              <div>
+                <label for="mgr-assign-shift">Shift</label>
+                <select id="mgr-assign-shift"></select>
+              </div>
+              <div style="flex: 0 0 auto; align-self: flex-end">
+                <button type="button" id="mgr-assign-submit" class="btn">Assign shift</button>
+              </div>
+            </div>
+            <div id="mgr-assign-msg" class="hint"></div>
+
+            <hr class="mgr-section-rule" />
+
+            <h3 style="font-size: 1rem">Bulk paste (optional)</h3>
+            <p class="hint">
+              One assignment per line: <code>EMPLOYEE_ID,YYYY-MM-DD,A</code> — codes A, B, C, G (see legend).
+            </p>
+            <div id="bulk-dept-row" class="row hidden">
+              <div>
+                <label for="bulk-dept">Department (admin)</label>
+                <select id="bulk-dept"></select>
+              </div>
+            </div>
+            <textarea id="bulk-lines" placeholder="EMP001,2026-04-21,A"></textarea>
+            <button type="button" id="bulk-submit" class="btn">Apply bulk assignment</button>
+            <div id="bulk-msg" class="hint"></div>
+          </div>
+        </div>
+
+        <div id="panel-mgr-approvals">
+          <div class="card">
+            <h2>Approvals</h2>
+            <p class="hint" id="approvals-scope-hint"></p>
+            <h3 style="font-size: 1rem">Leave requests</h3>
+            <div id="mgr-leave-list" class="list-requests"></div>
+            <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
+            <div id="mgr-change-list" class="list-requests"></div>
+          </div>
+        </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.js"></script>
+    <script src="/static/app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      }
+      let deferredPrompt;
+      window.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        const slot = document.getElementById("install-slot");
+        if (!slot || slot.dataset.ready) return;
+        slot.dataset.ready = "1";
+        slot.innerHTML =
+          '<div class="install-banner"><span>Add RotaShift to your home screen for quicker access.</span><button type="button" class="btn" id="pwa-install">Install app</button></div>';
+        document.getElementById("pwa-install").addEventListener("click", async () => {
+          if (!deferredPrompt) return;
+          deferredPrompt.prompt();
+          await deferredPrompt.userChoice;
+          deferredPrompt = null;
+          slot.innerHTML = "";
+        });
+      });
+    </script>
+  </body>
+</html>

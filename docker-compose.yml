@@ -1,0 +1,35 @@
+# Local / demo deployment: API + MongoDB. For production, use Atlas or a managed Mongo replica set and point MONGO_URI at it.
+
+services:
+  api:
+    build: .
+    ports:
+      - "${ROTASHIFT_PORT:-8000}:8000"
+    environment:
+      ROTASHIFT_ENV: ${ROTASHIFT_ENV:-development}
+      MONGO_URI: mongodb://mongo:27017
+      ROTASHIFT_DB: ${ROTASHIFT_DB:-rotashift}
+      # Override in production (e.g. openssl rand -hex 32). Default is for local docker-compose only.
+      ROTASHIFT_SECRET_KEY: ${ROTASHIFT_SECRET_KEY:-local-dev-only-change-in-production}
+      ROTASHIFT_REGISTER_CODE_MANAGER: ${ROTASHIFT_REGISTER_CODE_MANAGER:-MANAGER-DEV-2026}
+      ROTASHIFT_REGISTER_CODE_ADMIN: ${ROTASHIFT_REGISTER_CODE_ADMIN:-ADMIN-DEV-2026}
+      ROTASHIFT_ADMIN_EMPLOYEE_ID: ${ROTASHIFT_ADMIN_EMPLOYEE_ID:-}
+      ROTASHIFT_ADMIN_PASSWORD: ${ROTASHIFT_ADMIN_PASSWORD:-}
+      MONGO_MAX_POOL_SIZE: ${MONGO_MAX_POOL_SIZE:-50}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  mongo_data:

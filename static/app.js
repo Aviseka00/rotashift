@@ -1,0 +1,1263 @@
+/* global FullCalendar */
+
+const state = {
+  token: localStorage.getItem("rs_token"),
+  user: null,
+  calendar: null,
+  departments: [],
+  shiftLegend: {},
+  adminShortcutsWired: false,
+};
+
+const regState = {
+  role: "employee",
+  /** Assume enabled until /api/meta/registration responds (avoids race before fetch completes). */
+  meta: {
+    manager_registration_enabled: true,
+    admin_registration_enabled: true,
+  },
+};
+
+function $(id) {
+  return document.getElementById(id);
+}
+
+function show(el, on) {
+  el.classList.toggle("hidden", !on);
+}
+
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (!(opts.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (state.token) {
+    headers.Authorization = `Bearer ${state.token}`;
+  }
+  const r = await fetch(path, { ...opts, headers });
+  if (r.status === 401) {
+    logout();
+    throw new Error("Session expired — please log in again.");
+  }
+  const text = await r.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!r.ok) {
+    let msg = r.statusText;
+    if (data && typeof data === "object" && data.detail !== undefined) {
+      const d = data.detail;
+      msg = Array.isArray(d) ? d.map((x) => x.msg || JSON.stringify(x)).join("; ") : String(d);
+    }
+    throw new Error(msg);
+  }
+  return data;
+}
+
+function logout() {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem("rs_token");
+  show($("auth-section"), true);
+  show($("app-section"), false);
+  show($("dashboard-banner"), false);
+  show($("logout-btn"), false);
+  $("user-slot").textContent = "";
+  if (state.calendar) {
+    state.calendar.destroy();
+    state.calendar = null;
+  }
+  state.adminShortcutsWired = false;
+}
+
+function setToken(token, user) {
+  state.token = token;
+  state.user = user;
+  localStorage.setItem("rs_token", token);
+}
+
+async function loadMeta() {
+  const sh = await api("/api/meta/shifts");
+  state.shiftLegend = sh.shifts || {};
+  const leg = $("shift-legend");
+  leg.innerHTML = "";
+  Object.entries(state.shiftLegend).forEach(([code, info]) => {
+    const span = document.createElement("span");
+    span.innerHTML = `<span class="dot ${code.toLowerCase()}"></span> <strong>${code}</strong> ${info.start}–${info.end}`;
+    leg.appendChild(span);
+  });
+  ["chg-from", "chg-to"].forEach((id) => {
+    const sel = $(id);
+    sel.innerHTML = "";
+    Object.keys(state.shiftLegend).forEach((c) => {
+      const o = document.createElement("option");
+      o.value = c;
+      o.textContent = `${c} (${state.shiftLegend[c].start}–${state.shiftLegend[c].end})`;
+      sel.appendChild(o);
+    });
+  });
+  fillMgrAssignShiftSelect();
+}
+
+function fillMgrAssignShiftSelect() {
+  const sel = $("mgr-assign-shift");
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = "";
+  Object.entries(state.shiftLegend || {}).forEach(([code, info]) => {
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = `${code} · ${info.start}–${info.end}`;
+    sel.appendChild(o);
+  });
+  if (cur && [...sel.options].some((x) => x.value === cur)) sel.value = cur;
+}
+
+async function loadDepartments() {
+  const data = await api("/api/departments");
+  state.departments = data.departments || [];
+  const selects = [
+    "reg-dept",
+    "cal-dept",
+    "table-dept",
+    "bulk-dept",
+    "mgr-roster-dept",
+    "admin-add-dept",
+    "admin-user-dept-filter",
+    "admin-records-dept",
+  ];
+  selects.forEach((id) => {
+    const sel = $(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = "";
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent =
+      id === "reg-dept"
+        ? "Select department…"
+        : id === "admin-user-dept-filter" || id === "admin-records-dept"
+          ? "All departments"
+          : "—";
+    sel.appendChild(empty);
+    state.departments.forEach((d) => {
+      const o = document.createElement("option");
+      o.value = d.id;
+      o.textContent = d.name;
+      sel.appendChild(o);
+    });
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  });
+}
+
+function departmentNameById(id) {
+  const d = state.departments.find((x) => x.id === id);
+  return d ? d.name : "";
+}
+
+/**
+ * @param {{ downgradeRole?: boolean }} [options]
+ *   If `downgradeRole` is false, we do not change `regState.role` to match server policy.
+ *   (When true, a user who had chosen Manager/Admin is moved to Team member if the server
+ *   has disabled that path — used when opening Register, never right before Submit, or the
+ *   chosen role could be wiped and registration would succeed as employee.)
+ */
+async function loadRegistrationMeta(options = {}) {
+  const downgradeRole = options.downgradeRole !== false;
+  try {
+    const r = await fetch("/api/meta/registration");
+    if (!r.ok) throw new Error("bad status");
+    regState.meta = await r.json();
+  } catch {
+    /* Keep optimistic defaults so Manager/Admin are not blocked if the meta request races or fails once. */
+    regState.meta = {
+      manager_registration_enabled: true,
+      admin_registration_enabled: true,
+    };
+  }
+  syncRegRoleAfterMeta({ downgradeRole });
+  updateRegistrationFormUi();
+}
+
+function syncRegRoleAfterMeta(opts = {}) {
+  const downgradeRole = opts.downgradeRole !== false;
+  const { meta } = regState;
+  if (downgradeRole) {
+    if (regState.role === "manager" && !meta.manager_registration_enabled) regState.role = "employee";
+    if (regState.role === "admin" && !meta.admin_registration_enabled) regState.role = "employee";
+  }
+  document.querySelectorAll("#reg-role-tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.role === regState.role);
+  });
+}
+
+function updateRegistrationFormUi() {
+  const { meta } = regState;
+  const mgrBtn = document.querySelector('#reg-role-tabs button[data-role="manager"]');
+  const admBtn = document.querySelector('#reg-role-tabs button[data-role="admin"]');
+  if (mgrBtn) mgrBtn.disabled = !meta.manager_registration_enabled;
+  if (admBtn) admBtn.disabled = !meta.admin_registration_enabled;
+
+  const panel = $("reg-invite-panel");
+  const hint = $("reg-code-hint");
+  const heading = $("reg-invite-heading");
+  const lead = $("reg-invite-lead");
+  const label = $("reg-code-label");
+  const codeInput = $("reg-code");
+
+  panel.classList.remove("manager-panel", "admin-panel");
+
+  if (regState.role === "employee") {
+    show(panel, false);
+    hint.textContent = "";
+    if (codeInput) codeInput.value = "";
+    return;
+  }
+
+  // Manager & Administrator: always show the invite-code panel with role-specific copy
+  show(panel, true);
+
+  if (regState.role === "manager") {
+    panel.classList.add("manager-panel");
+    heading.textContent = "Manager registration — invite code";
+    lead.textContent =
+      "Enter the manager invite code below. This is required to create a manager account for your department.";
+    label.textContent = "Manager invite code";
+    hint.textContent = meta.manager_registration_enabled
+      ? "Use the code issued by your organisation. If you do not have one, ask your administrator."
+      : "Manager self-registration is not enabled on this server. Contact your IT administrator.";
+  } else if (regState.role === "admin") {
+    panel.classList.add("admin-panel");
+    heading.textContent = "Administrator registration — invite code";
+    lead.textContent =
+      "Enter the administrator invite code below. This is required to create an organisation administrator account.";
+    label.textContent = "Administrator invite code";
+    hint.textContent = meta.admin_registration_enabled
+      ? "Use the code issued by your organisation. Keep it confidential."
+      : "Administrator self-registration is not enabled on this server. Contact your IT administrator.";
+  }
+}
+
+function updateDashboardBanner() {
+  const role = state.user.role;
+  const banner = $("dashboard-banner");
+  const title = $("dashboard-title");
+  const sub = $("dashboard-sub");
+  banner.classList.remove("employee", "manager", "admin");
+  banner.classList.add(role);
+  title.textContent =
+    role === "employee"
+      ? "Employee dashboard"
+      : role === "manager"
+        ? "Manager dashboard"
+        : "Administrator dashboard";
+  sub.textContent =
+    role === "employee"
+      ? "Schedule shows your department rota. My requests: submit leave/shift changes, see confirmations, and track approval status in the request log."
+      : role === "manager"
+        ? "Use the tabs: Schedule · Manage shifts · Approvals."
+        : "Use the tabs below: Departments (for registration) · People · Approvals · Activity (full request history) · Schedule · Manage shifts.";
+  show(banner, true);
+}
+
+function initCalendar() {
+  const el = $("calendar");
+  if (state.calendar) {
+    state.calendar.destroy();
+  }
+  state.calendar = new FullCalendar.Calendar(el, {
+    initialView: "dayGridMonth",
+    height: "auto",
+    headerToolbar: {
+      left: "prev,next today",
+      center: "title",
+      right: "dayGridMonth,timeGridWeek,listWeek",
+    },
+    events(info, successCallback, failureCallback) {
+      (async () => {
+        try {
+          const params = new URLSearchParams({
+            start: info.startStr.slice(0, 10),
+            end: info.endStr.slice(0, 10),
+          });
+          if (state.user.role === "admin") {
+            const sel = $("cal-dept").value;
+            if (!sel) {
+              successCallback([]);
+              return;
+            }
+            params.set("department_id", sel);
+          }
+          const data = await api(`/api/shifts/calendar?${params}`);
+          successCallback(data.events || []);
+        } catch (e) {
+          failureCallback(e);
+        }
+      })();
+    },
+    eventDidMount(info) {
+      const k = info.event.extendedProps.kind;
+      if (k === "leave") {
+        info.el.style.opacity = "0.35";
+      }
+    },
+  });
+  state.calendar.render();
+}
+
+function setDefaultTableRange() {
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay());
+  const end = new Date(start);
+  end.setDate(start.getDate() + 13);
+  $("table-start").value = start.toISOString().slice(0, 10);
+  $("table-end").value = end.toISOString().slice(0, 10);
+}
+
+async function refreshTable() {
+  const params = new URLSearchParams({
+    start: $("table-start").value,
+    end: $("table-end").value,
+  });
+  if (state.user.role === "admin") {
+    const sel = $("table-dept").value;
+    if (!sel) {
+      $("matrix-head").innerHTML = "";
+      $("matrix-body").innerHTML = "";
+      return;
+    }
+    params.set("department_id", sel);
+  }
+  const data = await api(`/api/shifts/table?${params}`);
+  const thead = $("matrix-head");
+  const tbody = $("matrix-body");
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+  const hr = document.createElement("tr");
+  const h0 = document.createElement("th");
+  h0.classList.add("sticky");
+  h0.textContent = data.department_name ? `${data.department_name} — staff` : "Staff";
+  hr.appendChild(h0);
+  (data.dates || []).forEach((d) => {
+    const th = document.createElement("th");
+    th.textContent = d.slice(5);
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+  (data.rows || []).forEach((row) => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td");
+    td0.classList.add("sticky");
+    td0.textContent = `${row.full_name} (${row.employee_id})`;
+    tr.appendChild(td0);
+    (data.dates || []).forEach((d) => {
+      const td = document.createElement("td");
+      const code = row.cells[d];
+      if (code) {
+        td.textContent = code;
+        td.classList.add(`cell-${code.toLowerCase()}`);
+      } else {
+        td.textContent = "—";
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+async function refreshManagerQueues() {
+  if (!state.user || !["manager", "admin"].includes(state.user.role)) return;
+  const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
+
+  if (state.user.role === "admin") {
+    const summary = $("admin-pending-summary");
+    if (summary) {
+      const lp = (lv.requests || []).filter((r) => r.status === "pending").length;
+      const sp = (ch.requests || []).filter((r) => r.status === "pending").length;
+      summary.innerHTML =
+        lp + sp === 0
+          ? '<span class="hint">No pending leave or shift-change approvals.</span>'
+          : `<strong>${lp}</strong> leave · <strong>${sp}</strong> shift change awaiting approval — open the <strong>Approvals</strong> tab.`;
+    }
+  }
+
+  const box = $("mgr-leave-list");
+  box.innerHTML = "";
+  (lv.requests || []).forEach((r) => {
+    if (r.status !== "pending") return;
+    const div = document.createElement("div");
+    div.className = "req-item pending";
+    const deptBadge =
+      state.user.role === "admin" && r.department_name
+        ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
+        : "";
+    div.innerHTML = `<div>${deptBadge}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
+      <div>${r.start_date} → ${r.end_date}</div><div class="hint">${escapeHtml(r.reason || "")}</div>`;
+    if (state.user.role === "manager" || state.user.role === "admin") {
+      const actions = document.createElement("div");
+      actions.className = "req-actions";
+      actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="leave" data-status="approved">Approve</button>
+        <button type="button" class="btn secondary" data-id="${r.id}" data-kind="leave" data-status="rejected">Reject</button>`;
+      div.appendChild(actions);
+    }
+    box.appendChild(div);
+  });
+  box.querySelectorAll('button[data-kind="leave"]').forEach((btn) => {
+    btn.addEventListener("click", () => decideLeave(btn.dataset.id, btn.dataset.status));
+  });
+
+  const cbox = $("mgr-change-list");
+  cbox.innerHTML = "";
+  (ch.requests || []).forEach((r) => {
+    if (r.status !== "pending") return;
+    const div = document.createElement("div");
+    div.className = "req-item pending";
+    const deptChg =
+      state.user.role === "admin" && r.department_name
+        ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
+        : "";
+    div.innerHTML = `<div>${deptChg}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
+      <div>${r.date}: ${r.from_shift} → ${r.to_shift}</div><div class="hint">${escapeHtml(r.reason || "")}</div>`;
+    const actions = document.createElement("div");
+    actions.className = "req-actions";
+    actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="chg" data-status="approved">Approve</button>
+      <button type="button" class="btn secondary" data-id="${r.id}" data-kind="chg" data-status="rejected">Reject</button>`;
+    div.appendChild(actions);
+    cbox.appendChild(div);
+  });
+  cbox.querySelectorAll('button[data-kind="chg"]').forEach((btn) => {
+    btn.addEventListener("click", () => decideChange(btn.dataset.id, btn.dataset.status));
+  });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function fmtShortDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return String(iso);
+  }
+}
+
+function showEmployeeRequestNotice(message, kind) {
+  const el = $("emp-request-notice");
+  if (!el) return;
+  el.classList.remove("hidden", "success", "error");
+  if (!message) {
+    el.classList.add("hidden");
+    el.textContent = "";
+    return;
+  }
+  el.textContent = message;
+  el.classList.add(kind === "error" ? "error" : "success");
+  if (kind === "success") {
+    setTimeout(() => {
+      if (el.textContent === message) {
+        el.classList.add("hidden");
+        el.textContent = "";
+        el.classList.remove("success", "error");
+      }
+    }, 12000);
+  }
+}
+
+async function refreshEmployeeRequestLog() {
+  if (!state.user || state.user.role !== "employee") return;
+  const box = $("emp-request-log");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
+    const rows = [];
+    (lv.requests || []).forEach((r) => {
+      rows.push({
+        kind: "leave",
+        sort: r.created_at || "",
+        detail: `${r.start_date} → ${r.end_date}`,
+        reason: r.reason || "",
+        status: r.status,
+        created_at: r.created_at,
+        decided_at: r.decided_at,
+      });
+    });
+    (ch.requests || []).forEach((r) => {
+      rows.push({
+        kind: "shift_change",
+        sort: r.created_at || "",
+        detail: `${r.date}: shift ${r.from_shift} → ${r.to_shift}`,
+        reason: r.reason || "",
+        status: r.status,
+        created_at: r.created_at,
+        decided_at: r.decided_at,
+      });
+    });
+    rows.sort((a, b) => String(b.sort).localeCompare(String(a.sort)));
+
+    if (rows.length === 0) {
+      box.innerHTML = '<p class="hint">No requests yet. Submit leave or a shift change above.</p>';
+      return;
+    }
+
+    const tbl = document.createElement("table");
+    tbl.className = "matrix log-table";
+    tbl.innerHTML =
+      "<thead><tr><th>Type</th><th>Details</th><th>Submitted</th><th>Status</th><th>Decision time</th></tr></thead>";
+    const tb = document.createElement("tbody");
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      const typeLabel = r.kind === "leave" ? "Leave" : "Shift change";
+      const st = (r.status || "pending").toLowerCase();
+      const badgeClass =
+        st === "approved" ? "status-approved" : st === "rejected" ? "status-rejected" : "status-pending";
+      tr.innerHTML = `<td>${typeLabel}</td><td>${escapeHtml(r.detail)}<br/><span class="hint">${escapeHtml(r.reason || "—")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td><span class="badge ${badgeClass}">${escapeHtml(st)}</span></td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td>`;
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    box.appendChild(tbl);
+  } catch (e) {
+    box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function decideLeave(id, status) {
+  await api(`/api/requests/leave/${id}/decide`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  await refreshManagerQueues();
+  if (state.calendar) state.calendar.refetchEvents();
+  if (state.user.role === "admin") await refreshAdminRequestLog();
+}
+
+async function decideChange(id, status) {
+  await api(`/api/requests/shift-change/${id}/decide`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  await refreshManagerQueues();
+  if (state.calendar) state.calendar.refetchEvents();
+  await refreshTable();
+  if (state.user.role === "admin") await refreshAdminRequestLog();
+}
+
+async function refreshManagerRoster() {
+  if (!state.user || !["manager", "admin"].includes(state.user.role)) return;
+  const tbody = $("mgr-roster-body");
+  const selMember = $("mgr-assign-member");
+  const msg = $("mgr-assign-msg");
+  if (!tbody || !selMember) return;
+
+  tbody.innerHTML = "";
+  selMember.innerHTML = "";
+  const ph = document.createElement("option");
+  ph.value = "";
+  ph.textContent = "Select team member…";
+  selMember.appendChild(ph);
+
+  let url = "/api/users";
+  if (state.user.role === "admin") {
+    const did = $("mgr-roster-dept") && $("mgr-roster-dept").value;
+    if (!did) {
+      if (msg) msg.textContent = "Choose a department above to load its team.";
+      return;
+    }
+    url += `?department_id=${encodeURIComponent(did)}`;
+  }
+
+  let data;
+  try {
+    data = await api(url);
+  } catch (e) {
+    if (msg) msg.textContent = e.message;
+    return;
+  }
+
+  const users = data.users || [];
+  users.forEach((u) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(u.employee_id)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.role)}</td>`;
+    tbody.appendChild(tr);
+    const o = document.createElement("option");
+    o.value = u.employee_id;
+    o.textContent = `${u.full_name} (${u.employee_id})`;
+    selMember.appendChild(o);
+  });
+
+  if (msg) {
+    msg.textContent =
+      users.length === 0
+        ? "No users found for this department."
+        : `${users.length} people — pick one below to assign a shift.`;
+  }
+}
+
+async function refreshAdminRequestLog() {
+  if (state.user.role !== "admin") return;
+  const dept = $("admin-records-dept")?.value || "";
+  const q = dept ? `?department_id=${encodeURIComponent(dept)}` : "";
+  const leaveBox = $("admin-records-leave");
+  const shiftBox = $("admin-records-shift");
+  if (!leaveBox || !shiftBox) return;
+  leaveBox.innerHTML = "<p class=\"hint\">Loading…</p>";
+  shiftBox.innerHTML = "";
+  try {
+    const [lv, ch] = await Promise.all([
+      api(`/api/requests/leave${q}`),
+      api(`/api/requests/shift-change${q}`),
+    ]);
+
+    function statusBadge(st) {
+      const s = (st || "pending").toLowerCase();
+      const cls =
+        s === "approved" ? "status-approved" : s === "rejected" ? "status-rejected" : "status-pending";
+      return `<span class="badge ${cls}">${escapeHtml(s)}</span>`;
+    }
+
+    const tblL = document.createElement("table");
+    tblL.className = "matrix log-table";
+    tblL.innerHTML =
+      "<thead><tr><th>Dept</th><th>Employee</th><th>Dates</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>";
+    const tbL = document.createElement("tbody");
+    (lv.requests || []).forEach((r) => {
+      const tr = document.createElement("tr");
+      const dec = r.decided_by_name
+        ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
+        : "—";
+      const det = `${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)}`;
+      tr.innerHTML = `<td>${escapeHtml(r.department_name || "—")}</td><td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${statusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
+      tbL.appendChild(tr);
+    });
+    tblL.appendChild(tbL);
+    leaveBox.innerHTML = "";
+    if ((lv.requests || []).length === 0) {
+      leaveBox.innerHTML = '<p class="hint">No leave requests match this filter.</p>';
+    } else {
+      leaveBox.appendChild(tblL);
+    }
+
+    const tblS = document.createElement("table");
+    tblS.className = "matrix log-table";
+    tblS.innerHTML =
+      "<thead><tr><th>Dept</th><th>Employee</th><th>Change</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>";
+    const tbS = document.createElement("tbody");
+    (ch.requests || []).forEach((r) => {
+      const tr = document.createElement("tr");
+      const dec = r.decided_by_name
+        ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
+        : "—";
+      const det = `${escapeHtml(r.date)}: ${escapeHtml(r.from_shift)} → ${escapeHtml(r.to_shift)}`;
+      tr.innerHTML = `<td>${escapeHtml(r.department_name || "—")}</td><td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${statusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
+      tbS.appendChild(tr);
+    });
+    tblS.appendChild(tbS);
+    shiftBox.innerHTML = "";
+    if ((ch.requests || []).length === 0) {
+      shiftBox.innerHTML = '<p class="hint">No shift change requests match this filter.</p>';
+    } else {
+      shiftBox.appendChild(tblS);
+    }
+  } catch (e) {
+    leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function refreshAdminDeptList() {
+  if (state.user.role !== "admin") return;
+  const box = $("admin-dept-list");
+  if (!box) return;
+  box.innerHTML = "";
+  try {
+    const data = await api("/api/departments");
+    const tbl = document.createElement("table");
+    tbl.className = "matrix";
+    tbl.innerHTML = "<thead><tr><th>Department</th><th></th></tr></thead>";
+    const tb = document.createElement("tbody");
+    (data.departments || []).forEach((d) => {
+      const tr = document.createElement("tr");
+      const tdN = document.createElement("td");
+      tdN.textContent = d.name;
+      const tdAct = document.createElement("td");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn danger";
+      btn.textContent = "Delete department";
+      btn.addEventListener("click", async () => {
+        if (
+          !confirm(
+            `Delete department "${d.name}"? Users in this department will no longer be linked to a department.`,
+          )
+        )
+          return;
+        await api(`/api/departments/${d.id}`, { method: "DELETE" });
+        $("dept-msg").textContent = `Removed department ${d.name}.`;
+        await loadDepartments();
+        await refreshAdminDeptList();
+        await refreshAdminUsers();
+        await refreshAdminRequestLog().catch(() => {});
+      });
+      tdAct.appendChild(btn);
+      tr.appendChild(tdN);
+      tr.appendChild(tdAct);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    box.appendChild(tbl);
+  } catch (e) {
+    box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function refreshAdminUsers() {
+  if (state.user.role !== "admin") return;
+  const filt = $("admin-user-dept-filter")?.value || "";
+  let url = "/api/users";
+  if (filt) url += `?department_id=${encodeURIComponent(filt)}`;
+  const data = await api(url);
+  const wrap = $("admin-users");
+  wrap.innerHTML = "";
+  const tbl = document.createElement("table");
+  tbl.className = "matrix";
+  tbl.innerHTML =
+    "<thead><tr><th>Employee ID</th><th>Name</th><th>Department</th><th>Set role</th><th></th></tr></thead>";
+  const tb = document.createElement("tbody");
+  const myId = String(state.user.id || "");
+  (data.users || []).forEach((u) => {
+    const tr = document.createElement("tr");
+
+    const tdEmp = document.createElement("td");
+    tdEmp.textContent = u.employee_id;
+
+    const tdName = document.createElement("td");
+    tdName.textContent = u.full_name;
+
+    const tdDept = document.createElement("td");
+    tdDept.textContent = u.department_name || "—";
+
+    const tdRole = document.createElement("td");
+    const sel = document.createElement("select");
+    ["employee", "manager", "admin"].forEach((r) => {
+      const o = document.createElement("option");
+      o.value = r;
+      o.textContent = r;
+      if (u.role === r) o.selected = true;
+      sel.appendChild(o);
+    });
+    const btnSave = document.createElement("button");
+    btnSave.type = "button";
+    btnSave.className = "btn secondary";
+    btnSave.style.marginLeft = "0.5rem";
+    btnSave.textContent = "Save";
+    btnSave.addEventListener("click", async () => {
+      await api(`/api/users/${u.id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: sel.value }),
+      });
+      await refreshAdminUsers();
+      await refreshManagerRoster().catch(() => {});
+    });
+    tdRole.appendChild(sel);
+    tdRole.appendChild(btnSave);
+
+    const tdDel = document.createElement("td");
+    if (String(u.id) !== myId) {
+      const btnDel = document.createElement("button");
+      btnDel.type = "button";
+      btnDel.className = "btn danger";
+      btnDel.textContent = "Delete";
+      btnDel.addEventListener("click", async () => {
+        if (!confirm(`Remove ${u.full_name} (${u.employee_id}) from the system?`)) return;
+        await api(`/api/users/${u.id}`, { method: "DELETE" });
+        await refreshAdminUsers();
+        await refreshManagerRoster().catch(() => {});
+      });
+      tdDel.appendChild(btnDel);
+    } else {
+      tdDel.innerHTML = '<span class="hint">—</span>';
+    }
+
+    tr.appendChild(tdEmp);
+    tr.appendChild(tdName);
+    tr.appendChild(tdDept);
+    tr.appendChild(tdRole);
+    tr.appendChild(tdDel);
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  wrap.appendChild(tbl);
+}
+
+function mountScheduleForRole(role) {
+  const block = $("schedule-block");
+  if (!block) return;
+  let mount = $("emp-sched-mount");
+  if (role === "manager") mount = $("mgr-sched-mount");
+  if (role === "admin") mount = $("adm-sched-mount");
+  if (mount) mount.appendChild(block);
+}
+
+function mountShiftPanels(role) {
+  const sm = $("panel-shift-mgmt");
+  const ap = $("panel-mgr-approvals");
+  const park = $("parked-mgr-panels");
+  if (!sm || !ap) return;
+  if (role === "employee") {
+    if (park) {
+      park.appendChild(sm);
+      park.appendChild(ap);
+    }
+    return;
+  }
+  if (role === "manager") {
+    $("mgr-shift-slot").appendChild(sm);
+    $("mgr-approval-slot").appendChild(ap);
+    return;
+  }
+  if (role === "admin") {
+    $("adm-shift-slot").appendChild(sm);
+    const apTab = $("adm-approval-tab-slot");
+    if (apTab) apTab.appendChild(ap);
+  }
+}
+
+function activateDashTab(dashId, tabId) {
+  document.querySelectorAll(`[data-dash="${dashId}"].dash-tab`).forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === tabId);
+  });
+  document.querySelectorAll(`[data-dash="${dashId}"].dash-pane`).forEach((p) => {
+    show(p, p.dataset.tab === tabId);
+  });
+  if (tabId === "schedule" && state.calendar) {
+    setTimeout(() => state.calendar.updateSize(), 150);
+  }
+  if (dashId === "employee" && tabId === "requests" && state.user?.role === "employee") {
+    refreshEmployeeRequestLog();
+  }
+  if (dashId === "admin" && tabId === "records" && state.user?.role === "admin") {
+    refreshAdminRequestLog();
+  }
+  if (dashId === "admin" && tabId === "approvals" && state.user?.role === "admin") {
+    refreshManagerQueues();
+  }
+  if (dashId === "manager" && tabId === "approvals") {
+    refreshManagerQueues();
+  }
+  if (dashId === "admin" && tabId === "org" && state.user?.role === "admin") {
+    refreshAdminDeptList();
+  }
+}
+
+function applyRoleVisibility() {
+  const role = state.user.role;
+  show($("dash-employee"), role === "employee");
+  show($("dash-manager"), role === "manager");
+  show($("dash-admin"), role === "admin");
+  show($("admin-dash-overview"), role === "admin");
+  show($("admin-cal-ctl"), role === "admin");
+  show($("admin-table-ctl"), role === "admin");
+  show($("bulk-dept-row"), role === "admin");
+  show($("mgr-admin-dept-row"), role === "admin");
+  $("cal-scope-hint").textContent =
+    role === "admin"
+      ? "Choose a department to load its shared calendar."
+      : "You see everyone in your department — shifts and approved leave.";
+  const apprHint = $("approvals-scope-hint");
+  if (apprHint) {
+    apprHint.textContent =
+      role === "admin"
+        ? "Pending leave and shift-change requests from every department. Approve or reject here. Full history is under the Activity tab."
+        : role === "manager"
+          ? "Pending requests from your department only."
+          : "";
+  }
+  updateDashboardBanner();
+  if (role === "employee") activateDashTab("employee", "schedule");
+  if (role === "manager") activateDashTab("manager", "schedule");
+  if (role === "admin") activateDashTab("admin", "org");
+}
+
+document.querySelectorAll(".dash-tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activateDashTab(btn.dataset.dash, btn.dataset.tab);
+  });
+});
+
+async function bootAuthenticated() {
+  const me = await api("/api/auth/me");
+  state.user = me;
+  show($("auth-section"), false);
+  show($("app-section"), true);
+  show($("logout-btn"), true);
+  $("user-slot").innerHTML = `<span class="badge ${me.role}">${me.role}</span> <strong>${escapeHtml(
+    me.full_name,
+  )}</strong> · ${escapeHtml(me.employee_id)} · ${escapeHtml(me.department_name || "")}`;
+
+  await loadMeta();
+  await loadDepartments();
+
+  mountScheduleForRole(state.user.role);
+  mountShiftPanels(state.user.role);
+
+  if (state.user.role === "admin") {
+    const pick = $("cal-dept");
+    pick.onchange = () => {
+      state.calendar.refetchEvents();
+    };
+    $("table-dept").onchange = () => refreshTable();
+    if (!pick.value && state.departments[0]) pick.value = state.departments[0].id;
+    if (!$("table-dept").value && state.departments[0]) $("table-dept").value = state.departments[0].id;
+    const mgrDept = $("mgr-roster-dept");
+    if (mgrDept && state.departments[0] && !mgrDept.value) mgrDept.value = state.departments[0].id;
+    if (mgrDept) {
+      mgrDept.onchange = () => {
+        refreshManagerRoster();
+      };
+    }
+  }
+
+  applyRoleVisibility();
+
+  if ($("mgr-assign-date") && !$("mgr-assign-date").value) {
+    $("mgr-assign-date").value = new Date().toISOString().slice(0, 10);
+  }
+  if (state.user.role === "manager" && $("mgr-roster-hint")) {
+    $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
+  }
+  setDefaultTableRange();
+  initCalendar();
+  await refreshTable();
+  await refreshManagerRoster();
+  await refreshManagerQueues();
+  await refreshAdminUsers();
+  await refreshEmployeeRequestLog();
+  await refreshAdminDeptList();
+  await refreshAdminRequestLog();
+
+  $("table-refresh").onclick = () => refreshTable();
+
+  const auf = $("admin-user-dept-filter");
+  if (auf) auf.onchange = () => refreshAdminUsers();
+  const ard = $("admin-records-dept");
+  if (ard) ard.onchange = () => refreshAdminRequestLog();
+
+  if (!state.adminShortcutsWired && state.user.role === "admin") {
+    state.adminShortcutsWired = true;
+    $("admin-go-schedule")?.addEventListener("click", () => activateDashTab("admin", "schedule"));
+    $("admin-go-people")?.addEventListener("click", () => activateDashTab("admin", "people"));
+    $("admin-go-approvals")?.addEventListener("click", () => activateDashTab("admin", "approvals"));
+    $("admin-go-records")?.addEventListener("click", () => activateDashTab("admin", "records"));
+    $("admin-go-shifts")?.addEventListener("click", () => activateDashTab("admin", "shifts"));
+  }
+}
+
+async function tryRestoreSession() {
+  if (!state.token) return;
+  try {
+    await bootAuthenticated();
+  } catch {
+    logout();
+  }
+}
+
+/* Auth UI */
+$("tab-login").addEventListener("click", () => {
+  $("tab-login").classList.add("active");
+  $("tab-register").classList.remove("active");
+  show($("panel-login"), true);
+  show($("panel-register"), false);
+});
+$("tab-register").addEventListener("click", () => {
+  $("tab-register").classList.add("active");
+  $("tab-login").classList.remove("active");
+  show($("panel-login"), false);
+  show($("panel-register"), true);
+  loadDepartments().catch(() => {});
+  loadRegistrationMeta().catch(() => {});
+});
+
+document.querySelectorAll("#reg-role-tabs button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (btn.disabled) return;
+    regState.role = btn.dataset.role;
+    document.querySelectorAll("#reg-role-tabs button").forEach((b) => {
+      b.classList.toggle("active", b === btn);
+    });
+    updateRegistrationFormUi();
+  });
+});
+
+const regCodeToggle = $("reg-code-toggle");
+const regCodeInput = $("reg-code");
+if (regCodeToggle && regCodeInput) {
+  regCodeToggle.addEventListener("click", () => {
+    const isPwd = regCodeInput.type === "password";
+    regCodeInput.type = isPwd ? "text" : "password";
+    regCodeToggle.textContent = isPwd ? "Hide" : "Show";
+  });
+}
+
+$("login-btn").addEventListener("click", async () => {
+  $("login-err").classList.add("hidden");
+  try {
+    const body = {
+      employee_id: $("login-emp").value.trim(),
+      password: $("login-pass").value,
+    };
+    const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(body) });
+    setToken(data.access_token, data.user);
+    await bootAuthenticated();
+  } catch (e) {
+    $("login-err").textContent = e.message;
+    $("login-err").classList.remove("hidden");
+  }
+});
+
+$("register-btn").addEventListener("click", async () => {
+  $("reg-err").classList.add("hidden");
+  try {
+    await loadRegistrationMeta({ downgradeRole: false });
+
+    const deptId = $("reg-dept").value;
+    const deptName = departmentNameById(deptId);
+    if (!deptName) throw new Error("Select a department.");
+    if (regState.role === "manager" && !regState.meta.manager_registration_enabled) {
+      throw new Error(
+        "Manager registration is not enabled on this server. Set ROTASHIFT_REGISTER_CODE_MANAGER in .env or environment and restart.",
+      );
+    }
+    if (regState.role === "admin" && !regState.meta.admin_registration_enabled) {
+      throw new Error(
+        "Administrator registration is not enabled on this server. Set ROTASHIFT_REGISTER_CODE_ADMIN in .env or environment and restart.",
+      );
+    }
+    const body = {
+      employee_id: $("reg-emp").value.trim(),
+      password: $("reg-pass").value,
+      full_name: $("reg-name").value.trim(),
+      department_name: deptName,
+      role: regState.role,
+    };
+    if (regState.role === "manager" || regState.role === "admin") {
+      const code = $("reg-code")?.value?.trim() || "";
+      if (!code) {
+        throw new Error("Enter your organisation invite code in the highlighted section above.");
+      }
+      body.registration_code = code;
+    }
+    const data = await api("/api/auth/register", { method: "POST", body: JSON.stringify(body) });
+    setToken(data.access_token, data.user);
+    await bootAuthenticated();
+  } catch (e) {
+    $("reg-err").textContent = e.message;
+    $("reg-err").classList.remove("hidden");
+  }
+});
+
+$("logout-btn").addEventListener("click", () => logout());
+
+/* Employee */
+$("leave-submit").addEventListener("click", async () => {
+  try {
+    if (!$("leave-start").value || !$("leave-end").value) {
+      showEmployeeRequestNotice("Please choose start and end dates for leave.", "error");
+      return;
+    }
+    const res = await api("/api/requests/leave", {
+      method: "POST",
+      body: JSON.stringify({
+        start_date: $("leave-start").value,
+        end_date: $("leave-end").value,
+        reason: $("leave-reason").value,
+      }),
+    });
+    showEmployeeRequestNotice(
+      `Leave request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — your manager will review it. You can track it in the log below.`,
+      "success",
+    );
+    $("leave-reason").value = "";
+    await refreshEmployeeRequestLog();
+    await refreshManagerQueues();
+  } catch (e) {
+    showEmployeeRequestNotice(e.message, "error");
+  }
+});
+
+$("chg-submit").addEventListener("click", async () => {
+  try {
+    if (!$("chg-date").value) {
+      showEmployeeRequestNotice("Please choose the date for the shift change.", "error");
+      return;
+    }
+    const res = await api("/api/requests/shift-change", {
+      method: "POST",
+      body: JSON.stringify({
+        date: $("chg-date").value,
+        from_shift: $("chg-from").value,
+        to_shift: $("chg-to").value,
+        reason: $("chg-reason").value,
+      }),
+    });
+    showEmployeeRequestNotice(
+      `Shift change request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — your manager will review it. You can track it in the log below.`,
+      "success",
+    );
+    $("chg-reason").value = "";
+    await refreshEmployeeRequestLog();
+    await refreshManagerQueues();
+  } catch (e) {
+    showEmployeeRequestNotice(e.message, "error");
+  }
+});
+
+$("emp-log-refresh").addEventListener("click", () => {
+  refreshEmployeeRequestLog();
+});
+
+$("mgr-roster-refresh").addEventListener("click", () => {
+  refreshManagerRoster().catch((e) => {
+    $("mgr-assign-msg").textContent = e.message;
+  });
+});
+
+$("mgr-assign-submit").addEventListener("click", async () => {
+  $("mgr-assign-msg").textContent = "";
+  const emp = $("mgr-assign-member").value.trim();
+  const date = $("mgr-assign-date").value;
+  const shift = $("mgr-assign-shift").value;
+  if (!emp) {
+    $("mgr-assign-msg").textContent = "Select a team member.";
+    return;
+  }
+  if (!date) {
+    $("mgr-assign-msg").textContent = "Pick a date.";
+    return;
+  }
+  const payload = {
+    assignments: [{ employee_id: emp, date, shift_code: shift }],
+  };
+  if (state.user.role === "admin") {
+    payload.department_id = $("mgr-roster-dept").value;
+    if (!payload.department_id) {
+      $("mgr-assign-msg").textContent = "Choose a department first.";
+      return;
+    }
+  }
+  $("mgr-assign-msg").textContent = "Saving…";
+  try {
+    const res = await api("/api/shifts/bulk", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    $("mgr-assign-msg").textContent = `Saved. (${res.upserted || 0} assignment(s))`;
+    if (state.calendar) state.calendar.refetchEvents();
+    await refreshTable();
+  } catch (e) {
+    $("mgr-assign-msg").textContent = e.message;
+  }
+});
+
+/* Bulk */
+$("bulk-submit").addEventListener("click", async () => {
+  const raw = $("bulk-lines").value.trim();
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const assignments = [];
+  const errs = [];
+  lines.forEach((line, i) => {
+    const parts = line.split(",").map((x) => x.trim());
+    if (parts.length < 3) {
+      errs.push(`Line ${i + 1}: need EMPLOYEE_ID,YYYY-MM-DD,CODE`);
+      return;
+    }
+    assignments.push({
+      employee_id: parts[0],
+      date: parts[1],
+      shift_code: parts[2].toUpperCase(),
+    });
+  });
+  if (errs.length) {
+    $("bulk-msg").textContent = errs.join(" ");
+    return;
+  }
+  const payload = { assignments };
+  if (state.user.role === "admin") {
+    payload.department_id = $("bulk-dept").value;
+    if (!payload.department_id) {
+      $("bulk-msg").textContent = "Select department for bulk assignment.";
+      return;
+    }
+  }
+  $("bulk-msg").textContent = "Saving…";
+  const res = await api("/api/shifts/bulk", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  $("bulk-msg").textContent = `Saved ${res.upserted} rows. ${(res.errors || []).length ? JSON.stringify(res.errors) : ""}`;
+  $("bulk-lines").value = "";
+  if (state.calendar) state.calendar.refetchEvents();
+  await refreshTable();
+});
+
+/* Admin — create user */
+$("admin-add-submit").addEventListener("click", async () => {
+  const msg = $("admin-add-msg");
+  msg.textContent = "";
+  try {
+    const deptId = $("admin-add-dept").value;
+    if (!deptId) throw new Error("Select a department.");
+    await api("/api/users", {
+      method: "POST",
+      body: JSON.stringify({
+        employee_id: $("admin-add-emp").value.trim(),
+        full_name: $("admin-add-name").value.trim(),
+        password: $("admin-add-pass").value,
+        department_id: deptId,
+        role: $("admin-add-role").value,
+      }),
+    });
+    msg.textContent = "User created. They can log in with their Employee ID and password.";
+    $("admin-add-emp").value = "";
+    $("admin-add-name").value = "";
+    $("admin-add-pass").value = "";
+    await refreshAdminUsers();
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+});
+
+/* Admin */
+$("create-dept-btn").addEventListener("click", async () => {
+  const name = $("new-dept-name").value.trim();
+  if (!name) return;
+  await api("/api/departments", { method: "POST", body: JSON.stringify({ name }) });
+  $("new-dept-name").value = "";
+  $("dept-msg").textContent = "Department created.";
+  await loadDepartments();
+  await refreshAdminDeptList();
+});
+
+$("export-btn").addEventListener("click", async () => {
+  const data = await api("/api/admin/export");
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `rotashift-export-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$("admin-records-refresh")?.addEventListener("click", () => refreshAdminRequestLog());
+
+tryRestoreSession();
+if (!state.token) {
+  loadDepartments().catch(() => {});
+  loadRegistrationMeta().catch(() => {});
+}

@@ -1,0 +1,641 @@
+:root {
+  --bg: #0f172a;
+  --panel: #1e293b;
+  --muted: #94a3b8;
+  --text: #f8fafc;
+  --accent: #2563eb;
+  --accent2: #22c55e;
+  --danger: #ef4444;
+  --border: #334155;
+  --a: #3b82f6;
+  --b: #a855f7;
+  --c: #f97316;
+  --g: #14b8a6;
+  font-family: system-ui, "Segoe UI", Roboto, Ubuntu, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(1200px 600px at 10% -10%, #1e3a8a33, transparent),
+    var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 900px) {
+  .grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Phones/tablets in landscape are often 700–920px wide — show rota + calendar side by side. */
+@media (orientation: landscape) and (min-width: 640px) {
+  .grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0b1222;
+  color: var(--text);
+}
+
+textarea {
+  min-height: 120px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.row > * {
+  flex: 1 1 160px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn.secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn.danger {
+  background: var(--danger);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tabs button {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: #0b1222;
+  color: var(--muted);
+  padding: 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: #172554;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+
+.error {
+  color: #fecaca;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0 1rem;
+  font-size: 0.85rem;
+}
+
+.legend.legend-after-dash {
+  margin-top: 0.75rem;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.dot.a {
+  background: var(--a);
+}
+.dot.b {
+  background: var(--b);
+}
+.dot.c {
+  background: var(--c);
+}
+.dot.g {
+  background: var(--g);
+}
+
+#calendar {
+  min-height: 520px;
+}
+
+.table-scroll {
+  overflow: auto;
+  max-height: min(70vh, 640px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+table.matrix {
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  min-width: 100%;
+}
+
+table.matrix th,
+table.matrix td {
+  border: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  white-space: nowrap;
+}
+
+table.matrix th {
+  position: sticky;
+  top: 0;
+  background: #111827;
+  z-index: 2;
+}
+
+table.matrix td.sticky {
+  position: sticky;
+  left: 0;
+  background: #0b1222;
+  z-index: 1;
+  font-weight: 600;
+}
+
+.cell-a {
+  background: rgba(59, 130, 246, 0.18);
+}
+.cell-b {
+  background: rgba(168, 85, 247, 0.18);
+}
+.cell-c {
+  background: rgba(249, 115, 22, 0.18);
+}
+.cell-g {
+  background: rgba(20, 184, 166, 0.18);
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+  .landscape-compact .card {
+    padding: 0.65rem;
+  }
+  #calendar {
+    min-height: 380px;
+  }
+}
+
+.fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: #111827;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1rem !important;
+}
+
+.fc-theme-standard td,
+.fc-theme-standard th {
+  font-size: 0.85rem;
+}
+
+.fc-event-title {
+  font-weight: 600;
+}
+
+.shift-a {
+  border-left: 3px solid var(--a) !important;
+}
+.shift-b {
+  border-left: 3px solid var(--b) !important;
+}
+.shift-c {
+  border-left: 3px solid var(--c) !important;
+}
+.shift-g {
+  border-left: 3px solid var(--g) !important;
+}
+
+.list-requests {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.req-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: #0b1222;
+}
+
+.req-item.pending {
+  border-color: #854d0e;
+}
+
+.req-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #334155;
+}
+
+.badge.admin {
+  background: #7c3aed;
+}
+.badge.manager {
+  background: #0369a1;
+}
+.badge.employee {
+  background: #15803d;
+}
+
+.install-banner {
+  margin: 0.75rem 0;
+  padding: 0.65rem 0.85rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dashboard-banner {
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+}
+
+.dashboard-banner h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+}
+
+.dashboard-banner.employee {
+  background: linear-gradient(135deg, #14532d33, #0f172a);
+  border-color: #166534;
+}
+
+.dashboard-banner.manager {
+  background: linear-gradient(135deg, #1e3a5f66, #0f172a);
+  border-color: #0369a1;
+}
+
+.dashboard-banner.admin {
+  background: linear-gradient(135deg, #4c1d9566, #0f172a);
+  border-color: #7c3aed;
+}
+
+.reg-role-tabs {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.reg-role-tabs button {
+  flex: 1;
+  min-width: 100px;
+  border: 1px solid var(--border);
+  background: #0b1222;
+  color: var(--muted);
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.reg-role-tabs button.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: #172554;
+}
+
+.reg-role-tabs button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.reg-invite-panel {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.12), rgba(15, 23, 42, 0.95));
+}
+
+.reg-invite-panel.manager-panel {
+  border-color: #0369a1;
+  background: linear-gradient(145deg, rgba(3, 105, 161, 0.2), rgba(15, 23, 42, 0.95));
+}
+
+.reg-invite-panel.admin-panel {
+  border-color: #7c3aed;
+  background: linear-gradient(145deg, rgba(124, 58, 237, 0.18), rgba(15, 23, 42, 0.95));
+}
+
+.reg-invite-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.reg-invite-lead {
+  margin: 0 0 0.75rem;
+}
+
+.reg-code-main-label {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.35rem;
+}
+
+.reg-code-input-wrap {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+  margin-bottom: 0.35rem;
+}
+
+.reg-code-input-wrap input {
+  flex: 1;
+  min-width: 0;
+}
+
+.reg-code-toggle {
+  flex: 0 0 auto;
+  padding-left: 0.85rem;
+  padding-right: 0.85rem;
+}
+
+.reg-invite-foot {
+  margin: 0.5rem 0 0;
+}
+
+.dash-shell {
+  margin-top: 0.5rem;
+}
+
+.dash-nav-admin {
+  border-bottom: 2px solid rgba(37, 99, 235, 0.45);
+  padding-bottom: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.dash-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  padding: 0.35rem;
+  background: #0b1222;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.dash-nav .dash-tab {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: #0f172a;
+  color: var(--muted);
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.admin-dash-overview {
+  margin-bottom: 1rem;
+}
+
+.admin-overview-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.admin-dash-shortcuts {
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.admin-dash-shortcuts .btn {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
+@media (min-width: 720px) {
+  .dash-nav {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}
+
+.dash-nav .dash-tab:hover {
+  color: var(--text);
+  border-color: #475569;
+}
+
+.dash-nav .dash-tab.active {
+  color: var(--text);
+  background: #1e3a8a;
+  border-color: var(--accent);
+}
+
+.notice-banner {
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+}
+
+.notice-banner.success {
+  background: rgba(22, 163, 74, 0.2);
+  border-color: #166534;
+  color: #bbf7d0;
+}
+
+.notice-banner.error {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #b91c1c;
+  color: #fecaca;
+}
+
+.emp-request-log {
+  margin-top: 0.75rem;
+}
+
+.emp-request-log .log-table {
+  width: 100%;
+  font-size: 0.85rem;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.emp-request-log .log-table th,
+.emp-request-log .log-table td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.emp-request-log .log-table th {
+  background: #111827;
+}
+
+.badge.status-pending {
+  background: #854d0e;
+  color: #fef9c3;
+}
+.badge.status-approved {
+  background: #166534;
+  color: #dcfce7;
+}
+.badge.status-rejected {
+  background: #991b1b;
+  color: #fee2e2;
+}
+
+.roster-table-wrap {
+  max-height: 260px;
+  margin-bottom: 0.65rem;
+}
+
+.roster-table {
+  font-size: 0.85rem;
+}
+
+.mgr-section-rule {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.25rem 0;
+}
+
+.mgr-assign-row {
+  align-items: flex-end;
+}

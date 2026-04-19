@@ -1,0 +1,76 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.cors import CORSMiddleware
+
+from app.config import CORS_ORIGINS_RAW, DEFAULT_PLACEHOLDER_SECRET, ROTASHIFT_ENV, SECRET_KEY
+from app.routers import admin_api, auth_api, departments_api, health_api, meta_api, requests_api, shifts_api, users_api
+from app.seed import ensure_indexes_and_seed
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if ROTASHIFT_ENV == "production" and SECRET_KEY == DEFAULT_PLACEHOLDER_SECRET:
+        raise RuntimeError(
+            "ROTASHIFT_SECRET_KEY must be set to a strong random value when ROTASHIFT_ENV=production "
+            "(e.g. openssl rand -hex 32)."
+        )
+    try:
+        await ensure_indexes_and_seed()
+    except Exception as e:
+        print("\n" + "=" * 60)
+        print("RotaShift: MongoDB connection failed — the app cannot start.")
+        print("Fix: Start MongoDB locally, or set MONGO_URI to your Atlas/cluster URL.")
+        print(f"Details: {type(e).__name__}: {e}")
+        print("=" * 60 + "\n")
+        raise
+    yield
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+app = FastAPI(title="RotaShift", lifespan=lifespan)
+
+_origins = [o.strip() for o in CORS_ORIGINS_RAW.split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+app.include_router(health_api.router)
+app.include_router(auth_api.router)
+app.include_router(departments_api.router)
+app.include_router(users_api.router)
+app.include_router(shifts_api.router)
+app.include_router(requests_api.router)
+app.include_router(meta_api.router)
+app.include_router(admin_api.router)
+
+app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+
+
+@app.get("/manifest.json")
+def manifest():
+    return FileResponse(ROOT / "static" / "manifest.json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(ROOT / "static" / "sw.js", media_type="application/javascript")
+
+
+@app.get("/")
+def index():
+    return FileResponse(ROOT / "static" / "index.html")
+
+
+@app.get("/app")
+def app_page():
+    return FileResponse(ROOT / "static" / "index.html")
