@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 from fastapi import APIRouter
 
@@ -9,7 +10,7 @@ from app.seed import DEFAULT_DEPARTMENTS
 router = APIRouter(prefix="/api/meta", tags=["meta"])
 
 
-def _cluster_host_from_uri(uri: str) -> str | None:
+def _cluster_host_from_uri(uri: str) -> Optional[str]:
     """Hostname from MONGO_URI (no password) — compare with Atlas cluster to verify Render points here."""
     if not uri:
         return None
@@ -30,19 +31,28 @@ def seed_department_names():
 @router.get("/registration")
 async def registration_policy():
     """Team members never need a code; manager/admin signup is enabled when server codes are set (codes are never exposed)."""
-    db = get_db()
-    user_count = await db.users.count_documents({})
-    dept_count = await db.departments.count_documents({})
-    return {
+    user_count: Optional[int] = None
+    dept_count: Optional[int] = None
+    counts_error: Optional[str] = None
+    try:
+        db = get_db()
+        user_count = await db.users.count_documents({})
+        dept_count = await db.departments.count_documents({})
+    except Exception as e:
+        # Never return HTTP 500 here — the SPA needs this JSON even if Mongo is slow or counts are denied.
+        counts_error = f"{type(e).__name__}: {e}"
+        print(f"RotaShift /api/meta/registration counts skipped: {counts_error}")
+
+    out = {
         "manager_registration_enabled": bool(REGISTER_CODE_MANAGER),
         "admin_registration_enabled": bool(REGISTER_CODE_ADMIN),
-        # Lets the sign-up form list departments even if GET /api/departments fails (cold start, stale token, etc.).
         "default_department_names": list(DEFAULT_DEPARTMENTS),
-        # Atlas/Compass: open this database (not necessarily the name in your MONGO_URI path).
         "mongo_database": DB_NAME,
         "mongo_users_collection": "users",
-        # Live counts from the same DB the app writes to — if these stay 0 after signup, Render is not using this cluster.
+        "mongo_cluster_host": _cluster_host_from_uri(MONGO_URI),
         "user_count": user_count,
         "department_count": dept_count,
-        "mongo_cluster_host": _cluster_host_from_uri(MONGO_URI),
     }
+    if counts_error:
+        out["counts_error"] = counts_error
+    return out
