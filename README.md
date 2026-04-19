@@ -65,3 +65,48 @@ This writes **`rotashift-team-test.zip`** in the project root. Share that file p
 ### Production / cloud
 
 Use your own MongoDB (e.g. Atlas), set strong `ROTASHIFT_SECRET_KEY`, and deploy with the included `Dockerfile` or `render.yaml` as appropriate.
+
+---
+
+## Publish a public URL (so anyone can register and try)
+
+Render’s **free** web tier is enough for demos (the service **sleeps after idle**; the first visit after sleep can take ~30–60s). You still need **MongoDB in the cloud** — the easiest free option is **[MongoDB Atlas](https://www.mongodb.com/cloud/atlas)**.
+
+### 1) MongoDB Atlas
+
+1. Sign up at [Atlas](https://www.mongodb.com/cloud/atlas) → create a **free (M0)** cluster.
+2. **Database Access** → add a database user (username + password).  
+3. **Network Access** → **Add IP Address** → **Allow access from anywhere** (`0.0.0.0/0`) so Render can connect (required on free Render; tighten later if you move to paid static IPs).
+4. **Database** → **Connect** → **Drivers** → copy the **SRV connection string** (`mongodb+srv://...`). Replace `<password>` with your user’s password (URL‑encode special characters in the password if needed).
+
+### 2) Render (connect this GitHub repo)
+
+1. Sign up at [Render](https://render.com) (GitHub login is fine).
+2. **New** → **Blueprint** → connect **your GitHub repo** (this project) → apply the repo’s **`render.yaml`**.  
+   *Or:* **New** → **Web Service** → same repo → **Runtime: Python 3**, build `pip install -r requirements.txt`, start `uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'`, health check path **`/health/live`**.
+3. Open the new **Web Service** → **Environment** and set:
+
+| Variable | Example / notes |
+|----------|------------------|
+| `MONGO_URI` | Your Atlas `mongodb+srv://...` string (mark **Secret**). |
+| `ROTASHIFT_SECRET_KEY` | Long random string, e.g. run locally: `openssl rand -hex 32` ( **Secret** ). Required because `ROTASHIFT_ENV` is `production` in `render.yaml`. |
+| `ROTASHIFT_REGISTER_CODE_MANAGER` | Any secret phrase testers need for **manager** self‑registration ( **Secret** ). |
+| `ROTASHIFT_REGISTER_CODE_ADMIN` | Any secret phrase for **admin** self‑registration ( **Secret** ). |
+
+4. **Save** → wait for **Deploy** to succeed → open the URL Render shows (e.g. `https://rotashift.onrender.com`).
+
+**Share with testers:** the Render URL, the **manager** and **admin** invite codes you chose, and that **employees** can use **Register** with role **employee**, no code, and a department like **`rota`** (seeded on first app start).
+
+**Optional env (same Environment page):**
+
+- `ROTASHIFT_ADMIN_EMPLOYEE_ID` + `ROTASHIFT_ADMIN_PASSWORD` — bootstrap or promote admin users (see `.env.example`).
+- `CORS_ORIGINS` — only if the UI is hosted on a **different** domain than the API; same Render hostname + default static files **do not** need CORS changes.
+
+### 3) If the deploy fails
+
+- Logs in Render → often **`MONGO_URI`** wrong or Atlas firewall blocking.
+- Logs mentioning **secret key** → set `ROTASHIFT_SECRET_KEY` to a non‑placeholder value.
+
+### Other hosts
+
+The **`Dockerfile`** works on any container host (Fly.io, Railway, Google Cloud Run, etc.) with `PORT` set and the same environment variables as above.
