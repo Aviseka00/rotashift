@@ -118,22 +118,26 @@
               <h2>Your requests</h2>
               <div id="emp-request-notice" class="notice-banner hidden" role="status" aria-live="polite"></div>
 
-              <h3 style="font-size: 1rem">Leave</h3>
+              <h3 id="leave-request-section" style="font-size: 1rem">Request leave</h3>
+              <p class="hint">
+                Same approval flow as a shift change: your manager reviews it, then it appears on the team calendar when
+                approved. Full history is listed below.
+              </p>
               <div class="row">
                 <div>
-                  <label for="leave-start">Start</label>
+                  <label for="leave-start">Start date</label>
                   <input type="date" id="leave-start" />
                 </div>
                 <div>
-                  <label for="leave-end">End</label>
+                  <label for="leave-end">End date</label>
                   <input type="date" id="leave-end" />
                 </div>
               </div>
-              <label for="leave-reason">Reason</label>
-              <textarea id="leave-reason"></textarea>
+              <label for="leave-reason">Reason (optional)</label>
+              <textarea id="leave-reason" placeholder="e.g. annual leave, training day…"></textarea>
               <button type="button" id="leave-submit" class="btn">Submit leave request</button>
 
-              <h3 style="margin-top: 1rem; font-size: 1rem">Shift change</h3>
+              <h3 id="shift-change-section" style="margin-top: 1rem; font-size: 1rem">Request shift change</h3>
               <div class="row">
                 <div>
                   <label for="chg-date">Date</label>
@@ -150,7 +154,7 @@
               </div>
               <label for="chg-reason">Reason</label>
               <textarea id="chg-reason"></textarea>
-              <button type="button" id="chg-submit" class="btn">Submit shift change</button>
+              <button type="button" id="chg-submit" class="btn">Submit shift change request</button>
 
               <hr class="mgr-section-rule" />
 
@@ -317,7 +321,17 @@
 
         <!-- Moved between dashboards: calendar + table -->
         <div id="schedule-block">
-          <div class="card grid grid-2 landscape-compact">
+          <div id="emp-schedule-quick" class="card emp-schedule-quick hidden" aria-label="Quick requests">
+            <h2 class="emp-schedule-quick-title">Need time off or a different shift?</h2>
+            <p class="hint emp-schedule-quick-lead">
+              Submit a request for your manager to approve. You can track status under <strong>My requests</strong>.
+            </p>
+            <div class="emp-schedule-quick-actions">
+              <button type="button" class="btn" id="emp-go-leave">Request leave</button>
+              <button type="button" class="btn secondary" id="emp-go-shift-change">Request shift change</button>
+            </div>
+          </div>
+          <div class="card grid schedule-grid landscape-compact">
             <div>
               <h2>Department calendar</h2>
               <div id="admin-cal-ctl" class="row hidden">
@@ -330,10 +344,16 @@
               <div id="calendar"></div>
             </div>
             <div>
-              <h2>Landscape table view</h2>
-              <p class="hint">
-                On a phone or tablet, rotate to landscape — calendar and staff × dates grid appear side by side when the
-                screen is wide enough. Managers and administrators can tap a shift cell to change it.
+              <h2>Shift roster (table &amp; mobile view)</h2>
+              <p class="hint" id="roster-view-hint">
+                <span class="roster-hint-wide"
+                  >Wide screen: staff in rows, dates in columns — scroll horizontally for more days. Managers and
+                  administrators can tap a cell to change a shift.</span
+                >
+                <span class="roster-hint-narrow"
+                  >Phone or narrow window: each person appears as a card with dates listed vertically — easy to scroll and
+                  read. Swipe the wide table below if you prefer the classic grid.</span
+                >
               </p>
               <div class="row">
                 <div>
@@ -354,7 +374,11 @@
                   <select id="table-dept"></select>
                 </div>
               </div>
-              <div class="table-scroll">
+              <p class="hint matrix-scroll-hint roster-scroll-hint" aria-hidden="true">
+                Tip: swipe left/right on the grid to see all dates.
+              </p>
+              <div id="matrix-cards" class="matrix-mobile-cards" aria-label="Roster by team member"></div>
+              <div class="table-scroll matrix-wrap-desktop">
                 <table class="matrix" id="matrix-table">
                   <thead id="matrix-head"></thead>
                   <tbody id="matrix-body"></tbody>

@@ -69,21 +69,147 @@ a {
   }
 }
 
-/* Phones/tablets in landscape are often 700–920px wide — show rota + calendar side by side. */
-@media (orientation: landscape) and (min-width: 640px) {
-  .grid-2 {
+/* Calendar + roster: only side-by-side when there is enough width *and* height (avoids cramped phone landscape). */
+.schedule-grid {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 960px) and (min-height: 560px) {
+  .schedule-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
 
 /* Grid children default to min-width:auto — wide tables stretch past the dark card; clip scroll inside. */
-#schedule-block .landscape-compact.grid-2 > * {
+#schedule-block .landscape-compact.schedule-grid > * {
   min-width: 0;
 }
 
 #schedule-block .landscape-compact .table-scroll {
   width: 100%;
   max-width: 100%;
+}
+
+.roster-hint-narrow {
+  display: none;
+}
+
+@media (max-width: 920px), (max-height: 520px) {
+  .roster-hint-wide {
+    display: none;
+  }
+  .roster-hint-narrow {
+    display: inline;
+  }
+}
+
+.matrix-scroll-hint {
+  margin: 0.35rem 0 0.5rem;
+}
+
+.matrix-mobile-cards {
+  display: none;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 920px), (max-height: 520px) {
+  .matrix-mobile-cards {
+    display: flex;
+  }
+}
+
+@media (min-width: 921px) and (min-height: 521px) {
+  .matrix-mobile-cards {
+    display: none !important;
+  }
+}
+
+@media (max-width: 920px), (max-height: 520px) {
+  .matrix-wrap-desktop {
+    max-height: min(48vh, 360px);
+  }
+}
+
+@media (max-width: 560px), (max-height: 460px) {
+  .matrix-wrap-desktop {
+    display: none;
+  }
+  .matrix-scroll-hint {
+    display: none !important;
+  }
+}
+
+.roster-person-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: #0b1222;
+}
+
+.roster-person-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+.roster-person-name {
+  font-size: 0.95rem;
+}
+
+.roster-person-id {
+  font-size: 0.7rem;
+}
+
+table.roster-mobile-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+table.roster-mobile-table td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.5rem;
+  vertical-align: middle;
+}
+
+table.roster-mobile-table td.roster-mobile-date {
+  color: var(--muted);
+  white-space: nowrap;
+  width: 38%;
+  max-width: 11rem;
+}
+
+table.roster-mobile-table td.matrix-data-cell {
+  text-align: center;
+  font-weight: 600;
+}
+
+.emp-schedule-quick {
+  margin-bottom: 1rem;
+}
+
+.emp-schedule-quick-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.emp-schedule-quick-lead {
+  margin: 0 0 0.75rem;
+}
+
+.emp-schedule-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.emp-schedule-quick-actions .btn {
+  flex: 1 1 auto;
+  min-width: 140px;
 }
 
 .card {
@@ -287,6 +413,9 @@ table.matrix td.sticky {
   background: #0b1222;
   z-index: 1;
   font-weight: 600;
+  max-width: min(42vw, 14rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 table.matrix td.matrix-cell-editable {
@@ -635,11 +764,16 @@ table.matrix select.matrix-cell-select {
   margin-top: 0.75rem;
 }
 
+.emp-request-log .emp-log-table-wrap {
+  max-height: min(58vh, 520px);
+  margin-top: 0.5rem;
+}
+
 .emp-request-log .log-table {
   width: 100%;
   font-size: 0.85rem;
   border-collapse: collapse;
-  margin-top: 0.5rem;
+  margin-top: 0;
 }
 
 .emp-request-log .log-table th,
@@ -648,6 +782,8 @@ table.matrix select.matrix-cell-select {
   padding: 0.4rem 0.5rem;
   text-align: left;
   vertical-align: top;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .emp-request-log .log-table th {

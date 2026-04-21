@@ -336,7 +336,7 @@ function updateDashboardBanner() {
         : "Administrator dashboard";
   sub.textContent =
     role === "employee"
-      ? "Schedule shows your department rota. My requests: submit leave/shift changes, see confirmations, and track approval status in the request log."
+      ? "Schedule shows your department rota. Use Request leave or Request shift change (on Schedule or under My requests), then track approval in your request log."
       : role === "manager"
         ? "Use the tabs: Schedule · Manage shifts · Approvals."
         : "Use the tabs below: Departments (for registration) · People · Approvals · Activity (full request history) · Schedule · Manage shifts.";
@@ -414,6 +414,7 @@ function matrixShiftCodes() {
 function paintMatrixDataCell(td, code, editable) {
   td.replaceChildren();
   td.className = "";
+  td.classList.add("matrix-data-cell");
   const c = (code || "").trim().toUpperCase();
   td.dataset.shiftCode = c;
   if (c) {
@@ -429,7 +430,7 @@ function paintMatrixDataCell(td, code, editable) {
 }
 
 function restoreOpenMatrixCellEditor() {
-  const sel = document.querySelector("#matrix-body select.matrix-cell-select");
+  const sel = document.querySelector("#matrix-body select.matrix-cell-select, #matrix-cards select.matrix-cell-select");
   if (!sel) return;
   const td = sel.closest("td");
   if (td) paintMatrixDataCell(td, td.dataset.shiftCode, true);
@@ -497,19 +498,92 @@ function openMatrixCellEditor(td) {
   });
 }
 
+function handleMatrixDataCellClick(ev) {
+  const role = state.user?.role;
+  if (!role || !["manager", "admin"].includes(role)) return;
+  const td = ev.target.closest("td.matrix-data-cell");
+  if (!td || !td.dataset.date || !td.dataset.employeeId) return;
+  const inMain = $("matrix-body")?.contains(td);
+  const inCards = $("matrix-cards")?.contains(td);
+  if (!inMain && !inCards) return;
+  if (td.classList.contains("sticky")) return;
+  if (td.querySelector("select.matrix-cell-select")) return;
+  if (ev.target.closest("select")) return;
+  openMatrixCellEditor(td);
+}
+
 function initMatrixTableCellEditor() {
   const tbody = $("matrix-body");
-  if (!tbody || tbody.dataset.editDelegation === "1") return;
-  tbody.dataset.editDelegation = "1";
-  tbody.addEventListener("click", (ev) => {
-    const role = state.user?.role;
-    if (!role || !["manager", "admin"].includes(role)) return;
-    const td = ev.target.closest("td");
-    if (!td || !tbody.contains(td) || td.classList.contains("sticky")) return;
-    if (!td.dataset.date || !td.dataset.employeeId) return;
-    if (td.querySelector("select.matrix-cell-select")) return;
-    if (ev.target.closest("select")) return;
-    openMatrixCellEditor(td);
+  if (tbody && tbody.dataset.editDelegation !== "1") {
+    tbody.dataset.editDelegation = "1";
+    tbody.addEventListener("click", handleMatrixDataCellClick);
+  }
+  const cards = $("matrix-cards");
+  if (cards && cards.dataset.editDelegation !== "1") {
+    cards.dataset.editDelegation = "1";
+    cards.addEventListener("click", handleMatrixDataCellClick);
+  }
+}
+
+function formatMatrixDayLabel(isoDate) {
+  if (!isoDate || isoDate.length < 10) return isoDate || "";
+  try {
+    const d = new Date(`${isoDate.slice(0, 10)}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return isoDate.slice(5);
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  } catch {
+    return isoDate.slice(5);
+  }
+}
+
+function buildMatrixMobileCards(data) {
+  const root = $("matrix-cards");
+  if (!root) return;
+  root.innerHTML = "";
+  const dates = data.dates || [];
+  const rows = data.rows || [];
+  if (!dates.length) {
+    root.innerHTML = "";
+    return;
+  }
+  if (!rows.length) {
+    root.innerHTML = '<p class="hint">No team members in this roster range.</p>';
+    return;
+  }
+  const canEditMatrix = ["manager", "admin"].includes(state.user?.role);
+  rows.forEach((row) => {
+    const article = document.createElement("article");
+    article.className = "roster-person-card";
+    const head = document.createElement("header");
+    head.className = "roster-person-card-head";
+    const nameEl = document.createElement("strong");
+    nameEl.className = "roster-person-name";
+    nameEl.textContent = row.full_name || "";
+    const idSpan = document.createElement("span");
+    idSpan.className = "badge roster-person-id";
+    idSpan.textContent = row.employee_id || "";
+    head.appendChild(nameEl);
+    head.appendChild(idSpan);
+    article.appendChild(head);
+    const tbl = document.createElement("table");
+    tbl.className = "matrix roster-mobile-table";
+    const tb = document.createElement("tbody");
+    dates.forEach((d) => {
+      const tr = document.createElement("tr");
+      const tdD = document.createElement("td");
+      tdD.className = "roster-mobile-date";
+      tdD.textContent = formatMatrixDayLabel(d);
+      const tdS = document.createElement("td");
+      tdS.dataset.date = d;
+      tdS.dataset.employeeId = row.employee_id;
+      paintMatrixDataCell(tdS, row.cells[d] || "", canEditMatrix);
+      tr.appendChild(tdD);
+      tr.appendChild(tdS);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+    article.appendChild(tbl);
+    root.appendChild(article);
   });
 }
 
@@ -523,6 +597,7 @@ async function refreshTable() {
     if (!sel) {
       $("matrix-head").innerHTML = "";
       $("matrix-body").innerHTML = "";
+      buildMatrixMobileCards({ dates: [], rows: [] });
       return;
     }
     params.set("department_id", sel);
@@ -560,6 +635,7 @@ async function refreshTable() {
     });
     tbody.appendChild(tr);
   });
+  buildMatrixMobileCards(data);
 }
 
 async function refreshManagerQueues() {
@@ -701,6 +777,8 @@ async function refreshEmployeeRequestLog() {
       return;
     }
 
+    const wrap = document.createElement("div");
+    wrap.className = "table-scroll emp-log-table-wrap";
     const tbl = document.createElement("table");
     tbl.className = "matrix log-table";
     tbl.innerHTML =
@@ -716,7 +794,8 @@ async function refreshEmployeeRequestLog() {
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
-    box.appendChild(tbl);
+    wrap.appendChild(tbl);
+    box.appendChild(wrap);
   } catch (e) {
     box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
   }
@@ -1063,6 +1142,7 @@ function applyRoleVisibility() {
   show($("admin-table-ctl"), role === "admin");
   show($("bulk-dept-row"), role === "admin");
   show($("mgr-admin-dept-row"), role === "admin");
+  show($("emp-schedule-quick"), role === "employee");
   const calHint = $("cal-scope-hint");
   if (calHint) {
     calHint.textContent =
@@ -1535,6 +1615,20 @@ $("export-btn").addEventListener("click", async () => {
 });
 
 $("admin-records-refresh")?.addEventListener("click", () => refreshAdminRequestLog());
+
+$("emp-go-leave")?.addEventListener("click", () => {
+  activateDashTab("employee", "requests");
+  requestAnimationFrame(() => {
+    $("leave-request-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+});
+
+$("emp-go-shift-change")?.addEventListener("click", () => {
+  activateDashTab("employee", "requests");
+  requestAnimationFrame(() => {
+    $("shift-change-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+});
 
 initMatrixTableCellEditor();
 
