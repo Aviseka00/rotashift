@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     try:
         await ensure_indexes_and_seed()
         print(f"RotaShift: MongoDB OK — database={DB_NAME!r} (users are in the {DB_NAME!r}.users collection).")
+        print("RotaShift: My Kanban API enabled — GET /api/tasks, GET /api/tasks/health")
     except Exception as e:
         print("\n" + "=" * 60)
         print("RotaShift: MongoDB connection failed — the app cannot start.")
@@ -53,11 +54,11 @@ if _origins:
 
 app.include_router(health_api.router)
 app.include_router(auth_api.router)
+app.include_router(tasks_api.router)
 app.include_router(departments_api.router)
 app.include_router(users_api.router)
 app.include_router(shifts_api.router)
 app.include_router(requests_api.router)
-app.include_router(tasks_api.router)
 app.include_router(meta_api.router)
 app.include_router(admin_api.router)
 

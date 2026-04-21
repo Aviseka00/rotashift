@@ -1306,15 +1306,20 @@ function tasksKanbanFailureBanner(e) {
   const st = e && e.status;
   const msg = (e && e.message) || String(e);
   const healthUrl = `${window.location.origin}/api/tasks/health`;
+  const host = window.location.hostname || "";
+  const isLocal = host === "127.0.0.1" || host === "localhost" || host === "::1";
+  const localHint = isLocal
+    ? " Local dev: stop the old server (Ctrl+C in the terminal), then from the project folder run: python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 — you must see the startup line “My Kanban API enabled” in that terminal. Open this app only at http://127.0.0.1:8000/ (not Live Server on another port)."
+    : "";
   if (!st && (msg.includes("Failed to fetch") || msg.includes("NetworkError"))) {
     return {
-      text: `Network error while loading the board (${msg}). Check your connection and that this site’s URL matches your RotaShift server.`,
+      text: `Network error while loading the board (${msg}). Check your connection and that this site’s URL matches your RotaShift server.${isLocal ? " " + localHint : ""}`,
       kind: "error",
     };
   }
   if (st === 404 || /not\s*found/i.test(msg) || msg === "Not Found") {
     return {
-      text: `My Kanban API was not found (HTTP 404). Your running server may be an older build. Redeploy from the latest code, then open ${healthUrl} — you should see {"ok":true,"kanban":true}. If that works but this tab still fails, hard-refresh the page (Ctrl+Shift+R).`,
+      text: `My Kanban API returned HTTP 404 at ${healthUrl.replace("/health", "")}. ${isLocal ? localHint : "Redeploy the latest code from GitHub, then open " + healthUrl + ' — expect {"ok":true,"kanban":true}. If it does, hard-refresh this page (Ctrl+Shift+R).'}`,
       kind: "info",
     };
   }
