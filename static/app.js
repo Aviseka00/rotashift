@@ -1088,6 +1088,81 @@ const TASK_COLUMNS = [
   { id: "done", label: "Done" },
 ];
 
+const TASK_TABLE_COL_ORDER = { todo: 0, in_progress: 1, done: 2 };
+
+function taskTableStatusLabel(column) {
+  if (column === "todo") return "TO DO";
+  if (column === "in_progress") return "IN PROGRESS";
+  if (column === "done") return "DONE";
+  return String(column || "—").toUpperCase();
+}
+
+function sortedTasksForTable(tasks) {
+  return [...(tasks || [])].sort((a, b) => {
+    const ca = TASK_TABLE_COL_ORDER[a.column] ?? 99;
+    const cb = TASK_TABLE_COL_ORDER[b.column] ?? 99;
+    if (ca !== cb) return ca - cb;
+    return (Number(b.priority) || 0) - (Number(a.priority) || 0);
+  });
+}
+
+async function onTaskTableActionClick(ev) {
+  const move = ev.target.closest("[data-task-move]");
+  const del = ev.target.closest("[data-task-del]");
+  if (move) {
+    const id = move.getAttribute("data-task-move");
+    const col = move.getAttribute("data-col");
+    try {
+      await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ column: col }) });
+      await refreshTasksBoard();
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+    return;
+  }
+  if (del) {
+    if (!confirm("Delete this task?")) return;
+    const id = del.getAttribute("data-task-del");
+    try {
+      await api(`/api/tasks/${id}`, { method: "DELETE" });
+      await refreshTasksBoard();
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+  }
+}
+
+function buildTaskTableRow(task) {
+  const pri = Math.min(5, Math.max(1, Number(task.priority) || 3));
+  const col = TASK_TABLE_COL_ORDER[task.column] !== undefined ? task.column : "todo";
+  const assigneeHtml =
+    task.assignee_names && task.assignee_names.length
+      ? task.assignee_names.map((n) => escapeHtml(n)).join(", ")
+      : '<span class="kanban-table-muted">—</span>';
+  const rawDesc = (task.description || "").trim();
+  const descHtml =
+    rawDesc.length > 0
+      ? `<div class="kanban-table-desc">${escapeHtml(rawDesc.slice(0, 140))}${rawDesc.length > 140 ? "…" : ""}</div>`
+      : "";
+  const canEdit = tasksCanEdit();
+  const actionsHtml = canEdit
+    ? `<td class="kanban-table-td-actions">${TASK_COLUMNS.map((c) =>
+        c.id === task.column
+          ? ""
+          : `<button type="button" class="kanban-table-act" data-task-move="${escapeHtml(task.id)}" data-col="${c.id}">${escapeHtml(c.label)}</button>`,
+      ).join(" ")}<button type="button" class="kanban-table-act kanban-table-act-del" data-task-del="${escapeHtml(task.id)}">Delete</button></td>`
+    : "";
+  const tr = document.createElement("tr");
+  tr.className = `kanban-table-tr kanban-table-tr--${col}`;
+  tr.innerHTML = `
+    <td class="kanban-table-td-status"><span class="kanban-status-pill kanban-status-pill--${col}">${escapeHtml(taskTableStatusLabel(task.column))}</span></td>
+    <td class="kanban-table-td-pri"><span class="kanban-pri-pill kanban-pri-pill-${pri}">P${pri}</span></td>
+    <td class="kanban-table-td-title"><strong>${escapeHtml(task.title)}</strong>${descHtml}</td>
+    <td class="kanban-table-td-people">${assigneeHtml}</td>
+    ${actionsHtml}`;
+  return tr;
+}
+
 function mountTasksModule(role) {
   const block = $("tasks-module-block");
   if (!block) return;
@@ -1124,10 +1199,10 @@ function updateTasksBoardUiForRole() {
   if (hint) {
     hint.textContent =
       role === "employee"
-        ? "Live board for your department only. Managers set work and priority — higher numbers are more urgent and sort to the top of each column."
+        ? "The task table (top) lists your department’s work in strong colors by status and priority — managers update rows below."
         : role === "manager"
-          ? "Plan work for your department: add cards, pick owners, set priority (5 = urgent), and move items across To do → In progress → Done."
-          : "Select a department to open its board. Managers and you can shape tasks; every member in that department sees the same view.";
+          ? "Use the high-contrast table first, then add or change tasks below. Priority 5 = most urgent; rows sort by status then priority."
+          : "Pick a department, then read the table. Everyone in that department sees the same rows; you and managers can add tasks under the table.";
   }
   if (adminWrap) show(adminWrap, role === "admin");
   if (createPanel) show(createPanel, role === "manager" || role === "admin");
@@ -1160,117 +1235,45 @@ async function loadTaskAssigneeOptions() {
   }
 }
 
-function renderTaskCard(task) {
-  const canEdit = tasksCanEdit();
-  const card = document.createElement("article");
-  const pri = Math.min(5, Math.max(1, Number(task.priority) || 3));
-  card.className = "kanban-card";
-  card.dataset.priority = String(pri);
-  const assignee =
-    task.assignee_names && task.assignee_names.length
-      ? task.assignee_names.map((n) => escapeHtml(n)).join(", ")
-      : '<span class="hint">Unassigned</span>';
-  const rawDesc = task.description || "";
-  const descSnippet =
-    rawDesc.length > 0
-      ? `<div class="kanban-card-desc">${escapeHtml(rawDesc.slice(0, 280))}${rawDesc.length > 280 ? "…" : ""}</div>`
-      : "";
-  const moveBtns = canEdit
-    ? `<div class="kanban-card-actions">${TASK_COLUMNS.map((c) =>
-        c.id === task.column
-          ? ""
-          : `<button type="button" class="kanban-chip-btn" data-task-move="${escapeHtml(task.id)}" data-col="${c.id}">→ ${escapeHtml(c.label)}</button>`,
-      ).join("")}<button type="button" class="kanban-chip-btn danger" data-task-del="${escapeHtml(task.id)}">Delete</button></div>`
-    : "";
-  card.innerHTML = `
-    <div class="kanban-card-inner">
-      <div class="kanban-card-head">
-        <span class="badge task-pri task-pri-${pri}">P${pri}</span>
-        <strong class="kanban-card-title">${escapeHtml(task.title)}</strong>
-      </div>
-      ${descSnippet}
-      <div class="kanban-card-meta"><strong>Responsible</strong> · ${assignee}</div>
-      ${moveBtns}
-    </div>`;
-  if (canEdit) {
-    card.querySelectorAll("[data-task-move]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const id = btn.getAttribute("data-task-move");
-        const col = btn.getAttribute("data-col");
-        try {
-          await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ column: col }) });
-          await refreshTasksBoard();
-        } catch (e) {
-          alert(e.message || String(e));
-        }
-      });
-    });
-    const del = card.querySelector("[data-task-del]");
-    if (del) {
-      del.addEventListener("click", async () => {
-        if (!confirm("Delete this task?")) return;
-        const id = del.getAttribute("data-task-del");
-        try {
-          await api(`/api/tasks/${id}`, { method: "DELETE" });
-          await refreshTasksBoard();
-        } catch (e) {
-          alert(e.message || String(e));
-        }
-      });
-    }
-  }
-  return card;
-}
-
 function renderKanbanFromTasks(tasks) {
   const root = $("tasks-kanban");
   if (!root) return;
   root.innerHTML = "";
-  const board = document.createElement("div");
-  board.className = "kanban-columns";
-  const colBodies = {};
-  TASK_COLUMNS.forEach((c) => {
-    const col = document.createElement("div");
-    col.className = `kanban-column kanban-column--${c.id}`;
-    col.dataset.column = c.id;
-    const head = document.createElement("div");
-    head.className = "kanban-col-head";
-    const h = document.createElement("h4");
-    h.className = "kanban-col-title";
-    h.textContent = c.label;
-    const count = document.createElement("span");
-    count.className = "kanban-col-count";
-    count.textContent = "0";
-    count.dataset.colCount = c.id;
-    head.appendChild(h);
-    head.appendChild(count);
-    const body = document.createElement("div");
-    body.className = "kanban-col-body";
-    col.appendChild(head);
-    col.appendChild(body);
-    board.appendChild(col);
-    colBodies[c.id] = body;
-  });
-  root.appendChild(board);
-  const grouped = { todo: [], in_progress: [], done: [] };
-  (tasks || []).forEach((t) => {
-    if (grouped[t.column]) grouped[t.column].push(t);
-  });
-  TASK_COLUMNS.forEach((c) => {
-    grouped[c.id].sort((a, b) => (Number(b.priority) || 0) - (Number(a.priority) || 0));
-    grouped[c.id].forEach((t) => colBodies[c.id].appendChild(renderTaskCard(t)));
-    const badge = board.querySelector(`[data-col-count="${c.id}"]`);
-    if (badge) badge.textContent = String(grouped[c.id].length);
-  });
-  if (!(tasks || []).length) {
-    const empty = document.createElement("p");
-    empty.className = "my-kanban-empty my-kanban-empty--below";
-    empty.innerHTML =
-      tasksCanEdit() && (state.user.role !== "admin" || $("tasks-admin-dept")?.value)
-        ? "No tasks yet — add your first card above."
-        : "No tasks on this board yet.";
-    root.appendChild(empty);
+  const wrap = document.createElement("div");
+  wrap.className = "kanban-table-scroll";
+  const tbl = document.createElement("table");
+  tbl.className = "kanban-table";
+  const canEdit = tasksCanEdit();
+  const theadRow = `<tr>
+    <th scope="col">Status</th>
+    <th scope="col">Priority</th>
+    <th scope="col">Title</th>
+    <th scope="col">Responsible</th>
+    ${canEdit ? '<th scope="col">Actions</th>' : ""}
+  </tr>`;
+  tbl.innerHTML = `<thead>${theadRow}</thead>`;
+  const tb = document.createElement("tbody");
+  const sorted = sortedTasksForTable(tasks);
+  if (!sorted.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = canEdit ? 5 : 4;
+    td.className = "kanban-table-empty";
+    td.innerHTML =
+      canEdit && (state.user.role !== "admin" || $("tasks-admin-dept")?.value)
+        ? "No tasks in this table yet — add one in <strong>New task</strong> below."
+        : "No tasks in this table yet.";
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  } else {
+    sorted.forEach((t) => tb.appendChild(buildTaskTableRow(t)));
+    if (canEdit) {
+      tb.addEventListener("click", onTaskTableActionClick);
+    }
   }
+  tbl.appendChild(tb);
+  wrap.appendChild(tbl);
+  root.appendChild(wrap);
 }
 
 /** Load task list; retries with trailing slash if the server/proxy only exposes /api/tasks/ */

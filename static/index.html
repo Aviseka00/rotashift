@@ -426,6 +426,25 @@
             </div>
           </div>
 
+          <div id="tasks-kanban-banner" class="my-kanban-banner hidden" role="alert">
+            <div class="my-kanban-banner-inner">
+              <p class="my-kanban-banner-msg" id="tasks-kanban-banner-msg"></p>
+              <button type="button" id="tasks-kanban-banner-dismiss" class="my-kanban-banner-dismiss">
+                Dismiss
+              </button>
+            </div>
+          </div>
+
+          <section class="my-kanban-table-section" aria-label="Task table">
+            <h3 class="my-kanban-section-title">Task table</h3>
+            <p class="hint my-kanban-section-lead">
+              Rows are color-coded by status (gray · orange · green). Priority uses gray → green → orange → red for instant contrast.
+            </p>
+            <div class="kanban-table-outer">
+              <section id="tasks-kanban" class="my-kanban-board" aria-label="Tasks in table form"></section>
+            </div>
+          </section>
+
           <section id="tasks-create-panel" class="my-kanban-compose" aria-label="Create task">
             <div class="my-kanban-compose-head">
               <h3 class="my-kanban-compose-title">New task</h3>
@@ -471,16 +490,6 @@
               <span id="task-form-msg" class="my-kanban-form-msg hint"></span>
             </div>
           </section>
-
-          <div id="tasks-kanban-banner" class="my-kanban-banner hidden" role="alert">
-            <div class="my-kanban-banner-inner">
-              <p class="my-kanban-banner-msg" id="tasks-kanban-banner-msg"></p>
-              <button type="button" id="tasks-kanban-banner-dismiss" class="my-kanban-banner-dismiss">
-                Dismiss
-              </button>
-            </div>
-          </div>
-          <section id="tasks-kanban" class="my-kanban-board" aria-label="Kanban board"></section>
         </div>
 
         <!-- Stays hidden for employees; manager/admin move these into their tabs on login -->

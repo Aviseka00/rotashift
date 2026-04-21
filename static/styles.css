@@ -1012,7 +1012,204 @@ select.task-assignee-multi,
 }
 
 .my-kanban-board {
-  margin-top: 0.25rem;
+  margin-top: 0;
+}
+
+.my-kanban-table-section {
+  margin-bottom: 1.35rem;
+}
+
+.my-kanban-section-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #f8fafc;
+}
+
+.my-kanban-section-lead {
+  margin: 0 0 0.75rem;
+  max-width: 48rem;
+}
+
+.kanban-table-outer {
+  border-radius: 14px;
+  border: 2px solid #0a0a0a;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.kanban-table-scroll {
+  overflow-x: auto;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table.kanban-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  font-family: "DM Sans", system-ui, sans-serif;
+}
+
+.kanban-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  background: #0a0a0a;
+  color: #fafafa;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  border-bottom: 3px solid #fafafa;
+}
+
+.kanban-table td {
+  padding: 0.65rem 0.75rem;
+  border: 2px solid #0a0a0a;
+  vertical-align: top;
+  color: #fafafa;
+  font-weight: 600;
+}
+
+.kanban-table-tr--todo {
+  background: #52525b;
+  color: #fafafa;
+}
+
+.kanban-table-tr--in_progress {
+  background: #ea580c;
+  color: #0a0a0a;
+}
+
+.kanban-table-tr--in_progress .kanban-table-desc,
+.kanban-table-tr--in_progress .kanban-table-muted {
+  color: #1c1917;
+  opacity: 0.95;
+}
+
+.kanban-table-tr--done {
+  background: #16a34a;
+  color: #fafafa;
+}
+
+.kanban-table-tr--todo .kanban-table-td-title strong,
+.kanban-table-tr--done .kanban-table-td-title strong {
+  color: #fff;
+}
+
+.kanban-table-tr--in_progress .kanban-table-td-title strong {
+  color: #0a0a0a;
+}
+
+.kanban-table-desc {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+  opacity: 0.95;
+}
+
+.kanban-table-muted {
+  opacity: 0.85;
+  font-weight: 600;
+}
+
+.kanban-table-empty {
+  text-align: center;
+  padding: 1.5rem 1rem !important;
+  font-size: 0.95rem;
+  background: #27272a !important;
+  color: #e4e4e7 !important;
+  border: 2px solid #0a0a0a !important;
+}
+
+.kanban-status-pill {
+  display: inline-block;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  border: 2px solid #0a0a0a;
+}
+
+.kanban-status-pill--todo {
+  background: #3f3f46;
+  color: #fafafa;
+}
+
+.kanban-status-pill--in_progress {
+  background: #0a0a0a;
+  color: #fdba74;
+}
+
+.kanban-status-pill--done {
+  background: #0a0a0a;
+  color: #86efac;
+}
+
+.kanban-pri-pill {
+  display: inline-block;
+  min-width: 2.25rem;
+  text-align: center;
+  padding: 0.3rem 0.45rem;
+  border-radius: 6px;
+  font-weight: 900;
+  font-size: 0.8rem;
+  border: 2px solid #0a0a0a;
+}
+
+.kanban-pri-pill-1 {
+  background: #a1a1aa;
+  color: #18181b;
+}
+.kanban-pri-pill-2 {
+  background: #22c55e;
+  color: #052e16;
+}
+.kanban-pri-pill-3 {
+  background: #facc15;
+  color: #422006;
+}
+.kanban-pri-pill-4 {
+  background: #f97316;
+  color: #1c1917;
+}
+.kanban-pri-pill-5 {
+  background: #dc2626;
+  color: #fff;
+}
+
+.kanban-table-td-actions {
+  white-space: normal;
+}
+
+.kanban-table-act {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 800;
+  margin: 0.2rem 0.35rem 0.2rem 0;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid #0a0a0a;
+  background: #fafafa;
+  color: #0a0a0a;
+}
+
+.kanban-table-act:hover {
+  filter: brightness(0.92);
+}
+
+.kanban-table-act-del {
+  background: #dc2626;
+  color: #fff;
 }
 
 .my-kanban-banner {
