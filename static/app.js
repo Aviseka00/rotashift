@@ -42,10 +42,11 @@ async function api(path, opts = {}) {
   if (!(opts.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
+  const method = String(opts.method || "GET").toUpperCase();
   const skipAuthHeader =
     pathname === "/api/auth/login" ||
     pathname === "/api/auth/register" ||
-    pathname === "/api/departments" ||
+    (pathname === "/api/departments" && method === "GET") ||
     pathname.startsWith("/api/meta/");
   if (state.token && !skipAuthHeader) {
     headers.Authorization = `Bearer ${state.token}`;
@@ -98,7 +99,9 @@ async function api(path, opts = {}) {
         msg = String(data.message);
       }
     }
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = r.status;
+    throw err;
   }
   return data;
 }
@@ -174,6 +177,7 @@ async function loadDepartments() {
     "admin-add-dept",
     "admin-user-dept-filter",
     "admin-records-dept",
+    "tasks-admin-dept",
   ];
   selects.forEach((id) => {
     const sel = $(id);
@@ -336,10 +340,10 @@ function updateDashboardBanner() {
         : "Administrator dashboard";
   sub.textContent =
     role === "employee"
-      ? "Schedule shows your department rota. Use Request leave or Request shift change (on Schedule or under My requests), then track approval in your request log."
+      ? "Schedule shows your department rota. My Kanban is your team’s shared task board (priorities & owners). Use My requests for leave and shift changes."
       : role === "manager"
-        ? "Use the tabs: Schedule · Manage shifts · Approvals."
-        : "Use the tabs below: Departments (for registration) · People · Approvals · Activity (full request history) · Schedule · Manage shifts.";
+        ? "Use the tabs: Schedule · Manage shifts · Approvals · My Kanban (team tasks & priorities)."
+        : "Tabs: Departments · People · Approvals · Activity · My Kanban (per-department board) · Schedule · Manage shifts.";
   show(banner, true);
 }
 
@@ -1078,6 +1082,275 @@ function mountScheduleForRole(role) {
   if (mount) mount.appendChild(block);
 }
 
+const TASK_COLUMNS = [
+  { id: "todo", label: "To do" },
+  { id: "in_progress", label: "In progress" },
+  { id: "done", label: "Done" },
+];
+
+function mountTasksModule(role) {
+  const block = $("tasks-module-block");
+  if (!block) return;
+  let mount = $("emp-tasks-mount");
+  if (role === "manager") mount = $("mgr-tasks-mount");
+  if (role === "admin") mount = $("adm-tasks-mount");
+  if (mount) mount.appendChild(block);
+}
+
+function tasksCanEdit() {
+  return state.user && ["manager", "admin"].includes(state.user.role);
+}
+
+function setTasksKanbanBanner(message, kind) {
+  const wrap = $("tasks-kanban-banner");
+  const msg = $("tasks-kanban-banner-msg");
+  if (!wrap || !msg) return;
+  wrap.classList.remove("info", "error");
+  if (!message) {
+    wrap.classList.add("hidden");
+    msg.textContent = "";
+    return;
+  }
+  msg.textContent = message;
+  wrap.classList.remove("hidden");
+  wrap.classList.add(kind === "error" ? "error" : "info");
+}
+
+function updateTasksBoardUiForRole() {
+  const role = state.user?.role;
+  const hint = $("tasks-board-hint");
+  const adminWrap = $("tasks-admin-dept-wrap");
+  const createPanel = $("tasks-create-panel");
+  if (hint) {
+    hint.textContent =
+      role === "employee"
+        ? "Live board for your department only. Managers set work and priority — higher numbers are more urgent and sort to the top of each column."
+        : role === "manager"
+          ? "Plan work for your department: add cards, pick owners, set priority (5 = urgent), and move items across To do → In progress → Done."
+          : "Select a department to open its board. Managers and you can shape tasks; every member in that department sees the same view.";
+  }
+  if (adminWrap) show(adminWrap, role === "admin");
+  if (createPanel) show(createPanel, role === "manager" || role === "admin");
+}
+
+async function loadTaskAssigneeOptions() {
+  const sel = $("task-new-assignees");
+  if (!sel || !tasksCanEdit()) return;
+  const role = state.user.role;
+  let url = "/api/users";
+  if (role === "admin") {
+    const did = $("tasks-admin-dept")?.value;
+    if (!did) {
+      sel.innerHTML = "";
+      return;
+    }
+    url += `?department_id=${encodeURIComponent(did)}`;
+  }
+  try {
+    const data = await api(url);
+    sel.innerHTML = "";
+    (data.users || []).forEach((u) => {
+      const o = document.createElement("option");
+      o.value = u.employee_id;
+      o.textContent = `${u.full_name} (${u.employee_id})`;
+      sel.appendChild(o);
+    });
+  } catch {
+    sel.innerHTML = "";
+  }
+}
+
+function renderTaskCard(task) {
+  const canEdit = tasksCanEdit();
+  const card = document.createElement("article");
+  const pri = Math.min(5, Math.max(1, Number(task.priority) || 3));
+  card.className = "kanban-card";
+  card.dataset.priority = String(pri);
+  const assignee =
+    task.assignee_names && task.assignee_names.length
+      ? task.assignee_names.map((n) => escapeHtml(n)).join(", ")
+      : '<span class="hint">Unassigned</span>';
+  const rawDesc = task.description || "";
+  const descSnippet =
+    rawDesc.length > 0
+      ? `<div class="kanban-card-desc">${escapeHtml(rawDesc.slice(0, 280))}${rawDesc.length > 280 ? "…" : ""}</div>`
+      : "";
+  const moveBtns = canEdit
+    ? `<div class="kanban-card-actions">${TASK_COLUMNS.map((c) =>
+        c.id === task.column
+          ? ""
+          : `<button type="button" class="kanban-chip-btn" data-task-move="${escapeHtml(task.id)}" data-col="${c.id}">→ ${escapeHtml(c.label)}</button>`,
+      ).join("")}<button type="button" class="kanban-chip-btn danger" data-task-del="${escapeHtml(task.id)}">Delete</button></div>`
+    : "";
+  card.innerHTML = `
+    <div class="kanban-card-inner">
+      <div class="kanban-card-head">
+        <span class="badge task-pri task-pri-${pri}">P${pri}</span>
+        <strong class="kanban-card-title">${escapeHtml(task.title)}</strong>
+      </div>
+      ${descSnippet}
+      <div class="kanban-card-meta"><strong>Responsible</strong> · ${assignee}</div>
+      ${moveBtns}
+    </div>`;
+  if (canEdit) {
+    card.querySelectorAll("[data-task-move]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-task-move");
+        const col = btn.getAttribute("data-col");
+        try {
+          await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ column: col }) });
+          await refreshTasksBoard();
+        } catch (e) {
+          alert(e.message || String(e));
+        }
+      });
+    });
+    const del = card.querySelector("[data-task-del]");
+    if (del) {
+      del.addEventListener("click", async () => {
+        if (!confirm("Delete this task?")) return;
+        const id = del.getAttribute("data-task-del");
+        try {
+          await api(`/api/tasks/${id}`, { method: "DELETE" });
+          await refreshTasksBoard();
+        } catch (e) {
+          alert(e.message || String(e));
+        }
+      });
+    }
+  }
+  return card;
+}
+
+function renderKanbanFromTasks(tasks) {
+  const root = $("tasks-kanban");
+  if (!root) return;
+  root.innerHTML = "";
+  const board = document.createElement("div");
+  board.className = "kanban-columns";
+  const colBodies = {};
+  TASK_COLUMNS.forEach((c) => {
+    const col = document.createElement("div");
+    col.className = `kanban-column kanban-column--${c.id}`;
+    col.dataset.column = c.id;
+    const head = document.createElement("div");
+    head.className = "kanban-col-head";
+    const h = document.createElement("h4");
+    h.className = "kanban-col-title";
+    h.textContent = c.label;
+    const count = document.createElement("span");
+    count.className = "kanban-col-count";
+    count.textContent = "0";
+    count.dataset.colCount = c.id;
+    head.appendChild(h);
+    head.appendChild(count);
+    const body = document.createElement("div");
+    body.className = "kanban-col-body";
+    col.appendChild(head);
+    col.appendChild(body);
+    board.appendChild(col);
+    colBodies[c.id] = body;
+  });
+  root.appendChild(board);
+  const grouped = { todo: [], in_progress: [], done: [] };
+  (tasks || []).forEach((t) => {
+    if (grouped[t.column]) grouped[t.column].push(t);
+  });
+  TASK_COLUMNS.forEach((c) => {
+    grouped[c.id].sort((a, b) => (Number(b.priority) || 0) - (Number(a.priority) || 0));
+    grouped[c.id].forEach((t) => colBodies[c.id].appendChild(renderTaskCard(t)));
+    const badge = board.querySelector(`[data-col-count="${c.id}"]`);
+    if (badge) badge.textContent = String(grouped[c.id].length);
+  });
+  if (!(tasks || []).length) {
+    const empty = document.createElement("p");
+    empty.className = "my-kanban-empty my-kanban-empty--below";
+    empty.innerHTML =
+      tasksCanEdit() && (state.user.role !== "admin" || $("tasks-admin-dept")?.value)
+        ? "No tasks yet — add your first card above."
+        : "No tasks on this board yet.";
+    root.appendChild(empty);
+  }
+}
+
+/** Load task list; retries with trailing slash if the server/proxy only exposes /api/tasks/ */
+async function fetchTaskBoardJson(path) {
+  try {
+    return await api(path);
+  } catch (e) {
+    const st = e && e.status;
+    const msg = (e && e.message) || "";
+    const notFound = st === 404 || /not\s*found/i.test(msg) || msg === "Not Found";
+    if (!notFound) throw e;
+    const q = path.indexOf("?");
+    const alt = q >= 0 ? `/api/tasks/?${path.slice(q + 1)}` : "/api/tasks/";
+    if (alt === path) throw e;
+    return await api(alt);
+  }
+}
+
+/** POST create task — same trailing-slash retry as the list endpoint. */
+async function postTaskCreate(payload) {
+  const opts = { method: "POST", body: JSON.stringify(payload) };
+  try {
+    return await api("/api/tasks", opts);
+  } catch (e) {
+    if (e && e.status === 404) {
+      return await api("/api/tasks/", opts);
+    }
+    throw e;
+  }
+}
+
+function tasksKanbanFailureBanner(e) {
+  const st = e && e.status;
+  const msg = (e && e.message) || String(e);
+  const healthUrl = `${window.location.origin}/api/tasks/health`;
+  if (!st && (msg.includes("Failed to fetch") || msg.includes("NetworkError"))) {
+    return {
+      text: `Network error while loading the board (${msg}). Check your connection and that this site’s URL matches your RotaShift server.`,
+      kind: "error",
+    };
+  }
+  if (st === 404 || /not\s*found/i.test(msg) || msg === "Not Found") {
+    return {
+      text: `My Kanban API was not found (HTTP 404). Your running server may be an older build. Redeploy from the latest code, then open ${healthUrl} — you should see {"ok":true,"kanban":true}. If that works but this tab still fails, hard-refresh the page (Ctrl+Shift+R).`,
+      kind: "info",
+    };
+  }
+  if (st === 401) {
+    return { text: "Session expired — sign in again, then reopen My Kanban.", kind: "error" };
+  }
+  return { text: msg || `Request failed (${st || "?"})`, kind: "error" };
+}
+
+async function refreshTasksBoard() {
+  const root = $("tasks-kanban");
+  if (!root || !state.user) return;
+  const role = state.user.role;
+  let path = "/api/tasks";
+  if (role === "admin") {
+    const did = $("tasks-admin-dept")?.value;
+    if (!did) {
+      setTasksKanbanBanner("", "");
+      root.innerHTML =
+        '<p class="my-kanban-empty">Choose a department above to open its <strong>My Kanban</strong> board.</p>';
+      return;
+    }
+    path += `?department_id=${encodeURIComponent(did)}`;
+  }
+  setTasksKanbanBanner("", "");
+  root.innerHTML = '<p class="my-kanban-loading">Loading board…</p>';
+  try {
+    const data = await fetchTaskBoardJson(path);
+    renderKanbanFromTasks(data.tasks || []);
+  } catch (e) {
+    const { text, kind } = tasksKanbanFailureBanner(e);
+    setTasksKanbanBanner(text, kind);
+    renderKanbanFromTasks([]);
+  }
+}
+
 function mountShiftPanels(role) {
   const sm = $("panel-shift-mgmt");
   const ap = $("panel-mgr-approvals");
@@ -1130,6 +1403,11 @@ function activateDashTab(dashId, tabId) {
   if (dashId === "admin" && tabId === "org" && state.user?.role === "admin") {
     refreshAdminDeptList();
   }
+  if (tabId === "tasks") {
+    updateTasksBoardUiForRole();
+    loadTaskAssigneeOptions().catch(() => {});
+    refreshTasksBoard().catch(() => {});
+  }
 }
 
 function applyRoleVisibility() {
@@ -1143,6 +1421,8 @@ function applyRoleVisibility() {
   show($("bulk-dept-row"), role === "admin");
   show($("mgr-admin-dept-row"), role === "admin");
   show($("emp-schedule-quick"), role === "employee");
+  updateTasksBoardUiForRole();
+
   const calHint = $("cal-scope-hint");
   if (calHint) {
     calHint.textContent =
@@ -1198,6 +1478,7 @@ async function bootAuthenticated() {
 
   mountScheduleForRole(state.user.role);
   mountShiftPanels(state.user.role);
+  mountTasksModule(state.user.role);
 
   if (state.user.role === "admin") {
     const pick = $("cal-dept");
@@ -1217,6 +1498,14 @@ async function bootAuthenticated() {
     if (mgrDept) {
       mgrDept.onchange = () => {
         refreshManagerRoster();
+      };
+    }
+    const taskDept = $("tasks-admin-dept");
+    if (taskDept && state.departments[0] && !taskDept.value) taskDept.value = state.departments[0].id;
+    if (taskDept) {
+      taskDept.onchange = () => {
+        loadTaskAssigneeOptions().catch(() => {});
+        refreshTasksBoard().catch(() => {});
       };
     }
   }
@@ -1595,13 +1884,61 @@ $("admin-add-submit").addEventListener("click", async () => {
 
 /* Admin */
 $("create-dept-btn").addEventListener("click", async () => {
+  const msg = $("dept-msg");
   const name = $("new-dept-name").value.trim();
   if (!name) return;
-  await api("/api/departments", { method: "POST", body: JSON.stringify({ name }) });
-  $("new-dept-name").value = "";
-  $("dept-msg").textContent = "Department created.";
-  await loadDepartments();
-  await refreshAdminDeptList();
+  if (msg) msg.textContent = "";
+  try {
+    await api("/api/departments", { method: "POST", body: JSON.stringify({ name }) });
+    $("new-dept-name").value = "";
+    if (msg) msg.textContent = "Department created.";
+    await loadDepartments();
+    await refreshAdminDeptList();
+  } catch (e) {
+    if (msg) msg.textContent = e.message || String(e);
+  }
+});
+
+$("tasks-refresh-btn")?.addEventListener("click", () => {
+  refreshTasksBoard().catch((e) => alert(e.message || String(e)));
+});
+
+$("tasks-kanban-banner-dismiss")?.addEventListener("click", () => {
+  setTasksKanbanBanner("", "");
+});
+
+$("task-create-btn")?.addEventListener("click", async () => {
+  const msg = $("task-form-msg");
+  if (msg) msg.textContent = "";
+  const title = $("task-new-title")?.value?.trim();
+  if (!title) {
+    if (msg) msg.textContent = "Enter a title.";
+    return;
+  }
+  const body = {
+    title,
+    description: $("task-new-desc")?.value || "",
+    column: $("task-new-column")?.value || "todo",
+    priority: parseInt($("task-new-priority")?.value || "3", 10),
+    assignee_employee_ids: [...($("task-new-assignees")?.selectedOptions || [])].map((o) => o.value),
+  };
+  if (state.user.role === "admin") {
+    body.department_id = $("tasks-admin-dept")?.value;
+    if (!body.department_id) {
+      if (msg) msg.textContent = "Pick a department for this task.";
+      return;
+    }
+  }
+  try {
+    await postTaskCreate(body);
+    $("task-new-title").value = "";
+    $("task-new-desc").value = "";
+    if (msg) msg.textContent = "Task added.";
+    await refreshTasksBoard();
+    await loadTaskAssigneeOptions();
+  } catch (e) {
+    if (msg) msg.textContent = e.message || String(e);
+  }
 });
 
 $("export-btn").addEventListener("click", async () => {

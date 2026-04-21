@@ -28,6 +28,12 @@ def seed_department_names():
     return {"default_department_names": DEFAULT_DEPARTMENTS}
 
 
+@router.get("/features")
+def app_features():
+    """Hints for the SPA (which optional APIs exist on this server build)."""
+    return {"kanban_tasks": True, "kanban_health": "/api/tasks/health"}
+
+
 @router.get("/registration")
 async def registration_policy():
     """Team members never need a code; manager/admin signup is enabled when server codes are set (codes are never exposed)."""

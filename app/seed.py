@@ -36,6 +36,7 @@ async def ensure_indexes_and_seed():
     await db.shifts.create_index([("department_id", 1), ("user_id", 1), ("date", 1)], unique=True)
     await db.leave_requests.create_index([("department_id", 1), ("status", 1)])
     await db.shift_change_requests.create_index([("department_id", 1), ("status", 1)])
+    await db.tasks.create_index([("department_id", 1), ("column", 1), ("priority", -1)])
 
     await ensure_default_departments_exist(db)
 

@@ -56,10 +56,19 @@ async def export_all(user=Depends(require_roles("admin"))):
             x["decided_by"] = str(x["decided_by"])
         changes.append(x)
 
+    task_rows = []
+    async for x in db.tasks.find():
+        x["id"] = str(x.pop("_id"))
+        x["department_id"] = str(x["department_id"])
+        if x.get("created_by"):
+            x["created_by"] = str(x["created_by"])
+        task_rows.append(x)
+
     return {
         "departments": departments,
         "users": users,
         "shifts": shifts,
         "leave_requests": leaves,
         "shift_change_requests": changes,
+        "tasks": task_rows,
     }
