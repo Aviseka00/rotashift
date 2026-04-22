@@ -5,7 +5,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.config import SHIFT_DEFINITIONS
+from app.config import TIMED_SHIFT_CODES
 from app.database import get_db
 from app.deps import get_current_user, require_roles
 
@@ -188,8 +188,8 @@ async def create_shift_change(body: ShiftChangeCreate, user=Depends(get_current_
         raise HTTPException(status_code=400, detail="User must belong to a department")
     fs = body.from_shift.upper()
     ts = body.to_shift.upper()
-    if fs not in SHIFT_DEFINITIONS or ts not in SHIFT_DEFINITIONS:
-        raise HTTPException(status_code=400, detail="Invalid shift codes")
+    if fs not in TIMED_SHIFT_CODES or ts not in TIMED_SHIFT_CODES:
+        raise HTTPException(status_code=400, detail="Invalid shift codes (use A, B, C, or G)")
     doc = {
         "user_id": ObjectId(user["_id"]),
         "department_id": ObjectId(user["department_id"]),

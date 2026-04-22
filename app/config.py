@@ -54,4 +54,12 @@ SHIFT_DEFINITIONS = {
     "B": {"label": "B", "start": "14:00", "end": "22:30"},
     "C": {"label": "C", "start": "20:00", "end": "06:30", "overnight": True},
     "G": {"label": "G", "start": "09:00", "end": "17:30"},
+    "L": {"label": "Leave", "description": "Leave"},
+    "WO": {"label": "Week off", "description": "Week off"},
 }
+
+# Roster / calendar codes with clock times (employee shift-change requests stay on these only).
+TIMED_SHIFT_CODES = frozenset(k for k, v in SHIFT_DEFINITIONS.items() if v.get("start"))
+
+# Canonical roster cell codes (client always merges these into pickers even if an older API omits some).
+ROSTER_SHIFT_CODES: tuple[str, ...] = tuple(SHIFT_DEFINITIONS.keys())

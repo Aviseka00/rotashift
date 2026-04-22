@@ -3,7 +3,14 @@ from typing import Optional
 
 from fastapi import APIRouter
 
-from app.config import DB_NAME, MONGO_URI, REGISTER_CODE_ADMIN, REGISTER_CODE_MANAGER, SHIFT_DEFINITIONS
+from app.config import (
+    DB_NAME,
+    MONGO_URI,
+    REGISTER_CODE_ADMIN,
+    REGISTER_CODE_MANAGER,
+    ROSTER_SHIFT_CODES,
+    SHIFT_DEFINITIONS,
+)
 from app.database import get_db
 from app.seed import DEFAULT_DEPARTMENTS
 
@@ -20,7 +27,7 @@ def _cluster_host_from_uri(uri: str) -> Optional[str]:
 
 @router.get("/shifts")
 def shift_definitions():
-    return {"shifts": SHIFT_DEFINITIONS}
+    return {"shifts": SHIFT_DEFINITIONS, "roster_codes": list(ROSTER_SHIFT_CODES)}
 
 
 @router.get("/seed-departments")

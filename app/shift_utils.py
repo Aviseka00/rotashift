@@ -32,10 +32,27 @@ def calendar_event_for_shift(
     day: date,
     kind: str = "shift",
 ) -> Dict[str, Any]:
-    start, end = shift_event_window(day, shift_code)
     info = SHIFT_DEFINITIONS[shift_code]
     label = info["label"]
     title = f"{label} · {user_name} ({employee_id})"
+    if not info.get("start"):
+        end_plus = day + timedelta(days=1)
+        return {
+            "id": assignment_id,
+            "title": title,
+            "start": day.isoformat(),
+            "end": end_plus.isoformat(),
+            "allDay": True,
+            "display": "block",
+            "extendedProps": {
+                "shift_code": shift_code,
+                "employee_id": employee_id,
+                "kind": kind,
+                "user_name": user_name,
+            },
+            "classNames": [f"shift-{shift_code.lower()}", f"evt-{kind}", "evt-roster-day"],
+        }
+    start, end = shift_event_window(day, shift_code)
     return {
         "id": assignment_id,
         "title": title,

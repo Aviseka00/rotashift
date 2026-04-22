@@ -130,25 +130,57 @@ function setToken(token, user) {
 
 async function loadMeta() {
   const sh = await api("/api/meta/shifts");
-  state.shiftLegend = sh.shifts || {};
+  state.shiftLegend = { ...(sh.shifts || {}) };
+  const fillNonTimed = {
+    L: { label: "Leave", description: "Leave" },
+    WO: { label: "Week off", description: "Week off" },
+  };
+  Object.entries(fillNonTimed).forEach(([k, v]) => {
+    if (!state.shiftLegend[k]) state.shiftLegend[k] = v;
+  });
   const leg = $("shift-legend");
   leg.innerHTML = "";
   Object.entries(state.shiftLegend).forEach(([code, info]) => {
     const span = document.createElement("span");
-    span.innerHTML = `<span class="dot ${code.toLowerCase()}"></span> <strong>${code}</strong> ${info.start}–${info.end}`;
+    span.className = "legend-item";
+    const dot = document.createElement("span");
+    dot.className = `dot ${code.toLowerCase()}`;
+    const strong = document.createElement("strong");
+    strong.textContent = code;
+    const tail = document.createElement("span");
+    if (info.start && info.end) {
+      tail.textContent = ` ${info.start}–${info.end}`;
+    } else {
+      tail.textContent = ` ${info.description || info.label || ""}`;
+    }
+    span.appendChild(dot);
+    span.appendChild(document.createTextNode(" "));
+    span.appendChild(strong);
+    span.appendChild(tail);
     leg.appendChild(span);
   });
   ["chg-from", "chg-to"].forEach((id) => {
     const sel = $(id);
     sel.innerHTML = "";
     Object.keys(state.shiftLegend).forEach((c) => {
+      const inf = state.shiftLegend[c];
+      if (!inf || !inf.start || !inf.end) return;
       const o = document.createElement("option");
       o.value = c;
-      o.textContent = `${c} (${state.shiftLegend[c].start}–${state.shiftLegend[c].end})`;
+      o.textContent = `${c} (${inf.start}–${inf.end})`;
       sel.appendChild(o);
     });
   });
   fillMgrAssignShiftSelect();
+}
+
+function shiftOptionLabel(code) {
+  const c = String(code).toUpperCase();
+  const inf = state.shiftLegend?.[c];
+  if (inf?.start && inf?.end) return `${c} · ${inf.start}–${inf.end}`;
+  if (inf?.description) return `${c} · ${inf.description}`;
+  if (inf?.label) return `${c} · ${inf.label}`;
+  return c;
 }
 
 function fillMgrAssignShiftSelect() {
@@ -156,10 +188,10 @@ function fillMgrAssignShiftSelect() {
   if (!sel) return;
   const cur = sel.value;
   sel.innerHTML = "";
-  Object.entries(state.shiftLegend || {}).forEach(([code, info]) => {
+  matrixShiftCodes().forEach((code) => {
     const o = document.createElement("option");
     o.value = code;
-    o.textContent = `${code} · ${info.start}–${info.end}`;
+    o.textContent = shiftOptionLabel(code);
     sel.appendChild(o);
   });
   if (cur && [...sel.options].some((x) => x.value === cur)) sel.value = cur;
@@ -409,10 +441,38 @@ function setDefaultTableRange() {
   $("table-end").value = end.toISOString().slice(0, 10);
 }
 
+function rosterShiftCodeOrder(codes) {
+  const preferred = ["A", "B", "C", "G", "L", "WO"];
+  const upper = (codes || []).map((c) => String(c).toUpperCase());
+  const seen = new Set(upper);
+  const out = [];
+  preferred.forEach((c) => {
+    if (seen.has(c)) {
+      out.push(c);
+      seen.delete(c);
+    }
+  });
+  [...seen].sort().forEach((c) => out.push(c));
+  return out;
+}
+
+/** Always include L and WO even if an older server only returned timed bands in shift legend. */
 function matrixShiftCodes() {
-  const keys = Object.keys(state.shiftLegend || {});
-  if (keys.length) return keys.map((c) => c.toUpperCase()).sort();
-  return ["A", "B", "C", "G"];
+  const canonical = ["A", "B", "C", "G", "L", "WO"];
+  const serverKeys = Object.keys(state.shiftLegend || {}).map((c) => String(c).toUpperCase());
+  const merged = new Set([...canonical, ...serverKeys]);
+  return rosterShiftCodeOrder([...merged]);
+}
+
+function canEditMatrixCell(employeeId) {
+  const role = state.user?.role;
+  if (!role) return false;
+  if (role === "manager" || role === "admin") return true;
+  if (role === "employee") {
+    const mine = String(state.user.employee_id || "").toUpperCase();
+    return mine && String(employeeId || "").toUpperCase() === mine;
+  }
+  return false;
 }
 
 function paintMatrixDataCell(td, code, editable) {
@@ -429,7 +489,7 @@ function paintMatrixDataCell(td, code, editable) {
   }
   if (editable) {
     td.classList.add("matrix-cell-editable");
-    td.title = "Tap to set shift";
+    td.title = "Tap to choose A, B, C, G, L (leave), or WO (week off)";
   }
 }
 
@@ -444,21 +504,31 @@ async function saveMatrixCellShift(td, shiftCode) {
   const emp = td.dataset.employeeId;
   const date = td.dataset.date;
   if (!emp || !date) return;
-  const payload = {
-    assignments: [{ employee_id: emp, date, shift_code: shiftCode }],
-  };
-  if (state.user.role === "admin") {
-    const dept = $("table-dept")?.value;
-    if (!dept) throw new Error("Choose a department (admin).");
-    payload.department_id = dept;
+  if (state.user.role === "employee") {
+    const mine = String(state.user.employee_id || "").toUpperCase();
+    if (String(emp).toUpperCase() !== mine) throw new Error("You can only edit your own row.");
+    await api("/api/shifts/mine", {
+      method: "POST",
+      body: JSON.stringify({ date, shift_code: shiftCode }),
+    });
+  } else {
+    const payload = {
+      assignments: [{ employee_id: emp, date, shift_code: shiftCode }],
+    };
+    if (state.user.role === "admin") {
+      const dept = $("table-dept")?.value;
+      if (!dept) throw new Error("Choose a department (admin).");
+      payload.department_id = dept;
+    }
+    await api("/api/shifts/bulk", { method: "POST", body: JSON.stringify(payload) });
   }
-  await api("/api/shifts/bulk", { method: "POST", body: JSON.stringify(payload) });
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
 }
 
 function openMatrixCellEditor(td) {
   if (!td || td.classList.contains("sticky")) return;
+  if (!canEditMatrixCell(td.dataset.employeeId)) return;
   restoreOpenMatrixCellEditor();
   const current = (td.dataset.shiftCode || "").trim().toUpperCase();
   const sel = document.createElement("select");
@@ -467,7 +537,7 @@ function openMatrixCellEditor(td) {
   matrixShiftCodes().forEach((code) => {
     const o = document.createElement("option");
     o.value = code;
-    o.textContent = code;
+    o.textContent = shiftOptionLabel(code);
     sel.appendChild(o);
   });
   if (current && [...sel.options].some((o) => o.value === current)) sel.value = current;
@@ -503,10 +573,9 @@ function openMatrixCellEditor(td) {
 }
 
 function handleMatrixDataCellClick(ev) {
-  const role = state.user?.role;
-  if (!role || !["manager", "admin"].includes(role)) return;
   const td = ev.target.closest("td.matrix-data-cell");
   if (!td || !td.dataset.date || !td.dataset.employeeId) return;
+  if (!canEditMatrixCell(td.dataset.employeeId)) return;
   const inMain = $("matrix-body")?.contains(td);
   const inCards = $("matrix-cards")?.contains(td);
   if (!inMain && !inCards) return;
@@ -540,6 +609,17 @@ function formatMatrixDayLabel(isoDate) {
   }
 }
 
+function formatMatrixWeekdayShort(isoDate) {
+  if (!isoDate || isoDate.length < 10) return "";
+  try {
+    const d = new Date(`${isoDate.slice(0, 10)}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString(undefined, { weekday: "short" });
+  } catch {
+    return "";
+  }
+}
+
 function buildMatrixMobileCards(data) {
   const root = $("matrix-cards");
   if (!root) return;
@@ -554,8 +634,8 @@ function buildMatrixMobileCards(data) {
     root.innerHTML = '<p class="hint">No team members in this roster range.</p>';
     return;
   }
-  const canEditMatrix = ["manager", "admin"].includes(state.user?.role);
   rows.forEach((row) => {
+    const canEditMatrix = canEditMatrixCell(row.employee_id);
     const article = document.createElement("article");
     article.className = "roster-person-card";
     const head = document.createElement("header");
@@ -607,18 +687,50 @@ async function refreshTable() {
     params.set("department_id", sel);
   }
   const data = await api(`/api/shifts/table?${params}`);
+  if (data.shift_legend && typeof data.shift_legend === "object") {
+    state.shiftLegend = { ...state.shiftLegend, ...data.shift_legend };
+    const fillNonTimed = {
+      L: { label: "Leave", description: "Leave" },
+      WO: { label: "Week off", description: "Week off" },
+    };
+    Object.entries(fillNonTimed).forEach(([k, v]) => {
+      if (!state.shiftLegend[k]) state.shiftLegend[k] = v;
+    });
+    fillMgrAssignShiftSelect();
+  }
   const thead = $("matrix-head");
   const tbody = $("matrix-body");
+  const tbl = $("matrix-table");
   thead.innerHTML = "";
   tbody.innerHTML = "";
+  if (tbl) {
+    let cap = tbl.querySelector("caption");
+    if (!cap) {
+      cap = document.createElement("caption");
+      tbl.insertBefore(cap, tbl.firstChild);
+    }
+    cap.className = "matrix-caption";
+    cap.textContent = data.department_name
+      ? `Shift roster — ${data.department_name} (rows: people · columns: dates)`
+      : "Shift roster (rows: people · columns: dates)";
+  }
   const hr = document.createElement("tr");
   const h0 = document.createElement("th");
   h0.classList.add("sticky");
+  h0.setAttribute("scope", "col");
   h0.textContent = data.department_name ? `${data.department_name} — staff` : "Staff";
   hr.appendChild(h0);
   (data.dates || []).forEach((d) => {
     const th = document.createElement("th");
-    th.textContent = d.slice(5);
+    th.setAttribute("scope", "col");
+    const dateL = document.createElement("span");
+    dateL.className = "matrix-th-date";
+    dateL.textContent = d.slice(5);
+    const dow = document.createElement("span");
+    dow.className = "matrix-th-dow";
+    dow.textContent = formatMatrixWeekdayShort(d);
+    th.appendChild(dateL);
+    th.appendChild(dow);
     hr.appendChild(th);
   });
   thead.appendChild(hr);
@@ -626,9 +738,10 @@ async function refreshTable() {
     const tr = document.createElement("tr");
     const td0 = document.createElement("td");
     td0.classList.add("sticky");
+    td0.setAttribute("scope", "row");
     td0.textContent = `${row.full_name} (${row.employee_id})`;
     tr.appendChild(td0);
-    const canEditMatrix = ["manager", "admin"].includes(state.user?.role);
+    const canEditMatrix = canEditMatrixCell(row.employee_id);
     (data.dates || []).forEach((d) => {
       const td = document.createElement("td");
       td.dataset.date = d;

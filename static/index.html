@@ -362,15 +362,19 @@
               <div id="calendar"></div>
             </div>
             <div>
-              <h2>Shift roster (table &amp; mobile view)</h2>
+              <h2>Shift roster</h2>
               <p class="hint" id="roster-view-hint">
                 <span class="roster-hint-wide"
-                  >Wide screen: staff in rows, dates in columns — scroll horizontally for more days. Managers and
-                  administrators can tap a cell to change a shift.</span
+                  >Main view is a dated grid table (staff in rows, dates in columns). Scroll horizontally for more days.
+                  Codes: <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong> (shifts),
+                  <strong>L</strong> (leave), <strong>WO</strong> (week off). Tap a cell to pick from the list — managers
+                  and admins can edit anyone; employees only their own row.</span
                 >
                 <span class="roster-hint-narrow"
-                  >Phone or narrow window: each person appears as a card with dates listed vertically — easy to scroll and
-                  read. Swipe the wide table below if you prefer the classic grid.</span
+                  >The dated table scrolls sideways; below it, each person also has a compact card list by day. Tap a cell
+                  to choose <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong>,
+                  <strong>L</strong> (leave), or <strong>WO</strong> (week off). Employees: only your own row is
+                  editable.</span
                 >
               </p>
               <div class="row">
@@ -395,13 +399,13 @@
               <p class="hint matrix-scroll-hint roster-scroll-hint" aria-hidden="true">
                 Tip: swipe left/right on the grid to see all dates.
               </p>
-              <div id="matrix-cards" class="matrix-mobile-cards" aria-label="Roster by team member"></div>
               <div class="table-scroll matrix-wrap-desktop">
-                <table class="matrix" id="matrix-table">
+                <table class="matrix roster-matrix" id="matrix-table">
                   <thead id="matrix-head"></thead>
                   <tbody id="matrix-body"></tbody>
                 </table>
               </div>
+              <div id="matrix-cards" class="matrix-mobile-cards" aria-label="Roster by team member (compact)"></div>
             </div>
           </div>
         </div>
@@ -521,7 +525,7 @@
             </div>
             <button type="button" id="mgr-roster-refresh" class="btn secondary">Refresh team list</button>
 
-            <h3 style="margin-top: 1.25rem; font-size: 1rem">Assign shift (A, B, C, or G)</h3>
+            <h3 style="margin-top: 1.25rem; font-size: 1rem">Assign roster code (A, B, C, G, L, or WO)</h3>
             <p class="hint">Pick a team member, date, and shift band.</p>
             <div class="row mgr-assign-row">
               <div>
@@ -554,7 +558,7 @@
                 <select id="bulk-dept"></select>
               </div>
             </div>
-            <textarea id="bulk-lines" placeholder="EMP001,2026-04-21,A"></textarea>
+            <textarea id="bulk-lines" placeholder="EMP001,2026-04-21,A  (or B, C, G, L, WO)"></textarea>
             <button type="button" id="bulk-submit" class="btn">Apply bulk assignment</button>
             <div id="bulk-msg" class="hint"></div>
           </div>

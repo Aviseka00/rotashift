@@ -16,12 +16,17 @@ router = APIRouter(prefix="/api/shifts", tags=["shifts"])
 class AssignmentItem(BaseModel):
     employee_id: str
     date: str = Field(..., description="YYYY-MM-DD")
-    shift_code: str = Field(..., pattern="^[ABCG]$")
+    shift_code: str = Field(..., min_length=1, max_length=2, description="A B C G L or WO")
 
 
 class BulkBody(BaseModel):
     department_id: Optional[str] = None
     assignments: List[AssignmentItem]
+
+
+class SelfRosterDayBody(BaseModel):
+    date: str = Field(..., description="YYYY-MM-DD")
+    shift_code: str = Field(..., min_length=1, max_length=2, description="A B C G L or WO")
 
 
 def _dept_scope(user: dict, body_dept: Optional[str]) -> ObjectId:
@@ -85,6 +90,41 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin", "manag
         )
         inserted += 1
     return {"upserted": inserted, "errors": errors}
+
+
+@router.post("/mine")
+async def set_own_roster_day(body: SelfRosterDayBody, user=Depends(get_current_user)):
+    """Employees set their own roster cell (same codes as the department table). Managers/admins use /bulk."""
+    if user.get("role") != "employee":
+        raise HTTPException(status_code=403, detail="Managers and administrators use bulk roster assign for any team member")
+    if not user.get("department_id"):
+        raise HTTPException(status_code=400, detail="No department")
+    code = body.shift_code.strip().upper()
+    if code not in SHIFT_DEFINITIONS:
+        raise HTTPException(status_code=400, detail="Invalid shift code")
+    try:
+        parse_iso_date(body.date)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date")
+
+    db = get_db()
+    dept_id = ObjectId(user["department_id"])
+    uid = ObjectId(user["_id"])
+    now = datetime.now(timezone.utc)
+    doc = {
+        "department_id": dept_id,
+        "user_id": uid,
+        "date": body.date[:10],
+        "shift_code": code,
+        "assigned_by": uid,
+        "updated_at": now,
+    }
+    await db.shifts.update_one(
+        {"department_id": dept_id, "user_id": uid, "date": doc["date"]},
+        {"$set": doc},
+        upsert=True,
+    )
+    return {"ok": True, "shift_code": code, "date": doc["date"]}
 
 
 @router.get("/calendar")

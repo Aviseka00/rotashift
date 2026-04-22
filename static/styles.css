@@ -11,6 +11,8 @@
   --b: #a855f7;
   --c: #f97316;
   --g: #14b8a6;
+  --l: #eab308;
+  --wo: #64748b;
   font-family: system-ui, "Segoe UI", Roboto, Ubuntu, sans-serif;
 }
 
@@ -134,7 +136,8 @@ a {
 
 @media (max-width: 560px), (max-height: 460px) {
   .matrix-wrap-desktop {
-    display: none;
+    max-height: min(52vh, 380px);
+    font-size: 0.72rem;
   }
   .matrix-scroll-hint {
     display: none !important;
@@ -345,7 +348,7 @@ textarea {
   margin-top: 0.75rem;
 }
 
-.legend span {
+.legend .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -368,6 +371,12 @@ textarea {
 }
 .dot.g {
   background: var(--g);
+}
+.dot.l {
+  background: var(--l);
+}
+.dot.wo {
+  background: var(--wo);
 }
 
 #calendar {
@@ -394,11 +403,48 @@ table.matrix td {
   white-space: nowrap;
 }
 
+table.matrix thead th:not(.sticky) {
+  white-space: normal;
+  text-align: center;
+  vertical-align: bottom;
+  min-width: 2.75rem;
+  line-height: 1.15;
+}
+
+table.matrix caption.matrix-caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0.35rem 0.5rem 0.55rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.matrix-th-date {
+  display: block;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.matrix-th-dow {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
 table.matrix th {
   position: sticky;
   top: 0;
   background: #111827;
   z-index: 2;
+}
+
+table.matrix.roster-matrix td.matrix-data-cell {
+  text-align: center;
+  font-weight: 600;
+  min-width: 2.5rem;
 }
 
 /* Top-left corner: both sticky row and column */
@@ -451,6 +497,12 @@ table.matrix select.matrix-cell-select {
 .cell-g {
   background: rgba(20, 184, 166, 0.18);
 }
+.cell-l {
+  background: rgba(234, 179, 8, 0.22);
+}
+.cell-wo {
+  background: rgba(100, 116, 139, 0.28);
+}
 
 @media (orientation: landscape) and (max-height: 500px) {
   .landscape-compact .card {
@@ -500,6 +552,16 @@ table.matrix select.matrix-cell-select {
 }
 .shift-g {
   border-left: 3px solid var(--g) !important;
+}
+.shift-l {
+  border-left: 3px solid var(--l) !important;
+}
+.shift-wo {
+  border-left: 3px solid var(--wo) !important;
+}
+
+.fc .evt-roster-day .fc-event-title {
+  font-size: 0.82rem;
 }
 
 .list-requests {
