@@ -10,8 +10,8 @@
   --a: #3b82f6;
   --b: #a855f7;
   --c: #f97316;
-  --g: #14b8a6;
-  --l: #eab308;
+  --g: #3b82f6;
+  --l: #ef4444;
   --wo: #64748b;
   font-family: system-ui, "Segoe UI", Roboto, Ubuntu, sans-serif;
 }
@@ -390,6 +390,23 @@ textarea {
   border-radius: 8px;
 }
 
+.table-scroll:has(.roster-matrix) {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.55), rgba(15, 23, 42, 0.92));
+  border-color: rgba(56, 189, 248, 0.8);
+  box-shadow:
+    inset 0 1px 0 rgba(191, 219, 254, 0.35),
+    0 0 0 1px rgba(56, 189, 248, 0.35),
+    0 0 28px rgba(59, 130, 246, 0.55),
+    0 0 54px rgba(14, 165, 233, 0.35);
+}
+
+table.matrix.roster-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
 table.matrix {
   border-collapse: collapse;
   font-size: 0.8rem;
@@ -414,10 +431,15 @@ table.matrix thead th:not(.sticky) {
 table.matrix caption.matrix-caption {
   caption-side: top;
   text-align: left;
-  padding: 0.35rem 0.5rem 0.55rem;
-  font-size: 0.78rem;
-  color: var(--muted);
-  font-weight: 500;
+  padding: 0.6rem 0.8rem 0.75rem;
+  font-size: 0.82rem;
+  color: #dbeafe;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.42), rgba(14, 165, 233, 0.2));
+  border-bottom: 1px solid rgba(56, 189, 248, 0.65);
+  text-shadow: 0 0 12px rgba(125, 211, 252, 0.55);
 }
 
 .matrix-th-date {
@@ -437,14 +459,34 @@ table.matrix caption.matrix-caption {
 table.matrix th {
   position: sticky;
   top: 0;
-  background: #111827;
+  background: linear-gradient(180deg, #1f2937, #0f172a);
   z-index: 2;
+  border-color: rgba(148, 163, 184, 0.35);
 }
 
 table.matrix.roster-matrix td.matrix-data-cell {
   text-align: center;
-  font-weight: 600;
+  font-weight: 700;
   min-width: 2.5rem;
+  transition: transform 120ms ease, filter 120ms ease;
+  border-color: rgba(148, 163, 184, 0.28);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+table.matrix.roster-matrix tbody tr:nth-child(even) td:not(.sticky) {
+  background: rgba(15, 23, 42, 0.72);
+}
+
+table.matrix.roster-matrix tbody tr:hover td:not(.sticky) {
+  filter: brightness(1.12);
+}
+
+table.matrix.roster-matrix td.matrix-data-cell:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 0 16px rgba(56, 189, 248, 0.45);
 }
 
 /* Top-left corner: both sticky row and column */
@@ -456,12 +498,14 @@ table.matrix thead th.sticky {
 table.matrix td.sticky {
   position: sticky;
   left: 0;
-  background: #0b1222;
+  background: linear-gradient(90deg, #0f172a, #111827);
   z-index: 1;
-  font-weight: 600;
+  font-weight: 700;
   max-width: min(42vw, 14rem);
   overflow: hidden;
   text-overflow: ellipsis;
+  border-right: 1px solid rgba(96, 165, 250, 0.38);
+  color: #e2e8f0;
 }
 
 table.matrix td.matrix-cell-editable {
@@ -486,22 +530,45 @@ table.matrix select.matrix-cell-select {
 }
 
 .cell-a {
-  background: rgba(59, 130, 246, 0.18);
+  background: #0f766e;
+  color: #ffffff;
+  border: 1px solid #99f6e4 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 12px rgba(20, 184, 166, 0.35);
 }
 .cell-b {
-  background: rgba(168, 85, 247, 0.18);
+  background: #6d28d9;
+  color: #ffffff;
+  border: 1px solid #d8b4fe !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 12px rgba(168, 85, 247, 0.32);
 }
 .cell-c {
-  background: rgba(249, 115, 22, 0.18);
+  background: #ea580c;
+  color: #ffffff;
+  border: 1px solid #ffedd5 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 12px rgba(249, 115, 22, 0.32);
 }
 .cell-g {
-  background: rgba(20, 184, 166, 0.18);
+  background: #1d4ed8;
+  color: #ffffff;
+  border: 2px solid #bfdbfe !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 0 16px rgba(37, 99, 235, 0.55);
 }
 .cell-l {
-  background: rgba(234, 179, 8, 0.22);
+  background: #dc2626;
+  color: #ffffff;
+  border: 2px solid #fee2e2 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3), 0 0 16px rgba(239, 68, 68, 0.6);
 }
 .cell-wo {
-  background: rgba(100, 116, 139, 0.28);
+  background: #111827;
+  color: #fef3c7;
+  border: 1px solid #fcd34d !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 0 10px rgba(251, 191, 36, 0.28);
+}
+
+table.matrix.roster-matrix td.matrix-data-cell[class^="cell-"],
+table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.45);
 }
 
 @media (orientation: landscape) and (max-height: 500px) {
@@ -1354,6 +1421,89 @@ table.kanban-table {
   text-align: center;
   padding: 1.25rem;
   border-radius: 14px;
+}
+
+.infovally-shell {
+  margin-top: 0;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.92));
+}
+
+.infovally-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.infovally-eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.infovally-title {
+  margin: 0.15rem 0 0.25rem;
+}
+
+.infovally-table-wrap {
+  margin-top: 0.8rem;
+}
+
+.infovally-scroll {
+  max-height: min(64vh, 560px);
+}
+
+table.infovally-table {
+  min-width: 980px;
+}
+
+table.infovally-table td {
+  vertical-align: top;
+}
+
+.infovally-date-cell {
+  white-space: normal;
+  min-width: 11rem;
+}
+
+.infovally-activity-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.infovally-activity-meta {
+  margin: 0.2rem 0 0.35rem;
+}
+
+.infovally-activity-details {
+  white-space: pre-wrap;
+}
+
+.infovally-comments-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.45rem;
+}
+
+.infovally-comment-item {
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.infovally-comment-row {
+  align-items: center;
+}
+
+.infovally-comment-row input {
+  width: 100%;
 }
 
 .kanban-columns {

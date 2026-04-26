@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from bson import ObjectId
@@ -18,6 +18,13 @@ def _iso(dt: Any) -> Optional[str]:
     if isinstance(dt, datetime):
         return dt.isoformat()
     return str(dt)
+
+
+def _parse_iso_day(value: str) -> datetime.date:
+    try:
+        return datetime.strptime(value[:10], "%Y-%m-%d").date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date")
 
 
 async def _leave_row(db, x: dict) -> dict:
@@ -113,11 +120,15 @@ async def create_leave(body: LeaveCreate, user=Depends(get_current_user)):
     db = get_db()
     if not user.get("department_id"):
         raise HTTPException(status_code=400, detail="User must belong to a department")
+    start_day = _parse_iso_day(body.start_date)
+    end_day = _parse_iso_day(body.end_date)
+    if end_day < start_day:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
     doc = {
         "user_id": ObjectId(user["_id"]),
         "department_id": ObjectId(user["department_id"]),
-        "start_date": body.start_date[:10],
-        "end_date": body.end_date[:10],
+        "start_date": start_day.isoformat(),
+        "end_date": end_day.isoformat(),
         "reason": body.reason.strip(),
         "status": "pending",
         "created_at": datetime.now(timezone.utc),
@@ -178,6 +189,31 @@ async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("m
             }
         },
     )
+
+    if body.status == "approved":
+        start_day = _parse_iso_day(req["start_date"])
+        end_day = _parse_iso_day(req["end_date"])
+        now = datetime.now(timezone.utc)
+        actor = ObjectId(user["_id"])
+        day = start_day
+        while day <= end_day:
+            day_iso = day.isoformat()
+            await db.shifts.update_one(
+                {"department_id": req["department_id"], "user_id": req["user_id"], "date": day_iso},
+                {
+                    "$set": {
+                        "department_id": req["department_id"],
+                        "user_id": req["user_id"],
+                        "date": day_iso,
+                        "shift_code": "L",
+                        "assigned_by": actor,
+                        "updated_at": now,
+                        "leave_request_id": oid,
+                    }
+                },
+                upsert=True,
+            )
+            day += timedelta(days=1)
     return {"ok": True, "status": body.status}
 
 

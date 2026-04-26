@@ -13,7 +13,7 @@ from app.config import (
     ROTASHIFT_ENV,
     SECRET_KEY,
 )
-from app.routers import admin_api, auth_api, departments_api, health_api, meta_api, requests_api, shifts_api, tasks_api, users_api
+from app.routers import activities_api, admin_api, auth_api, departments_api, health_api, meta_api, requests_api, shifts_api, tasks_api, users_api
 from app.seed import ensure_indexes_and_seed
 
 
@@ -61,6 +61,7 @@ app.include_router(shifts_api.router)
 app.include_router(requests_api.router)
 app.include_router(meta_api.router)
 app.include_router(admin_api.router)
+app.include_router(activities_api.router)
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 
