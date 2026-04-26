@@ -211,6 +211,7 @@ async function loadDepartments() {
     "admin-records-dept",
     "tasks-admin-dept",
     "infovalley-admin-dept",
+    "infovally-admin-dept",
   ];
   selects.forEach((id) => {
     const sel = $(id);
@@ -1287,26 +1288,26 @@ function mountTasksModule(role) {
 }
 
 function mountInfoValleyModule(role) {
-  const block = $("infovalley-module-block");
+  const block = $("infovalley-module-block") || $("infovally-module-block");
   if (!block) return;
-  let mount = $("emp-infovalley-mount");
-  if (role === "manager") mount = $("mgr-infovalley-mount");
-  if (role === "admin") mount = $("adm-infovalley-mount");
+  let mount = $("emp-infovalley-mount") || $("emp-infovally-mount");
+  if (role === "manager") mount = $("mgr-infovalley-mount") || $("mgr-infovally-mount");
+  if (role === "admin") mount = $("adm-infovalley-mount") || $("adm-infovally-mount");
   if (mount) mount.appendChild(block);
 }
 
 function infovalleyScopeDeptId() {
   if (!state.user) return null;
   if (state.user.role === "admin") {
-    return $("infovalley-admin-dept")?.value || null;
+    return $("infovalley-admin-dept")?.value || $("infovally-admin-dept")?.value || null;
   }
   return state.user.department_id || null;
 }
 
 function updateInfoValleyUiForRole() {
   const role = state.user?.role;
-  const hint = $("infovalley-hint");
-  const adminWrap = $("infovalley-admin-dept-wrap");
+  const hint = $("infovalley-hint") || $("infovally-hint");
+  const adminWrap = $("infovalley-admin-dept-wrap") || $("infovally-admin-dept-wrap");
   if (adminWrap) show(adminWrap, role === "admin");
   if (hint) {
     hint.textContent =
@@ -1327,7 +1328,7 @@ function formatInfoValleyDate(isoDate) {
 }
 
 function renderInfoValleyTable(entries) {
-  const root = $("infovalley-table");
+  const root = $("infovalley-table") || $("infovally-table");
   if (!root) return;
   root.innerHTML = "";
   const list = entries || [];
@@ -1377,8 +1378,37 @@ function renderInfoValleyTable(entries) {
   root.appendChild(wrap);
 }
 
+/** GET /api/activities — retry with trailing slash if the server/proxy only exposes /api/activities/ */
+async function fetchActivitiesJson(path) {
+  try {
+    return await api(path);
+  } catch (e) {
+    const st = e && e.status;
+    const msg = (e && e.message) || "";
+    const notFound = st === 404 || /not\s*found/i.test(msg) || msg === "Not Found";
+    if (!notFound) throw e;
+    const q = path.indexOf("?");
+    const alt = q >= 0 ? `/api/activities/?${path.slice(q + 1)}` : "/api/activities/";
+    if (alt === path) throw e;
+    return await api(alt);
+  }
+}
+
+/** POST create activity — same trailing-slash retry as tasks. */
+async function postActivityCreate(body) {
+  const opts = { method: "POST", body: JSON.stringify(body) };
+  try {
+    return await api("/api/activities", opts);
+  } catch (e) {
+    if (e && e.status === 404) {
+      return await api("/api/activities/", opts);
+    }
+    throw e;
+  }
+}
+
 async function refreshInfoValleyBoard() {
-  const root = $("infovalley-table");
+  const root = $("infovalley-table") || $("infovally-table");
   if (!root || !state.user) return;
   const deptId = infovalleyScopeDeptId();
   if (state.user.role === "admin" && !deptId) {
@@ -1391,7 +1421,7 @@ async function refreshInfoValleyBoard() {
   }
   root.innerHTML = '<p class="hint">Loading activities…</p>';
   try {
-    const data = await api(path);
+    const data = await fetchActivitiesJson(path);
     renderInfoValleyTable(data.entries || []);
   } catch (e) {
     root.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
@@ -1748,7 +1778,7 @@ async function bootAuthenticated() {
         refreshTasksBoard().catch(() => {});
       };
     }
-    const infoDept = $("infovalley-admin-dept");
+    const infoDept = $("infovalley-admin-dept") || $("infovally-admin-dept");
     if (infoDept && state.departments[0] && !infoDept.value) infoDept.value = state.departments[0].id;
     if (infoDept) {
       infoDept.onchange = () => {
@@ -1762,8 +1792,9 @@ async function bootAuthenticated() {
   if ($("mgr-assign-date") && !$("mgr-assign-date").value) {
     $("mgr-assign-date").value = new Date().toISOString().slice(0, 10);
   }
-  if ($("infovalley-date") && !$("infovalley-date").value) {
-    $("infovalley-date").value = new Date().toISOString().slice(0, 10);
+  const infoDateEl = $("infovalley-date") || $("infovally-date");
+  if (infoDateEl && !infoDateEl.value) {
+    infoDateEl.value = new Date().toISOString().slice(0, 10);
   }
   if (state.user.role === "manager" && $("mgr-roster-hint")) {
     $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
@@ -2195,13 +2226,19 @@ $("task-create-btn")?.addEventListener("click", async () => {
 $("infovalley-refresh")?.addEventListener("click", () => {
   refreshInfoValleyBoard().catch((e) => alert(e.message || String(e)));
 });
+$("infovally-refresh")?.addEventListener("click", () => {
+  refreshInfoValleyBoard().catch((e) => alert(e.message || String(e)));
+});
 
-$("infovalley-submit")?.addEventListener("click", async () => {
-  const msg = $("infovalley-msg");
+async function submitInfoValleyActivity() {
+  const msg = $("infovalley-msg") || $("infovally-msg");
   if (msg) msg.textContent = "";
-  const title = $("infovalley-title")?.value?.trim() || "";
-  const details = $("infovalley-details")?.value?.trim() || "";
-  const activityDate = $("infovalley-date")?.value || "";
+  const titleEl = $("infovalley-activity-title") || $("infovalley-title") || $("infovally-title");
+  const detailsEl = $("infovalley-details") || $("infovally-details");
+  const dateEl = $("infovalley-date") || $("infovally-date");
+  const title = titleEl?.value?.trim() || "";
+  const details = detailsEl?.value?.trim() || "";
+  const activityDate = dateEl?.value || "";
   if (!activityDate || !title || !details) {
     if (msg) msg.textContent = "Fill date, title, and details.";
     return;
@@ -2215,17 +2252,17 @@ $("infovalley-submit")?.addEventListener("click", async () => {
     }
   }
   try {
-    await api("/api/activities", { method: "POST", body: JSON.stringify(body) });
-    $("infovalley-title").value = "";
-    $("infovalley-details").value = "";
+    await postActivityCreate(body);
+    if (titleEl) titleEl.value = "";
+    if (detailsEl) detailsEl.value = "";
     if (msg) msg.textContent = "Activity posted.";
     await refreshInfoValleyBoard();
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
   }
-});
+}
 
-$("infovalley-table")?.addEventListener("click", async (ev) => {
+async function handleInfoValleyCommentClick(ev) {
   const btn = ev.target.closest("[data-infovalley-comment-btn]");
   if (!btn) return;
   const id = btn.getAttribute("data-infovalley-comment-btn");
@@ -2242,7 +2279,12 @@ $("infovalley-table")?.addEventListener("click", async (ev) => {
   } catch (e) {
     alert(e.message || String(e));
   }
-});
+}
+
+$("infovalley-submit")?.addEventListener("click", submitInfoValleyActivity);
+$("infovally-submit")?.addEventListener("click", submitInfoValleyActivity);
+$("infovalley-table")?.addEventListener("click", handleInfoValleyCommentClick);
+$("infovally-table")?.addEventListener("click", handleInfoValleyCommentClick);
 
 $("export-btn").addEventListener("click", async () => {
   const data = await api("/api/admin/export");

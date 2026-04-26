@@ -89,6 +89,7 @@ class ActivityCommentBody(BaseModel):
 
 
 @router.get("")
+@router.get("/")
 async def list_activities(
     department_id: Optional[str] = Query(None),
     user=Depends(get_current_user),
@@ -103,6 +104,7 @@ async def list_activities(
 
 
 @router.post("")
+@router.post("/")
 async def create_activity(body: ActivityCreateBody, user=Depends(get_current_user)):
     db = get_db()
     dept_oid = _dept_scope(user, body.department_id)

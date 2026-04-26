@@ -1425,8 +1425,14 @@ table.kanban-table {
 
 .infovalley-shell {
   margin-top: 0;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: linear-gradient(165deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.92));
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.82), rgba(30, 41, 59, 0.78));
+  box-shadow:
+    inset 0 1px 0 rgba(191, 219, 254, 0.25),
+    0 0 0 1px rgba(56, 189, 248, 0.15),
+    0 18px 44px -24px rgba(14, 165, 233, 0.65),
+    0 14px 30px -20px rgba(168, 85, 247, 0.55);
+  backdrop-filter: blur(12px);
 }
 
 .infovalley-head {
@@ -1435,6 +1441,8 @@ table.kanban-table {
   gap: 1rem;
   align-items: flex-start;
   margin-bottom: 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.35);
 }
 
 .infovalley-eyebrow {
@@ -1446,8 +1454,13 @@ table.kanban-table {
   font-weight: 700;
 }
 
-.infovalley-title {
+.infovalley-heading {
   margin: 0.15rem 0 0.25rem;
+  background: linear-gradient(90deg, #e0f2fe, #dbeafe 45%, #ede9fe);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 18px rgba(125, 211, 252, 0.35);
 }
 
 .infovalley-table-wrap {
@@ -1456,24 +1469,89 @@ table.kanban-table {
 
 .infovalley-scroll {
   max-height: min(64vh, 560px);
+  border: 1px solid rgba(125, 211, 252, 0.38);
+  background:
+    radial-gradient(900px 280px at 100% -10%, rgba(59, 130, 246, 0.2), transparent 55%),
+    radial-gradient(680px 220px at 0% 105%, rgba(168, 85, 247, 0.18), transparent 52%),
+    rgba(15, 23, 42, 0.65);
+  box-shadow:
+    inset 0 1px 0 rgba(191, 219, 254, 0.22),
+    0 14px 30px -22px rgba(14, 165, 233, 0.45);
+  backdrop-filter: blur(10px);
+  resize: both;
+  overflow: auto;
+  min-height: 280px;
+  min-width: min(100%, 560px);
+  max-width: 100%;
 }
 
 table.infovalley-table {
   min-width: 980px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.matrix-wrap-desktop {
+  resize: both;
+  overflow: auto;
+  min-height: 260px;
+  min-width: min(100%, 560px);
+  max-width: 100%;
 }
 
 table.infovalley-table td {
   vertical-align: top;
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+table.infovalley-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.74rem;
+  color: #ffffff;
+  border-color: rgba(147, 197, 253, 0.4);
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.6);
+}
+
+table.infovalley-table thead th:nth-child(1) {
+  background: linear-gradient(180deg, #16a34a, #166534);
+  border-color: rgba(134, 239, 172, 0.75);
+}
+
+table.infovalley-table thead th:nth-child(2) {
+  background: linear-gradient(180deg, #f97316, #c2410c);
+  border-color: rgba(254, 215, 170, 0.75);
+}
+
+table.infovalley-table thead th:nth-child(3) {
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+  border-color: rgba(191, 219, 254, 0.75);
+}
+
+table.infovalley-table tbody tr:nth-child(even) td {
+  background: rgba(30, 41, 59, 0.52);
+}
+
+table.infovalley-table tbody tr:hover td {
+  background: rgba(37, 99, 235, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.28);
 }
 
 .infovalley-date-cell {
   white-space: normal;
   min-width: 11rem;
+  background: linear-gradient(180deg, rgba(14, 116, 144, 0.42), rgba(30, 41, 59, 0.55));
+  border-right: 1px solid rgba(125, 211, 252, 0.45);
 }
 
 .infovalley-activity-title {
   font-weight: 700;
   font-size: 0.95rem;
+  color: #dbeafe;
 }
 
 .infovalley-activity-meta {
@@ -1482,6 +1560,7 @@ table.infovalley-table td {
 
 .infovalley-activity-details {
   white-space: pre-wrap;
+  color: #e2e8f0;
 }
 
 .infovalley-comments-wrap {
@@ -1492,10 +1571,13 @@ table.infovalley-table td {
 }
 
 .infovalley-comment-item {
-  border: 1px solid rgba(100, 116, 139, 0.45);
+  border: 1px solid rgba(125, 211, 252, 0.4);
   border-radius: 8px;
   padding: 0.35rem 0.45rem;
-  background: rgba(15, 23, 42, 0.72);
+  background: linear-gradient(165deg, rgba(30, 41, 59, 0.62), rgba(15, 23, 42, 0.55));
+  box-shadow:
+    inset 0 1px 0 rgba(191, 219, 254, 0.18),
+    0 8px 14px -12px rgba(14, 165, 233, 0.45);
 }
 
 .infovalley-comment-row {
@@ -1504,6 +1586,14 @@ table.infovalley-table td {
 
 .infovalley-comment-row input {
   width: 100%;
+  border-color: rgba(147, 197, 253, 0.55);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.infovalley-comment-row .btn.secondary {
+  border-color: rgba(125, 211, 252, 0.6);
+  color: #e0f2fe;
+  box-shadow: 0 0 14px -8px rgba(56, 189, 248, 0.8);
 }
 
 .kanban-columns {
