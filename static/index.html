@@ -115,7 +115,7 @@
           <nav class="dash-nav" aria-label="Employee dashboard">
             <button type="button" class="dash-tab active" data-dash="employee" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="requests">My requests</button>
-            <button type="button" class="dash-tab" data-dash="employee" data-tab="infovally">Info-vally</button>
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="infovalley">Info-valley</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="tasks">My Kanban</button>
           </nav>
           <div class="dash-pane active" data-dash="employee" data-tab="schedule">
@@ -178,8 +178,8 @@
           <div class="dash-pane hidden" data-dash="employee" data-tab="tasks">
             <div id="emp-tasks-mount"></div>
           </div>
-          <div class="dash-pane hidden" data-dash="employee" data-tab="infovally">
-            <div id="emp-infovally-mount"></div>
+          <div class="dash-pane hidden" data-dash="employee" data-tab="infovalley">
+            <div id="emp-infovalley-mount"></div>
           </div>
         </div>
 
@@ -189,7 +189,7 @@
             <button type="button" class="dash-tab active" data-dash="manager" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="infovally">Info-vally</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="infovalley">Info-valley</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="tasks">My Kanban</button>
           </nav>
           <div class="dash-pane active" data-dash="manager" data-tab="schedule">
@@ -204,8 +204,8 @@
           <div class="dash-pane hidden" data-dash="manager" data-tab="tasks">
             <div id="mgr-tasks-mount"></div>
           </div>
-          <div class="dash-pane hidden" data-dash="manager" data-tab="infovally">
-            <div id="mgr-infovally-mount"></div>
+          <div class="dash-pane hidden" data-dash="manager" data-tab="infovalley">
+            <div id="mgr-infovalley-mount"></div>
           </div>
         </div>
 
@@ -216,7 +216,7 @@
             <button type="button" class="dash-tab" data-dash="admin" data-tab="people">People</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="approvals">Approvals</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="records">Activity</button>
-            <button type="button" class="dash-tab" data-dash="admin" data-tab="infovally">Info-vally</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="infovalley">Info-valley</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="tasks">My Kanban</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="shifts">Manage shifts</button>
@@ -308,8 +308,8 @@
           <div class="dash-pane hidden" data-dash="admin" data-tab="tasks">
             <div id="adm-tasks-mount"></div>
           </div>
-          <div class="dash-pane hidden" data-dash="admin" data-tab="infovally">
-            <div id="adm-infovally-mount"></div>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="infovalley">
+            <div id="adm-infovalley-mount"></div>
           </div>
           <div class="dash-pane active" data-dash="admin" data-tab="org">
             <div id="admin-dash-overview" class="card admin-dash-overview hidden">
@@ -508,47 +508,47 @@
           </section>
         </div>
 
-        <div id="infovally-module-block" class="card infovally-shell">
-          <header class="infovally-head">
+        <div id="infovalley-module-block" class="card infovalley-shell">
+          <header class="infovalley-head">
             <div>
-              <p class="infovally-eyebrow">Department activity</p>
-              <h2 class="infovally-title">Info-vally</h2>
-              <p class="hint" id="infovally-hint"></p>
+              <p class="infovalley-eyebrow">Department activity</p>
+              <h2 class="infovalley-title">Info-valley</h2>
+              <p class="hint" id="infovalley-hint"></p>
             </div>
             <div>
-              <button type="button" id="infovally-refresh" class="btn secondary">Refresh</button>
+              <button type="button" id="infovalley-refresh" class="btn secondary">Refresh</button>
             </div>
           </header>
           <div class="row">
-            <div id="infovally-admin-dept-wrap" class="hidden">
-              <label for="infovally-admin-dept">Department</label>
-              <select id="infovally-admin-dept"></select>
+            <div id="infovalley-admin-dept-wrap" class="hidden">
+              <label for="infovalley-admin-dept">Department</label>
+              <select id="infovalley-admin-dept"></select>
             </div>
           </div>
-          <section class="infovally-create">
+          <section class="infovalley-create">
             <h3 style="font-size: 1rem; margin-bottom: 0.35rem">Add daily activity</h3>
             <div class="row">
               <div>
-                <label for="infovally-date">Date</label>
-                <input type="date" id="infovally-date" />
+                <label for="infovalley-date">Date</label>
+                <input type="date" id="infovalley-date" />
               </div>
               <div>
-                <label for="infovally-title">Activity title</label>
-                <input id="infovally-title" maxlength="160" placeholder="e.g. Info-vally sample prep completed" />
+                <label for="infovalley-title">Activity title</label>
+                <input id="infovalley-title" maxlength="160" placeholder="e.g. Info-valley sample prep completed" />
               </div>
             </div>
-            <label for="infovally-details">Details</label>
-            <textarea id="infovally-details" maxlength="4000" placeholder="What was done today? Add key notes, blockers, or outcomes."></textarea>
+            <label for="infovalley-details">Details</label>
+            <textarea id="infovalley-details" maxlength="4000" placeholder="What was done today? Add key notes, blockers, or outcomes."></textarea>
             <div class="row">
               <div style="flex: 0 0 auto">
-                <button type="button" id="infovally-submit" class="btn">Post activity</button>
+                <button type="button" id="infovalley-submit" class="btn">Post activity</button>
               </div>
-              <div id="infovally-msg" class="hint"></div>
+              <div id="infovalley-msg" class="hint"></div>
             </div>
           </section>
-          <section class="infovally-table-wrap">
+          <section class="infovalley-table-wrap">
             <h3 style="font-size: 1rem; margin-bottom: 0.35rem">Day-wise activity table</h3>
-            <div id="infovally-table"></div>
+            <div id="infovalley-table"></div>
           </section>
         </div>
 

@@ -210,7 +210,7 @@ async function loadDepartments() {
     "admin-user-dept-filter",
     "admin-records-dept",
     "tasks-admin-dept",
-    "infovally-admin-dept",
+    "infovalley-admin-dept",
   ];
   selects.forEach((id) => {
     const sel = $(id);
@@ -1286,27 +1286,27 @@ function mountTasksModule(role) {
   if (mount) mount.appendChild(block);
 }
 
-function mountInfoVallyModule(role) {
-  const block = $("infovally-module-block");
+function mountInfoValleyModule(role) {
+  const block = $("infovalley-module-block");
   if (!block) return;
-  let mount = $("emp-infovally-mount");
-  if (role === "manager") mount = $("mgr-infovally-mount");
-  if (role === "admin") mount = $("adm-infovally-mount");
+  let mount = $("emp-infovalley-mount");
+  if (role === "manager") mount = $("mgr-infovalley-mount");
+  if (role === "admin") mount = $("adm-infovalley-mount");
   if (mount) mount.appendChild(block);
 }
 
-function infovallyScopeDeptId() {
+function infovalleyScopeDeptId() {
   if (!state.user) return null;
   if (state.user.role === "admin") {
-    return $("infovally-admin-dept")?.value || null;
+    return $("infovalley-admin-dept")?.value || null;
   }
   return state.user.department_id || null;
 }
 
-function updateInfoVallyUiForRole() {
+function updateInfoValleyUiForRole() {
   const role = state.user?.role;
-  const hint = $("infovally-hint");
-  const adminWrap = $("infovally-admin-dept-wrap");
+  const hint = $("infovalley-hint");
+  const adminWrap = $("infovalley-admin-dept-wrap");
   if (adminWrap) show(adminWrap, role === "admin");
   if (hint) {
     hint.textContent =
@@ -1316,7 +1316,7 @@ function updateInfoVallyUiForRole() {
   }
 }
 
-function formatInfoVallyDate(isoDate) {
+function formatInfoValleyDate(isoDate) {
   if (!isoDate || isoDate.length < 10) return isoDate || "";
   try {
     const d = new Date(`${isoDate.slice(0, 10)}T12:00:00`);
@@ -1326,8 +1326,8 @@ function formatInfoVallyDate(isoDate) {
   }
 }
 
-function renderInfoVallyTable(entries) {
-  const root = $("infovally-table");
+function renderInfoValleyTable(entries) {
+  const root = $("infovalley-table");
   if (!root) return;
   root.innerHTML = "";
   const list = entries || [];
@@ -1336,9 +1336,9 @@ function renderInfoVallyTable(entries) {
     return;
   }
   const wrap = document.createElement("div");
-  wrap.className = "table-scroll infovally-scroll";
+  wrap.className = "table-scroll infovalley-scroll";
   const tbl = document.createElement("table");
-  tbl.className = "matrix infovally-table";
+  tbl.className = "matrix infovalley-table";
   tbl.innerHTML = `<thead><tr>
     <th>Date</th>
     <th>Activity details</th>
@@ -1352,22 +1352,22 @@ function renderInfoVallyTable(entries) {
       .map((c) => {
         const by = c.created_by || {};
         const ts = c.created_at ? new Date(c.created_at).toLocaleString() : "";
-        return `<div class="infovally-comment-item"><strong>${escapeHtml(by.full_name || "?")} (${escapeHtml(by.employee_id || "?")})</strong><div>${escapeHtml(c.comment || "")}</div><div class="hint">${escapeHtml(ts)}</div></div>`;
+        return `<div class="infovalley-comment-item"><strong>${escapeHtml(by.full_name || "?")} (${escapeHtml(by.employee_id || "?")})</strong><div>${escapeHtml(c.comment || "")}</div><div class="hint">${escapeHtml(ts)}</div></div>`;
       })
       .join("");
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td class="infovally-date-cell"><strong>${escapeHtml(formatInfoVallyDate(item.activity_date))}</strong><div class="hint">${escapeHtml(item.activity_date || "")}</div></td>
+      <td class="infovalley-date-cell"><strong>${escapeHtml(formatInfoValleyDate(item.activity_date))}</strong><div class="hint">${escapeHtml(item.activity_date || "")}</div></td>
       <td>
-        <div class="infovally-activity-title">${escapeHtml(item.title || "")}</div>
-        <div class="infovally-activity-meta hint">By ${escapeHtml(who.full_name || "?")} (${escapeHtml(who.employee_id || "?")}) · ${escapeHtml(cAt)}</div>
-        <div class="infovally-activity-details">${escapeHtml(item.details || "")}</div>
+        <div class="infovalley-activity-title">${escapeHtml(item.title || "")}</div>
+        <div class="infovalley-activity-meta hint">By ${escapeHtml(who.full_name || "?")} (${escapeHtml(who.employee_id || "?")}) · ${escapeHtml(cAt)}</div>
+        <div class="infovalley-activity-details">${escapeHtml(item.details || "")}</div>
       </td>
       <td>
-        <div class="infovally-comments-wrap">${commentsHtml || '<span class="hint">No comments yet.</span>'}</div>
-        <div class="row infovally-comment-row">
-          <div><input data-infovally-comment-input="${escapeHtml(item.id)}" maxlength="1200" placeholder="Add comment..." /></div>
-          <div style="flex: 0 0 auto"><button type="button" class="btn secondary" data-infovally-comment-btn="${escapeHtml(item.id)}">Comment</button></div>
+        <div class="infovalley-comments-wrap">${commentsHtml || '<span class="hint">No comments yet.</span>'}</div>
+        <div class="row infovalley-comment-row">
+          <div><input data-infovalley-comment-input="${escapeHtml(item.id)}" maxlength="1200" placeholder="Add comment..." /></div>
+          <div style="flex: 0 0 auto"><button type="button" class="btn secondary" data-infovalley-comment-btn="${escapeHtml(item.id)}">Comment</button></div>
         </div>
       </td>`;
     tb.appendChild(tr);
@@ -1377,12 +1377,12 @@ function renderInfoVallyTable(entries) {
   root.appendChild(wrap);
 }
 
-async function refreshInfoVallyBoard() {
-  const root = $("infovally-table");
+async function refreshInfoValleyBoard() {
+  const root = $("infovalley-table");
   if (!root || !state.user) return;
-  const deptId = infovallyScopeDeptId();
+  const deptId = infovalleyScopeDeptId();
   if (state.user.role === "admin" && !deptId) {
-    root.innerHTML = '<p class="hint">Choose a department to open Info-vally.</p>';
+    root.innerHTML = '<p class="hint">Choose a department to open Info-valley.</p>';
     return;
   }
   let path = "/api/activities";
@@ -1392,7 +1392,7 @@ async function refreshInfoVallyBoard() {
   root.innerHTML = '<p class="hint">Loading activities…</p>';
   try {
     const data = await api(path);
-    renderInfoVallyTable(data.entries || []);
+    renderInfoValleyTable(data.entries || []);
   } catch (e) {
     root.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
   }
@@ -1642,9 +1642,9 @@ function activateDashTab(dashId, tabId) {
     loadTaskAssigneeOptions().catch(() => {});
     refreshTasksBoard().catch(() => {});
   }
-  if (tabId === "infovally") {
-    updateInfoVallyUiForRole();
-    refreshInfoVallyBoard().catch(() => {});
+  if (tabId === "infovalley") {
+    updateInfoValleyUiForRole();
+    refreshInfoValleyBoard().catch(() => {});
   }
 }
 
@@ -1660,7 +1660,7 @@ function applyRoleVisibility() {
   show($("mgr-admin-dept-row"), role === "admin");
   show($("emp-schedule-quick"), role === "employee");
   updateTasksBoardUiForRole();
-  updateInfoVallyUiForRole();
+  updateInfoValleyUiForRole();
 
   const calHint = $("cal-scope-hint");
   if (calHint) {
@@ -1718,7 +1718,7 @@ async function bootAuthenticated() {
   mountScheduleForRole(state.user.role);
   mountShiftPanels(state.user.role);
   mountTasksModule(state.user.role);
-  mountInfoVallyModule(state.user.role);
+  mountInfoValleyModule(state.user.role);
 
   if (state.user.role === "admin") {
     const pick = $("cal-dept");
@@ -1748,11 +1748,11 @@ async function bootAuthenticated() {
         refreshTasksBoard().catch(() => {});
       };
     }
-    const infoDept = $("infovally-admin-dept");
+    const infoDept = $("infovalley-admin-dept");
     if (infoDept && state.departments[0] && !infoDept.value) infoDept.value = state.departments[0].id;
     if (infoDept) {
       infoDept.onchange = () => {
-        refreshInfoVallyBoard().catch(() => {});
+        refreshInfoValleyBoard().catch(() => {});
       };
     }
   }
@@ -1762,8 +1762,8 @@ async function bootAuthenticated() {
   if ($("mgr-assign-date") && !$("mgr-assign-date").value) {
     $("mgr-assign-date").value = new Date().toISOString().slice(0, 10);
   }
-  if ($("infovally-date") && !$("infovally-date").value) {
-    $("infovally-date").value = new Date().toISOString().slice(0, 10);
+  if ($("infovalley-date") && !$("infovalley-date").value) {
+    $("infovalley-date").value = new Date().toISOString().slice(0, 10);
   }
   if (state.user.role === "manager" && $("mgr-roster-hint")) {
     $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
@@ -1794,7 +1794,7 @@ async function bootAuthenticated() {
   await refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog());
   await refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList());
   await refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog());
-  await refreshSafe("refreshInfoVallyBoard", () => refreshInfoVallyBoard());
+  await refreshSafe("refreshInfoValleyBoard", () => refreshInfoValleyBoard());
 
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
@@ -2192,23 +2192,23 @@ $("task-create-btn")?.addEventListener("click", async () => {
   }
 });
 
-$("infovally-refresh")?.addEventListener("click", () => {
-  refreshInfoVallyBoard().catch((e) => alert(e.message || String(e)));
+$("infovalley-refresh")?.addEventListener("click", () => {
+  refreshInfoValleyBoard().catch((e) => alert(e.message || String(e)));
 });
 
-$("infovally-submit")?.addEventListener("click", async () => {
-  const msg = $("infovally-msg");
+$("infovalley-submit")?.addEventListener("click", async () => {
+  const msg = $("infovalley-msg");
   if (msg) msg.textContent = "";
-  const title = $("infovally-title")?.value?.trim() || "";
-  const details = $("infovally-details")?.value?.trim() || "";
-  const activityDate = $("infovally-date")?.value || "";
+  const title = $("infovalley-title")?.value?.trim() || "";
+  const details = $("infovalley-details")?.value?.trim() || "";
+  const activityDate = $("infovalley-date")?.value || "";
   if (!activityDate || !title || !details) {
     if (msg) msg.textContent = "Fill date, title, and details.";
     return;
   }
   const body = { activity_date: activityDate, title, details };
   if (state.user?.role === "admin") {
-    body.department_id = infovallyScopeDeptId();
+    body.department_id = infovalleyScopeDeptId();
     if (!body.department_id) {
       if (msg) msg.textContent = "Pick a department first.";
       return;
@@ -2216,20 +2216,20 @@ $("infovally-submit")?.addEventListener("click", async () => {
   }
   try {
     await api("/api/activities", { method: "POST", body: JSON.stringify(body) });
-    $("infovally-title").value = "";
-    $("infovally-details").value = "";
+    $("infovalley-title").value = "";
+    $("infovalley-details").value = "";
     if (msg) msg.textContent = "Activity posted.";
-    await refreshInfoVallyBoard();
+    await refreshInfoValleyBoard();
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
   }
 });
 
-$("infovally-table")?.addEventListener("click", async (ev) => {
-  const btn = ev.target.closest("[data-infovally-comment-btn]");
+$("infovalley-table")?.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-infovalley-comment-btn]");
   if (!btn) return;
-  const id = btn.getAttribute("data-infovally-comment-btn");
-  const input = document.querySelector(`[data-infovally-comment-input="${id}"]`);
+  const id = btn.getAttribute("data-infovalley-comment-btn");
+  const input = document.querySelector(`[data-infovalley-comment-input="${id}"]`);
   const comment = input?.value?.trim() || "";
   if (!comment) return;
   try {
@@ -2238,7 +2238,7 @@ $("infovally-table")?.addEventListener("click", async (ev) => {
       body: JSON.stringify({ comment }),
     });
     input.value = "";
-    await refreshInfoVallyBoard();
+    await refreshInfoValleyBoard();
   } catch (e) {
     alert(e.message || String(e));
   }

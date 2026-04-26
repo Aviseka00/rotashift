@@ -1423,13 +1423,13 @@ table.kanban-table {
   border-radius: 14px;
 }
 
-.infovally-shell {
+.infovalley-shell {
   margin-top: 0;
   border: 1px solid rgba(56, 189, 248, 0.35);
   background: linear-gradient(165deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.92));
 }
 
-.infovally-head {
+.infovalley-head {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -1437,7 +1437,7 @@ table.kanban-table {
   margin-bottom: 0.75rem;
 }
 
-.infovally-eyebrow {
+.infovalley-eyebrow {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -1446,63 +1446,63 @@ table.kanban-table {
   font-weight: 700;
 }
 
-.infovally-title {
+.infovalley-title {
   margin: 0.15rem 0 0.25rem;
 }
 
-.infovally-table-wrap {
+.infovalley-table-wrap {
   margin-top: 0.8rem;
 }
 
-.infovally-scroll {
+.infovalley-scroll {
   max-height: min(64vh, 560px);
 }
 
-table.infovally-table {
+table.infovalley-table {
   min-width: 980px;
 }
 
-table.infovally-table td {
+table.infovalley-table td {
   vertical-align: top;
 }
 
-.infovally-date-cell {
+.infovalley-date-cell {
   white-space: normal;
   min-width: 11rem;
 }
 
-.infovally-activity-title {
+.infovalley-activity-title {
   font-weight: 700;
   font-size: 0.95rem;
 }
 
-.infovally-activity-meta {
+.infovalley-activity-meta {
   margin: 0.2rem 0 0.35rem;
 }
 
-.infovally-activity-details {
+.infovalley-activity-details {
   white-space: pre-wrap;
 }
 
-.infovally-comments-wrap {
+.infovalley-comments-wrap {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
   margin-bottom: 0.45rem;
 }
 
-.infovally-comment-item {
+.infovalley-comment-item {
   border: 1px solid rgba(100, 116, 139, 0.45);
   border-radius: 8px;
   padding: 0.35rem 0.45rem;
   background: rgba(15, 23, 42, 0.72);
 }
 
-.infovally-comment-row {
+.infovalley-comment-row {
   align-items: center;
 }
 
-.infovally-comment-row input {
+.infovalley-comment-row input {
   width: 100%;
 }
 
