@@ -1149,7 +1149,7 @@ async function refreshAdminUsers() {
     });
     const btnSave = document.createElement("button");
     btnSave.type = "button";
-    btnSave.className = "btn secondary";
+    btnSave.className = "btn secondary admin-save-btn";
     btnSave.textContent = "Save";
     btnSave.addEventListener("click", async () => {
       await api(`/api/users/${u.id}/role`, {
@@ -1170,7 +1170,7 @@ async function refreshAdminUsers() {
       actionWrap.className = "admin-user-actions-wrap";
       const btnReset = document.createElement("button");
       btnReset.type = "button";
-      btnReset.className = "btn secondary";
+      btnReset.className = "btn admin-reset-btn";
       btnReset.textContent = "Reset password";
       btnReset.addEventListener("click", async () => {
         const pw = prompt(`Enter a new temporary password for ${u.full_name} (${u.employee_id}):`);

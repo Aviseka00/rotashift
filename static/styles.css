@@ -967,10 +967,46 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
 .admin-user-role-cell,
 .admin-user-actions-cell {
   white-space: normal !important;
+  vertical-align: middle;
+}
+
+.admin-user-role-cell {
+  min-width: 240px;
+}
+
+.admin-user-actions-cell {
+  min-width: 260px;
 }
 
 .admin-user-actions-wrap .btn {
-  min-width: 120px;
+  min-width: 122px;
+}
+
+.admin-save-btn {
+  border-color: rgba(96, 165, 250, 0.55) !important;
+  color: #dbeafe !important;
+}
+
+.admin-save-btn:hover {
+  background: rgba(30, 58, 138, 0.45) !important;
+}
+
+.admin-reset-btn {
+  border: 1px solid transparent;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7c3aed, #2563eb 55%, #06b6d4);
+  box-shadow:
+    0 0 0 1px rgba(59, 130, 246, 0.35),
+    0 8px 18px rgba(37, 99, 235, 0.3);
+}
+
+.admin-reset-btn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.admin-reset-btn:active {
+  transform: translateY(0);
 }
 
 @media (max-width: 900px) {
@@ -983,6 +1019,11 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
   .admin-user-role-wrap select,
   .admin-user-actions-wrap .btn {
     width: 100%;
+    min-width: 0;
+  }
+
+  .admin-user-role-cell,
+  .admin-user-actions-cell {
     min-width: 0;
   }
 }
