@@ -1120,7 +1120,7 @@ async function refreshAdminUsers() {
   const tbl = document.createElement("table");
   tbl.className = "matrix";
   tbl.innerHTML =
-    "<thead><tr><th>Employee ID</th><th>Name</th><th>Department</th><th>Set role</th><th></th></tr></thead>";
+    "<thead><tr><th>Employee ID</th><th>Name</th><th>Department</th><th>Set role</th><th>User actions</th></tr></thead>";
   const tb = document.createElement("tbody");
   const myId = String(state.user.id || "");
   (data.users || []).forEach((u) => {
@@ -1136,6 +1136,9 @@ async function refreshAdminUsers() {
     tdDept.textContent = u.department_name || "—";
 
     const tdRole = document.createElement("td");
+    tdRole.className = "admin-user-role-cell";
+    const roleWrap = document.createElement("div");
+    roleWrap.className = "admin-user-role-wrap";
     const sel = document.createElement("select");
     ["employee", "manager", "admin"].forEach((r) => {
       const o = document.createElement("option");
@@ -1147,7 +1150,6 @@ async function refreshAdminUsers() {
     const btnSave = document.createElement("button");
     btnSave.type = "button";
     btnSave.className = "btn secondary";
-    btnSave.style.marginLeft = "0.5rem";
     btnSave.textContent = "Save";
     btnSave.addEventListener("click", async () => {
       await api(`/api/users/${u.id}/role`, {
@@ -1157,11 +1159,35 @@ async function refreshAdminUsers() {
       await refreshAdminUsers();
       await refreshManagerRoster().catch(() => {});
     });
-    tdRole.appendChild(sel);
-    tdRole.appendChild(btnSave);
+    roleWrap.appendChild(sel);
+    roleWrap.appendChild(btnSave);
+    tdRole.appendChild(roleWrap);
 
     const tdDel = document.createElement("td");
+    tdDel.className = "admin-user-actions-cell";
     if (String(u.id) !== myId) {
+      const actionWrap = document.createElement("div");
+      actionWrap.className = "admin-user-actions-wrap";
+      const btnReset = document.createElement("button");
+      btnReset.type = "button";
+      btnReset.className = "btn secondary";
+      btnReset.textContent = "Reset password";
+      btnReset.addEventListener("click", async () => {
+        const pw = prompt(`Enter a new temporary password for ${u.full_name} (${u.employee_id}):`);
+        if (pw === null) return;
+        const next = String(pw).trim();
+        if (next.length < 6) {
+          alert("Password must be at least 6 characters.");
+          return;
+        }
+        await api(`/api/users/${u.id}/password`, {
+          method: "PATCH",
+          body: JSON.stringify({ password: next }),
+        });
+        alert(`Password reset for ${u.full_name} (${u.employee_id}). Share it securely.`);
+      });
+      actionWrap.appendChild(btnReset);
+
       const btnDel = document.createElement("button");
       btnDel.type = "button";
       btnDel.className = "btn danger";
@@ -1172,7 +1198,8 @@ async function refreshAdminUsers() {
         await refreshAdminUsers();
         await refreshManagerRoster().catch(() => {});
       });
-      tdDel.appendChild(btnDel);
+      actionWrap.appendChild(btnDel);
+      tdDel.appendChild(actionWrap);
     } else {
       tdDel.innerHTML = '<span class="hint">—</span>';
     }

@@ -19,6 +19,10 @@ class UserCreateBody(BaseModel):
     role: Literal["employee", "manager", "admin"]
 
 
+class UserResetPasswordBody(BaseModel):
+    password: str = Field(..., min_length=6, max_length=128)
+
+
 @router.get("")
 async def list_users(
     department_id: Optional[str] = Query(None),
@@ -136,3 +140,30 @@ async def set_role(
     if r.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"ok": True, "role": role}
+
+
+@router.patch("/{target_id}/password")
+async def reset_user_password(
+    target_id: str,
+    body: UserResetPasswordBody,
+    user=Depends(require_roles("admin")),
+):
+    db = get_db()
+    try:
+        oid = ObjectId(target_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id")
+
+    target = await db.users.find_one({"_id": oid})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if str(target["_id"]) == user["_id"]:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot reset your own password from this admin action.",
+        )
+
+    new_hash = hash_password(body.password)
+    await db.users.update_one({"_id": oid}, {"$set": {"password_hash": new_hash}})
+    return {"ok": True}
