@@ -189,6 +189,7 @@
             <button type="button" class="dash-tab active" data-dash="manager" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="records">Approval log</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="infovalley">Info-valley</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="tasks">My Kanban</button>
           </nav>
@@ -200,6 +201,29 @@
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="approvals">
             <div id="mgr-approval-slot"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="manager" data-tab="records">
+            <div id="mgr-records-slot" class="card">
+              <h2>Approval log — your department</h2>
+              <p class="hint">
+                Every leave and shift-change request for <strong>your department only</strong>: pending, approved, and
+                rejected, with who decided and when. This list updates when you act on the Approvals tab (use Refresh if
+                needed).
+              </p>
+              <div class="row">
+                <div style="flex: 0 0 auto; align-self: flex-end">
+                  <button type="button" id="mgr-records-refresh" class="btn secondary">Refresh tables</button>
+                </div>
+              </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Leave requests</h3>
+              <div class="table-scroll admin-records-wrap">
+                <div id="mgr-records-leave"></div>
+              </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
+              <div class="table-scroll admin-records-wrap">
+                <div id="mgr-records-shift"></div>
+              </div>
+            </div>
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="tasks">
             <div id="mgr-tasks-mount"></div>
@@ -361,7 +385,7 @@
               <button type="button" class="btn secondary" id="emp-go-shift-change">Request shift change</button>
             </div>
           </div>
-          <div class="card grid schedule-grid landscape-compact">
+          <div class="card grid schedule-grid schedule-card-stretch landscape-compact">
             <div>
               <h2>Department calendar</h2>
               <div id="admin-cal-ctl" class="row hidden">
@@ -373,7 +397,7 @@
               <p class="hint" id="cal-scope-hint"></p>
               <div id="calendar"></div>
             </div>
-            <div>
+            <div class="roster-schedule-col">
               <h2>Shift roster</h2>
               <p class="hint" id="roster-view-hint">
                 <span class="roster-hint-wide"
@@ -409,9 +433,11 @@
                 </div>
               </div>
               <p class="hint matrix-scroll-hint roster-scroll-hint" aria-hidden="true">
-                Tip: swipe left/right on the grid to see all dates.
+                Tip: scroll <strong>inside the shaded roster box</strong> — up/down <em>and</em> left/right — to see all
+                people and dates. Drag the <strong>bottom-right corner</strong> (or edges) of that box to resize it to
+                your screen; on touch, pan inside the box to scroll the table.
               </p>
-              <div class="table-scroll matrix-wrap-desktop">
+              <div id="roster-matrix-scroll" class="table-scroll matrix-wrap-desktop">
                 <table class="matrix roster-matrix" id="matrix-table">
                   <thead id="matrix-head"></thead>
                   <tbody id="matrix-body"></tbody>
@@ -624,6 +650,7 @@
           <div class="card">
             <h2>Approvals</h2>
             <p class="hint" id="approvals-scope-hint"></p>
+            <p class="hint hidden" id="approvals-history-lead" role="note"></p>
             <h3 style="font-size: 1rem">Leave requests</h3>
             <div id="mgr-leave-list" class="list-requests"></div>
             <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>

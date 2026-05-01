@@ -376,7 +376,7 @@ function updateDashboardBanner() {
     role === "employee"
       ? "Schedule shows your department rota. My Kanban is your team’s shared task board (priorities & owners). Use My requests for leave and shift changes."
       : role === "manager"
-        ? "Use the tabs: Schedule · Manage shifts · Approvals · My Kanban (team tasks & priorities)."
+        ? "Use the tabs: Schedule · Manage shifts · Approvals · Approval log (department request history) · Info-valley · My Kanban (team tasks & priorities)."
         : "Tabs: Departments · People · Approvals · Activity · My Kanban (per-department board) · Schedule · Manage shifts.";
   show(banner, true);
 }
@@ -927,7 +927,9 @@ async function decideLeave(id, status) {
   });
   await refreshManagerQueues();
   if (state.calendar) state.calendar.refetchEvents();
+  await refreshTable();
   if (state.user.role === "admin") await refreshAdminRequestLog();
+  if (state.user.role === "manager") await refreshManagerRequestLog();
 }
 
 async function decideChange(id, status) {
@@ -939,6 +941,7 @@ async function decideChange(id, status) {
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
   if (state.user.role === "admin") await refreshAdminRequestLog();
+  if (state.user.role === "manager") await refreshManagerRequestLog();
 }
 
 async function refreshManagerRoster() {
@@ -992,6 +995,78 @@ async function refreshManagerRoster() {
   }
 }
 
+function requestLogStatusBadge(st) {
+  const s = (st || "pending").toLowerCase();
+  const cls =
+    s === "approved" ? "status-approved" : s === "rejected" ? "status-rejected" : "status-pending";
+  return `<span class="badge ${cls}">${escapeHtml(s)}</span>`;
+}
+
+/** @param {{ requests?: unknown[] }} lv @param {{ requests?: unknown[] }} ch */
+function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn) {
+  if (!leaveBox || !shiftBox) return;
+  const deptTh = showDeptColumn ? "<th>Dept</th>" : "";
+
+  const tblL = document.createElement("table");
+  tblL.className = "matrix log-table";
+  tblL.innerHTML = `<thead><tr>${deptTh}<th>Employee</th><th>Dates</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>`;
+  const tbL = document.createElement("tbody");
+  (lv.requests || []).forEach((r) => {
+    const tr = document.createElement("tr");
+    const dec = r.decided_by_name
+      ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
+      : "—";
+    const det = `${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)}`;
+    const deptCell = showDeptColumn ? `<td>${escapeHtml(r.department_name || "—")}</td>` : "";
+    tr.innerHTML = `${deptCell}<td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${requestLogStatusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
+    tbL.appendChild(tr);
+  });
+  tblL.appendChild(tbL);
+  leaveBox.innerHTML = "";
+  if ((lv.requests || []).length === 0) {
+    leaveBox.innerHTML = '<p class="hint">No leave requests match this filter.</p>';
+  } else {
+    leaveBox.appendChild(tblL);
+  }
+
+  const tblS = document.createElement("table");
+  tblS.className = "matrix log-table";
+  tblS.innerHTML = `<thead><tr>${deptTh}<th>Employee</th><th>Change</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>`;
+  const tbS = document.createElement("tbody");
+  (ch.requests || []).forEach((r) => {
+    const tr = document.createElement("tr");
+    const dec = r.decided_by_name
+      ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
+      : "—";
+    const det = `${escapeHtml(r.date)}: ${escapeHtml(r.from_shift)} → ${escapeHtml(r.to_shift)}`;
+    const deptCell = showDeptColumn ? `<td>${escapeHtml(r.department_name || "—")}</td>` : "";
+    tr.innerHTML = `${deptCell}<td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${requestLogStatusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
+    tbS.appendChild(tr);
+  });
+  tblS.appendChild(tbS);
+  shiftBox.innerHTML = "";
+  if ((ch.requests || []).length === 0) {
+    shiftBox.innerHTML = '<p class="hint">No shift change requests match this filter.</p>';
+  } else {
+    shiftBox.appendChild(tblS);
+  }
+}
+
+async function refreshManagerRequestLog() {
+  if (state.user?.role !== "manager") return;
+  const leaveBox = $("mgr-records-leave");
+  const shiftBox = $("mgr-records-shift");
+  if (!leaveBox || !shiftBox) return;
+  leaveBox.innerHTML = '<p class="hint">Loading…</p>';
+  shiftBox.innerHTML = "";
+  try {
+    const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
+    renderRequestActivityTables(lv, ch, leaveBox, shiftBox, false);
+  } catch (e) {
+    leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+  }
+}
+
 async function refreshAdminRequestLog() {
   if (state.user.role !== "admin") return;
   const dept = $("admin-records-dept")?.value || "";
@@ -999,64 +1074,14 @@ async function refreshAdminRequestLog() {
   const leaveBox = $("admin-records-leave");
   const shiftBox = $("admin-records-shift");
   if (!leaveBox || !shiftBox) return;
-  leaveBox.innerHTML = "<p class=\"hint\">Loading…</p>";
+  leaveBox.innerHTML = '<p class="hint">Loading…</p>';
   shiftBox.innerHTML = "";
   try {
     const [lv, ch] = await Promise.all([
       api(`/api/requests/leave${q}`),
       api(`/api/requests/shift-change${q}`),
     ]);
-
-    function statusBadge(st) {
-      const s = (st || "pending").toLowerCase();
-      const cls =
-        s === "approved" ? "status-approved" : s === "rejected" ? "status-rejected" : "status-pending";
-      return `<span class="badge ${cls}">${escapeHtml(s)}</span>`;
-    }
-
-    const tblL = document.createElement("table");
-    tblL.className = "matrix log-table";
-    tblL.innerHTML =
-      "<thead><tr><th>Dept</th><th>Employee</th><th>Dates</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>";
-    const tbL = document.createElement("tbody");
-    (lv.requests || []).forEach((r) => {
-      const tr = document.createElement("tr");
-      const dec = r.decided_by_name
-        ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
-        : "—";
-      const det = `${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)}`;
-      tr.innerHTML = `<td>${escapeHtml(r.department_name || "—")}</td><td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${statusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
-      tbL.appendChild(tr);
-    });
-    tblL.appendChild(tbL);
-    leaveBox.innerHTML = "";
-    if ((lv.requests || []).length === 0) {
-      leaveBox.innerHTML = '<p class="hint">No leave requests match this filter.</p>';
-    } else {
-      leaveBox.appendChild(tblL);
-    }
-
-    const tblS = document.createElement("table");
-    tblS.className = "matrix log-table";
-    tblS.innerHTML =
-      "<thead><tr><th>Dept</th><th>Employee</th><th>Change</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>";
-    const tbS = document.createElement("tbody");
-    (ch.requests || []).forEach((r) => {
-      const tr = document.createElement("tr");
-      const dec = r.decided_by_name
-        ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
-        : "—";
-      const det = `${escapeHtml(r.date)}: ${escapeHtml(r.from_shift)} → ${escapeHtml(r.to_shift)}`;
-      tr.innerHTML = `<td>${escapeHtml(r.department_name || "—")}</td><td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${statusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
-      tbS.appendChild(tr);
-    });
-    tblS.appendChild(tbS);
-    shiftBox.innerHTML = "";
-    if ((ch.requests || []).length === 0) {
-      shiftBox.innerHTML = '<p class="hint">No shift change requests match this filter.</p>';
-    } else {
-      shiftBox.appendChild(tblS);
-    }
+    renderRequestActivityTables(lv, ch, leaveBox, shiftBox, true);
   } catch (e) {
     leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
   }
@@ -1691,6 +1716,9 @@ function activateDashTab(dashId, tabId) {
   if (dashId === "manager" && tabId === "approvals") {
     refreshManagerQueues();
   }
+  if (dashId === "manager" && tabId === "records" && state.user?.role === "manager") {
+    refreshManagerRequestLog();
+  }
   if (dashId === "admin" && tabId === "org" && state.user?.role === "admin") {
     refreshAdminDeptList();
   }
@@ -1732,8 +1760,23 @@ function applyRoleVisibility() {
       role === "admin"
         ? "Pending leave and shift-change requests from every department. Approve or reject here. Full history is under the Activity tab."
         : role === "manager"
-          ? "Pending requests from your department only."
+          ? "Pending requests from your department only. After you approve or reject, the full audit trail stays under the Approval log tab."
           : "";
+  }
+  const apprHist = $("approvals-history-lead");
+  if (apprHist) {
+    if (role === "manager") {
+      apprHist.textContent =
+        "Every decision is saved. Open Approval log for your department’s complete leave and shift-change history (all statuses, decision times, and who approved or rejected).";
+      apprHist.classList.remove("hidden");
+    } else if (role === "admin") {
+      apprHist.textContent =
+        "Every decision is saved. Open the Activity tab for organisation-wide leave and shift-change history.";
+      apprHist.classList.remove("hidden");
+    } else {
+      apprHist.textContent = "";
+      apprHist.classList.add("hidden");
+    }
   }
   updateDashboardBanner();
   if (role === "employee") activateDashTab("employee", "schedule");
@@ -1852,10 +1895,13 @@ async function bootAuthenticated() {
   await refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog());
   await refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList());
   await refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog());
+  await refreshSafe("refreshManagerRequestLog", () => refreshManagerRequestLog());
   await refreshSafe("refreshInfoValleyBoard", () => refreshInfoValleyBoard());
 
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
+
+  $("mgr-records-refresh")?.addEventListener("click", () => refreshManagerRequestLog());
 
   const auf = $("admin-user-dept-filter");
   if (auf) auf.onchange = () => refreshAdminUsers();
