@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RotaShift — UI pattern lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "DM Sans", system-ui, sans-serif;
+        background: #020617;
+        color: #e2e8f0;
+        min-height: 100vh;
+        padding: 1.25rem clamp(0.75rem, 2vw, 2rem) 2.5rem;
+      }
+      .lab-hero {
+        max-width: 1400px;
+        margin: 0 auto 1.5rem;
+      }
+      .lab-hero h1 {
+        margin: 0 0 0.35rem;
+        font-size: clamp(1.35rem, 1.1rem + 1vw, 1.75rem);
+        letter-spacing: 0.02em;
+      }
+      .lab-hero p {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 0.95rem;
+        line-height: 1.55;
+        max-width: 52rem;
+      }
+      .lab-hero a {
+        color: #7dd3fc;
+      }
+      .lab-grid {
+        display: grid;
+        gap: 1.25rem;
+        max-width: 1600px;
+        margin: 0 auto;
+        grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+      }
+      .pattern {
+        border-radius: 14px;
+        padding: 1rem 1rem 1.1rem;
+        min-height: 420px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .pattern-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0.85;
+        margin-bottom: 0.15rem;
+      }
+      .pattern h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.05rem;
+      }
+      .pattern .hint {
+        font-size: 0.78rem;
+        opacity: 0.88;
+        line-height: 1.45;
+        margin: 0 0 0.5rem;
+      }
+      .fake-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-bottom: 0.35rem;
+      }
+      .fake-nav button {
+        border: 1px solid transparent;
+        padding: 0.4rem 0.65rem;
+        border-radius: 8px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: default;
+        font-family: inherit;
+      }
+      .fake-nav button.on {
+        outline: 2px solid transparent;
+      }
+      .card {
+        border-radius: 12px;
+        padding: 0.85rem 0.95rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        align-items: flex-end;
+      }
+      .field {
+        flex: 1 1 100px;
+      }
+      label {
+        display: block;
+        font-size: 0.7rem;
+        margin-bottom: 0.2rem;
+        opacity: 0.9;
+      }
+      input {
+        width: 100%;
+        padding: 0.45rem 0.55rem;
+        border-radius: 8px;
+        border: 1px solid;
+        font: inherit;
+        font-size: 0.82rem;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.15rem;
+      }
+      .btn {
+        padding: 0.45rem 0.85rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.8rem;
+        border: 1px solid transparent;
+        cursor: default;
+        font-family: inherit;
+      }
+      .btn-sec {
+        background: transparent;
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.15rem;
+      }
+      .badge {
+        font-size: 0.68rem;
+        padding: 0.15rem 0.45rem;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+
+      /* —— Pattern A: Slate glass (closest to current production feel) —— */
+      .p-a {
+        background: linear-gradient(160deg, rgba(30, 41, 59, 0.55), rgba(15, 23, 42, 0.92));
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        box-shadow: 0 16px 40px -24px rgba(0, 0, 0, 0.9);
+      }
+      .p-a .pattern-label {
+        color: #7dd3fc;
+      }
+      .p-a h2 {
+        color: #f8fafc;
+      }
+      .p-a .hint {
+        color: #94a3b8;
+      }
+      .p-a .fake-nav {
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 10px;
+        padding: 0.35rem;
+      }
+      .p-a .fake-nav button {
+        background: rgba(15, 23, 42, 0.85);
+        border-color: rgba(71, 85, 105, 0.7);
+        color: #94a3b8;
+      }
+      .p-a .fake-nav button.on {
+        background: linear-gradient(180deg, rgba(37, 99, 235, 0.95), rgba(30, 64, 175, 0.85));
+        border-color: rgba(147, 197, 253, 0.85);
+        color: #f8fafc;
+        box-shadow: 0 8px 18px -12px rgba(59, 130, 246, 0.9);
+      }
+      .p-a .card {
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.88));
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        box-shadow: 0 10px 28px -20px rgba(0, 0, 0, 0.85);
+      }
+      .p-a label {
+        color: #b8c5d8;
+      }
+      .p-a input {
+        background: #0b1222;
+        border-color: rgba(100, 116, 139, 0.55);
+        color: #f8fafc;
+      }
+      .p-a .btn {
+        background: linear-gradient(180deg, #2563eb, #1d4ed8);
+        color: #fff;
+        border-color: rgba(59, 130, 246, 0.65);
+        box-shadow: 0 8px 18px -12px rgba(59, 130, 246, 0.85);
+      }
+      .p-a .btn-sec {
+        background: linear-gradient(180deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.9));
+        border-color: rgba(148, 163, 184, 0.4);
+        color: #e2e8f0;
+      }
+      .p-a .badge {
+        background: linear-gradient(180deg, #334155, #1e293b);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        color: #e2e8f0;
+      }
+
+      /* —— Pattern B: Warm nebula (rose / violet, softer mood) —— */
+      .p-b {
+        background: linear-gradient(165deg, rgba(76, 29, 149, 0.35), rgba(15, 23, 42, 0.95));
+        border: 1px solid rgba(216, 180, 254, 0.22);
+        box-shadow: 0 20px 50px -28px rgba(88, 28, 135, 0.55);
+      }
+      .p-b .pattern-label {
+        color: #f0abfc;
+      }
+      .p-b h2 {
+        color: #fdf4ff;
+      }
+      .p-b .hint {
+        color: #e9d5ff;
+        opacity: 0.82;
+      }
+      .p-b .fake-nav {
+        background: rgba(24, 10, 40, 0.55);
+        border: 1px solid rgba(192, 132, 252, 0.25);
+        border-radius: 12px;
+        padding: 0.35rem;
+      }
+      .p-b .fake-nav button {
+        background: rgba(15, 23, 42, 0.55);
+        border-color: rgba(167, 139, 250, 0.35);
+        color: #d8b4fe;
+      }
+      .p-b .fake-nav button.on {
+        background: linear-gradient(135deg, rgba(168, 85, 247, 0.95), rgba(147, 51, 234, 0.8));
+        border-color: rgba(233, 213, 255, 0.55);
+        color: #fff;
+        box-shadow: 0 10px 22px -12px rgba(168, 85, 247, 0.75);
+      }
+      .p-b .card {
+        background: linear-gradient(180deg, rgba(49, 27, 82, 0.55), rgba(15, 23, 42, 0.92));
+        border: 1px solid rgba(192, 132, 252, 0.2);
+      }
+      .p-b label {
+        color: #e9d5ff;
+      }
+      .p-b input {
+        background: rgba(15, 23, 42, 0.85);
+        border-color: rgba(167, 139, 250, 0.45);
+        color: #fdf4ff;
+      }
+      .p-b .btn {
+        background: linear-gradient(135deg, #c026d3, #86198f);
+        color: #fff;
+        border-color: rgba(250, 232, 255, 0.35);
+        box-shadow: 0 10px 22px -12px rgba(192, 38, 211, 0.65);
+      }
+      .p-b .btn-sec {
+        border-color: rgba(233, 213, 255, 0.35);
+        color: #faf5ff;
+      }
+      .p-b .badge {
+        background: rgba(88, 28, 135, 0.65);
+        border: 1px solid rgba(216, 180, 254, 0.35);
+        color: #fae8ff;
+      }
+
+      /* —— Pattern C: Cool coast (teal / cyan, crisp & airy) —— */
+      .p-c {
+        background: linear-gradient(170deg, rgba(13, 148, 136, 0.22), rgba(15, 23, 42, 0.96));
+        border: 1px solid rgba(45, 212, 191, 0.28);
+        box-shadow: 0 18px 44px -26px rgba(13, 148, 136, 0.45);
+      }
+      .p-c .pattern-label {
+        color: #5eead4;
+      }
+      .p-c h2 {
+        color: #ecfeff;
+      }
+      .p-c .hint {
+        color: #99f6e4;
+        opacity: 0.85;
+      }
+      .p-c .fake-nav {
+        background: rgba(6, 78, 59, 0.25);
+        border: 1px solid rgba(45, 212, 191, 0.25);
+        border-radius: 10px;
+        padding: 0.35rem;
+      }
+      .p-c .fake-nav button {
+        background: rgba(15, 23, 42, 0.65);
+        border-color: rgba(45, 212, 191, 0.25);
+        color: #5eead4;
+      }
+      .p-c .fake-nav button.on {
+        background: linear-gradient(180deg, #0d9488, #0f766e);
+        border-color: rgba(153, 246, 228, 0.55);
+        color: #fff;
+        box-shadow: 0 8px 20px -12px rgba(20, 184, 166, 0.75);
+      }
+      .p-c .card {
+        background: linear-gradient(180deg, rgba(15, 118, 110, 0.2), rgba(15, 23, 42, 0.94));
+        border: 1px solid rgba(45, 212, 191, 0.22);
+      }
+      .p-c label {
+        color: #ccfbf1;
+      }
+      .p-c input {
+        background: rgba(2, 44, 34, 0.45);
+        border-color: rgba(45, 212, 191, 0.4);
+        color: #f0fdfa;
+      }
+      .p-c .btn {
+        background: linear-gradient(180deg, #14b8a6, #0d9488);
+        color: #042f2e;
+        border-color: rgba(204, 251, 241, 0.45);
+        box-shadow: 0 8px 20px -12px rgba(20, 184, 166, 0.7);
+      }
+      .p-c .btn-sec {
+        border-color: rgba(153, 246, 228, 0.35);
+        color: #ecfdf5;
+      }
+      .p-c .badge {
+        background: rgba(6, 95, 70, 0.55);
+        border: 1px solid rgba(45, 212, 191, 0.35);
+        color: #ccfbf1;
+      }
+
+      /* —— Pattern D: Bold editorial (high contrast, warm accent) —— */
+      .p-d {
+        background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+        border: 1px solid rgba(248, 250, 252, 0.12);
+        box-shadow: 0 24px 48px -28px rgba(0, 0, 0, 0.95);
+      }
+      .p-d .pattern-label {
+        color: #fb923c;
+      }
+      .p-d h2 {
+        color: #fff;
+        letter-spacing: 0.03em;
+      }
+      .p-d .hint {
+        color: #cbd5e1;
+      }
+      .p-d .fake-nav {
+        background: #020617;
+        border: 1px solid rgba(248, 250, 252, 0.1);
+        border-radius: 8px;
+        padding: 0.3rem;
+      }
+      .p-d .fake-nav button {
+        background: #0f172a;
+        border-color: rgba(148, 163, 184, 0.35);
+        color: #94a3b8;
+        border-radius: 6px;
+      }
+      .p-d .fake-nav button.on {
+        background: #fff;
+        border-color: #fff;
+        color: #0f172a;
+        box-shadow: none;
+      }
+      .p-d .card {
+        background: #1e293b;
+        border: 1px solid rgba(248, 250, 252, 0.1);
+        border-radius: 10px;
+        box-shadow: 0 12px 0 -4px rgba(251, 146, 60, 0.35);
+      }
+      .p-d label {
+        color: #e2e8f0;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 0.62rem;
+      }
+      .p-d input {
+        background: #020617;
+        border-color: rgba(248, 250, 252, 0.15);
+        color: #f8fafc;
+        border-radius: 6px;
+      }
+      .p-d .btn {
+        background: #fb923c;
+        color: #1c1917;
+        border-color: #fdba74;
+        border-radius: 6px;
+        box-shadow: none;
+      }
+      .p-d .btn-sec {
+        border-color: rgba(248, 250, 252, 0.25);
+        color: #f8fafc;
+      }
+      .p-d .badge {
+        background: #0f172a;
+        border: 1px solid rgba(251, 146, 60, 0.45);
+        color: #ffedd5;
+      }
+
+      /* —— Pattern E: Sage grove (earth / wellness, calm green) —— */
+      .p-e {
+        background: linear-gradient(155deg, rgba(22, 101, 52, 0.28), rgba(15, 23, 42, 0.96));
+        border: 1px solid rgba(134, 239, 172, 0.25);
+        box-shadow: 0 18px 42px -26px rgba(22, 163, 74, 0.35);
+      }
+      .p-e .pattern-label {
+        color: #bbf7d0;
+      }
+      .p-e h2 {
+        color: #f0fdf4;
+      }
+      .p-e .hint {
+        color: #86efac;
+        opacity: 0.88;
+      }
+      .p-e .fake-nav {
+        background: rgba(20, 83, 45, 0.35);
+        border: 1px solid rgba(74, 222, 128, 0.22);
+        border-radius: 11px;
+        padding: 0.35rem;
+      }
+      .p-e .fake-nav button {
+        background: rgba(15, 23, 42, 0.65);
+        border-color: rgba(74, 222, 128, 0.22);
+        color: #bbf7d0;
+      }
+      .p-e .fake-nav button.on {
+        background: linear-gradient(180deg, #22c55e, #15803d);
+        border-color: rgba(187, 247, 208, 0.55);
+        color: #052e16;
+        box-shadow: 0 8px 18px -12px rgba(34, 197, 94, 0.65);
+      }
+      .p-e .card {
+        background: linear-gradient(180deg, rgba(21, 128, 61, 0.22), rgba(15, 23, 42, 0.94));
+        border: 1px solid rgba(134, 239, 172, 0.2);
+      }
+      .p-e label {
+        color: #d1fae5;
+      }
+      .p-e input {
+        background: rgba(5, 46, 22, 0.55);
+        border-color: rgba(74, 222, 128, 0.35);
+        color: #f0fdf4;
+      }
+      .p-e .btn {
+        background: linear-gradient(180deg, #4ade80, #22c55e);
+        color: #052e16;
+        border-color: rgba(240, 253, 244, 0.45);
+        box-shadow: 0 8px 18px -12px rgba(74, 222, 128, 0.55);
+      }
+      .p-e .btn-sec {
+        border-color: rgba(187, 247, 208, 0.35);
+        color: #ecfdf5;
+      }
+      .p-e .badge {
+        background: rgba(20, 83, 45, 0.55);
+        border: 1px solid rgba(134, 239, 172, 0.35);
+        color: #dcfce7;
+      }
+
+      /* —— Pattern F: Mono signal (zinc + single electric accent) —— */
+      .p-f {
+        background: linear-gradient(180deg, #18181b, #09090b);
+        border: 1px solid rgba(250, 250, 250, 0.08);
+        box-shadow: 0 20px 44px -28px rgba(0, 0, 0, 0.95);
+      }
+      .p-f .pattern-label {
+        color: #eab308;
+      }
+      .p-f h2 {
+        color: #fafafa;
+        letter-spacing: 0.04em;
+      }
+      .p-f .hint {
+        color: #a1a1aa;
+      }
+      .p-f .fake-nav {
+        background: #09090b;
+        border: 1px solid rgba(250, 250, 250, 0.08);
+        border-radius: 8px;
+        padding: 0.3rem;
+      }
+      .p-f .fake-nav button {
+        background: #27272a;
+        border-color: #3f3f46;
+        color: #a1a1aa;
+        border-radius: 6px;
+      }
+      .p-f .fake-nav button.on {
+        background: #eab308;
+        border-color: #facc15;
+        color: #18181b;
+        box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.4);
+      }
+      .p-f .card {
+        background: #27272a;
+        border: 1px solid #3f3f46;
+        border-radius: 10px;
+      }
+      .p-f label {
+        color: #d4d4d8;
+      }
+      .p-f input {
+        background: #09090b;
+        border-color: #52525b;
+        color: #fafafa;
+        border-radius: 6px;
+      }
+      .p-f .btn {
+        background: #eab308;
+        color: #18181b;
+        border-color: #facc15;
+        border-radius: 6px;
+        box-shadow: none;
+      }
+      .p-f .btn-sec {
+        border-color: #71717a;
+        color: #fafafa;
+      }
+      .p-f .badge {
+        background: #09090b;
+        border: 1px solid #eab308;
+        color: #fef9c3;
+      }
+
+      /* —— Pattern G: Indigo pulse (deep indigo + electric violet) —— */
+      .p-g {
+        background: linear-gradient(160deg, rgba(49, 46, 129, 0.45), rgba(15, 23, 42, 0.97));
+        border: 1px solid rgba(165, 180, 252, 0.28);
+        box-shadow: 0 20px 48px -28px rgba(67, 56, 202, 0.45);
+      }
+      .p-g .pattern-label {
+        color: #a5b4fc;
+      }
+      .p-g h2 {
+        color: #eef2ff;
+      }
+      .p-g .hint {
+        color: #c7d2fe;
+        opacity: 0.88;
+      }
+      .p-g .fake-nav {
+        background: rgba(30, 27, 75, 0.55);
+        border: 1px solid rgba(129, 140, 248, 0.28);
+        border-radius: 10px;
+        padding: 0.35rem;
+      }
+      .p-g .fake-nav button {
+        background: rgba(15, 23, 42, 0.65);
+        border-color: rgba(129, 140, 248, 0.25);
+        color: #a5b4fc;
+      }
+      .p-g .fake-nav button.on {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        border-color: rgba(199, 210, 254, 0.55);
+        color: #fff;
+        box-shadow: 0 10px 22px -12px rgba(99, 102, 241, 0.75);
+      }
+      .p-g .card {
+        background: linear-gradient(180deg, rgba(55, 48, 163, 0.35), rgba(15, 23, 42, 0.94));
+        border: 1px solid rgba(165, 180, 252, 0.22);
+      }
+      .p-g label {
+        color: #e0e7ff;
+      }
+      .p-g input {
+        background: rgba(15, 23, 42, 0.9);
+        border-color: rgba(129, 140, 248, 0.4);
+        color: #eef2ff;
+      }
+      .p-g .btn {
+        background: linear-gradient(135deg, #818cf8, #6366f1);
+        color: #1e1b4b;
+        border-color: rgba(224, 231, 255, 0.5);
+        box-shadow: 0 10px 22px -12px rgba(99, 102, 241, 0.65);
+      }
+      .p-g .btn-sec {
+        border-color: rgba(199, 210, 254, 0.35);
+        color: #eef2ff;
+      }
+      .p-g .badge {
+        background: rgba(30, 27, 75, 0.75);
+        border: 1px solid rgba(165, 180, 252, 0.4);
+        color: #e0e7ff;
+      }
+
+      /* —— Pattern H: Rose steel (cool slate + rose accent) —— */
+      .p-h {
+        background: linear-gradient(165deg, rgba(71, 85, 105, 0.35), rgba(15, 23, 42, 0.96));
+        border: 1px solid rgba(251, 113, 133, 0.22);
+        box-shadow: 0 18px 44px -26px rgba(244, 63, 94, 0.25);
+      }
+      .p-h .pattern-label {
+        color: #fda4af;
+      }
+      .p-h h2 {
+        color: #fff1f2;
+      }
+      .p-h .hint {
+        color: #fecdd3;
+        opacity: 0.85;
+      }
+      .p-h .fake-nav {
+        background: rgba(30, 41, 59, 0.55);
+        border: 1px solid rgba(251, 113, 133, 0.2);
+        border-radius: 11px;
+        padding: 0.35rem;
+      }
+      .p-h .fake-nav button {
+        background: rgba(15, 23, 42, 0.55);
+        border-color: rgba(148, 163, 184, 0.35);
+        color: #cbd5e1;
+      }
+      .p-h .fake-nav button.on {
+        background: linear-gradient(135deg, #fb7185, #e11d48);
+        border-color: rgba(255, 228, 230, 0.45);
+        color: #fff;
+        box-shadow: 0 10px 22px -12px rgba(244, 63, 94, 0.55);
+      }
+      .p-h .card {
+        background: linear-gradient(180deg, rgba(51, 65, 85, 0.5), rgba(15, 23, 42, 0.92));
+        border: 1px solid rgba(251, 113, 133, 0.18);
+      }
+      .p-h label {
+        color: #fce7f3;
+      }
+      .p-h input {
+        background: rgba(15, 23, 42, 0.85);
+        border-color: rgba(251, 113, 133, 0.28);
+        color: #fff1f2;
+      }
+      .p-h .btn {
+        background: linear-gradient(135deg, #fb7185, #f43f5e);
+        color: #fff;
+        border-color: rgba(255, 228, 230, 0.45);
+        box-shadow: 0 10px 22px -12px rgba(244, 63, 94, 0.5);
+      }
+      .p-h .btn-sec {
+        border-color: rgba(254, 205, 211, 0.35);
+        color: #fff1f2;
+      }
+      .p-h .badge {
+        background: rgba(136, 19, 55, 0.45);
+        border: 1px solid rgba(253, 164, 175, 0.45);
+        color: #ffe4e6;
+      }
+
+      /* —— Pattern I: Paper lift (light “paper” UI — day mode preview) —— */
+      .p-i {
+        color: #1c1917;
+        background: linear-gradient(168deg, #fafaf9 0%, #e7e5e4 55%, #d6d3d1 100%);
+        border: 1px solid rgba(120, 113, 108, 0.35);
+        box-shadow: 0 22px 48px -28px rgba(28, 25, 23, 0.28);
+      }
+      .p-i .pattern-label {
+        color: #b45309;
+      }
+      .p-i h2 {
+        color: #0c0a09;
+      }
+      .p-i .hint {
+        color: #57534e;
+        opacity: 1;
+      }
+      .p-i .fake-nav {
+        background: #f5f5f4;
+        border: 1px solid #d6d3d1;
+        border-radius: 10px;
+        padding: 0.35rem;
+      }
+      .p-i .fake-nav button {
+        background: #fff;
+        border-color: #e7e5e4;
+        color: #57534e;
+      }
+      .p-i .fake-nav button.on {
+        background: #1c1917;
+        border-color: #292524;
+        color: #fafaf9;
+        box-shadow: 0 6px 16px -10px rgba(28, 25, 23, 0.45);
+      }
+      .p-i .card {
+        background: #fff;
+        border: 1px solid #e7e5e4;
+        box-shadow: 0 12px 28px -18px rgba(28, 25, 23, 0.18);
+      }
+      .p-i label {
+        color: #44403c;
+      }
+      .p-i input {
+        background: #fafaf9;
+        border-color: #d6d3d1;
+        color: #1c1917;
+      }
+      .p-i .btn {
+        background: linear-gradient(180deg, #0d9488, #0f766e);
+        color: #f0fdfa;
+        border-color: rgba(13, 148, 136, 0.55);
+        box-shadow: 0 8px 18px -12px rgba(15, 118, 110, 0.45);
+      }
+      .p-i .btn-sec {
+        background: #fff;
+        border-color: #a8a29e;
+        color: #292524;
+      }
+      .p-i .badge {
+        background: #fff7ed;
+        border: 1px solid #fdba74;
+        color: #9a3412;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="lab-hero">
+      <h1>UI pattern lab</h1>
+      <p>
+        Nine self-contained looks using the same layout (nav · card · form · actions · badges). Open while the app
+        is running: <strong>/static/theme-lab.html</strong> — pick a letter (<strong>A–I</strong>) to carry into the
+        main <code>styles.css</code>.
+      </p>
+      <p style="margin-top: 0.65rem">
+        <a href="/">← Back to RotaShift</a>
+      </p>
+    </div>
+
+    <div class="lab-grid">
+      <section class="pattern p-a" aria-labelledby="lab-a">
+        <div class="pattern-label">Pattern A</div>
+        <h2 id="lab-a">Slate glass</h2>
+        <p class="hint">Closest to the current app: blue accent, glassy cards, soft borders.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="a-d">From</label>
+              <input id="a-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="a-e">To</label>
+              <input id="a-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-b" aria-labelledby="lab-b">
+        <div class="pattern-label">Pattern B</div>
+        <h2 id="lab-b">Warm nebula</h2>
+        <p class="hint">Violet / rose gradients; good if you want a calmer, less “corporate blue” feel.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="b-d">From</label>
+              <input id="b-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="b-e">To</label>
+              <input id="b-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-c" aria-labelledby="lab-c">
+        <div class="pattern-label">Pattern C</div>
+        <h2 id="lab-c">Cool coast</h2>
+        <p class="hint">Teal / cyan focus; feels clinical, fresh, and readable in bright rooms.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="c-d">From</label>
+              <input id="c-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="c-e">To</label>
+              <input id="c-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-d" aria-labelledby="lab-d">
+        <div class="pattern-label">Pattern D</div>
+        <h2 id="lab-d">Bold editorial</h2>
+        <p class="hint">High contrast, warm accent “stamp”; stronger typographic hierarchy, less glow.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="d-d">From</label>
+              <input id="d-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="d-e">To</label>
+              <input id="d-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-e" aria-labelledby="lab-e">
+        <div class="pattern-label">Pattern E</div>
+        <h2 id="lab-e">Sage grove</h2>
+        <p class="hint">Earthy greens; calm “wellness / ops” mood without going full hospital teal.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="e-d">From</label>
+              <input id="e-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="e-e">To</label>
+              <input id="e-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-f" aria-labelledby="lab-f">
+        <div class="pattern-label">Pattern F</div>
+        <h2 id="lab-f">Mono signal</h2>
+        <p class="hint">Zinc neutrals + one loud yellow accent — very “dashboard / tooling”, minimal chrome.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="f-d">From</label>
+              <input id="f-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="f-e">To</label>
+              <input id="f-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-g" aria-labelledby="lab-g">
+        <div class="pattern-label">Pattern G</div>
+        <h2 id="lab-g">Indigo pulse</h2>
+        <p class="hint">Deep indigo + electric violet; more “product” than Pattern A’s cyan-blue glass.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="g-d">From</label>
+              <input id="g-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="g-e">To</label>
+              <input id="g-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-h" aria-labelledby="lab-h">
+        <div class="pattern-label">Pattern H</div>
+        <h2 id="lab-h">Rose steel</h2>
+        <p class="hint">Cool slate base with rose accents — softer than pure red alerts, still energetic.</p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="h-d">From</label>
+              <input id="h-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="h-e">To</label>
+              <input id="h-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="pattern p-i" aria-labelledby="lab-i">
+        <div class="pattern-label">Pattern I</div>
+        <h2 id="lab-i">Paper lift</h2>
+        <p class="hint">
+          Light “day mode” paper: warm stone neutrals, ink nav, teal primary — the only light panel in this lab for
+          contrast with A–H.
+        </p>
+        <div class="fake-nav" role="presentation">
+          <button type="button" class="on">Schedule</button>
+          <button type="button">Approvals</button>
+          <button type="button">Log</button>
+        </div>
+        <div class="card">
+          <strong style="font-size: 0.88rem">Shift roster</strong>
+          <p class="hint" style="margin: 0">Sample hint text under a section title.</p>
+          <div class="row">
+            <div class="field">
+              <label for="i-d">From</label>
+              <input id="i-d" type="text" value="2026-05-01" readonly />
+            </div>
+            <div class="field">
+              <label for="i-e">To</label>
+              <input id="i-e" type="text" value="2026-05-14" readonly />
+            </div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn">Primary</button>
+            <button type="button" class="btn btn-sec">Secondary</button>
+          </div>
+          <div class="badges">
+            <span class="badge">manager</span>
+            <span class="badge">approved</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

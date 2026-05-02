@@ -1,0 +1,29 @@
+name: API tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run pytest
+        env:
+          MONGO_URI: mongodb://127.0.0.1:27017
+          ROTASHIFT_ENV: development
+          ROTASHIFT_SECRET_KEY: ci-test-secret-use-openssl-rand-hex-32-in-real-deploys
+        run: pytest

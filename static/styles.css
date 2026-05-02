@@ -11,6 +11,35 @@
   --border: #334155;
   --shadow-soft: 0 10px 30px -20px rgba(2, 6, 23, 0.75);
   --shadow-glow: 0 18px 42px -26px rgba(56, 189, 248, 0.45);
+  /* Weekday theme shell (Mon=A defaults; Tue–Sun override via html[data-weekday-theme]). */
+  --bg-spot-1: rgba(37, 99, 235, 0.24);
+  --bg-spot-2: rgba(14, 165, 233, 0.16);
+  --bg-deep: #0b1220;
+  --bg-mid: #0f172a;
+  --topbar-bg: rgba(15, 23, 42, 0.78);
+  --topbar-border: rgba(148, 163, 184, 0.22);
+  --btn-chrome-border: rgba(59, 130, 246, 0.7);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(59, 130, 246, 0.95);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(59, 130, 246, 0.98);
+  --focus-border: rgba(56, 189, 248, 0.75);
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.22);
+  --focus-bg: #0a1326;
+  --input-fill: #0b1222;
+  --card-hover-border: rgba(125, 211, 252, 0.32);
+  --tab-active-border: rgba(96, 165, 250, 0.9);
+  --tab-active-bg: linear-gradient(180deg, rgba(30, 58, 138, 0.95), rgba(30, 64, 175, 0.75));
+  --tab-active-shadow: 0 10px 18px -14px rgba(59, 130, 246, 0.85);
+  --brand-g1: #e2e8f0;
+  --brand-g2: #93c5fd;
+  --brand-g3: #67e8f9;
+  --scrollbar-track: rgba(15, 23, 42, 0.55);
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(59, 130, 246, 0.75), rgba(14, 165, 233, 0.68));
+  --scrollbar-thumb-border: rgba(15, 23, 42, 0.65);
+  --scrollbar-color-thumb: rgba(96, 165, 250, 0.55);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(37, 99, 235, 0.95), rgba(30, 64, 175, 0.84));
+  --dash-tab-active-border: rgba(147, 197, 253, 0.95);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(37, 99, 235, 1);
+  --btn-primary-color: #fff;
   /* Distinct roster / legend / calendar stripe colours (A ≠ G, all codes distinguishable). */
   --a: #0f766e;
   --b: #7c3aed;
@@ -35,9 +64,9 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(1100px 620px at 8% -8%, rgba(37, 99, 235, 0.24), transparent 62%),
-    radial-gradient(900px 460px at 95% 8%, rgba(14, 165, 233, 0.16), transparent 55%),
-    linear-gradient(180deg, #0b1220 0%, #0f172a 48%, #0b1220 100%);
+    radial-gradient(1100px 620px at 8% -8%, var(--bg-spot-1), transparent 62%),
+    radial-gradient(900px 460px at 95% 8%, var(--bg-spot-2), transparent 55%),
+    linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-mid) 48%, var(--bg-deep) 100%);
   color: var(--text);
   line-height: 1.5;
   letter-spacing: 0.005em;
@@ -55,8 +84,8 @@ a {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-  background: rgba(15, 23, 42, 0.78);
+  border-bottom: 1px solid var(--topbar-border);
+  background: var(--topbar-bg);
   backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
@@ -68,7 +97,7 @@ a {
   font-weight: 800;
   letter-spacing: 0.025em;
   font-size: clamp(1.02rem, 0.95rem + 0.3vw, 1.22rem);
-  background: linear-gradient(90deg, #e2e8f0, #93c5fd 45%, #67e8f9);
+  background: linear-gradient(90deg, var(--brand-g1), var(--brand-g2) 45%, var(--brand-g3));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -196,7 +225,7 @@ body:has(#app-section:not(.hidden)) .shell {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 0.65rem 0.75rem;
-  background: #0b1222;
+  background: var(--input-fill);
 }
 
 .roster-person-card-head {
@@ -275,7 +304,7 @@ table.roster-mobile-table td.matrix-data-cell {
 }
 
 .card:hover {
-  border-color: rgba(125, 211, 252, 0.32);
+  border-color: var(--card-hover-border);
   box-shadow: var(--shadow-soft), var(--shadow-glow);
 }
 
@@ -307,7 +336,7 @@ textarea {
   padding: 0.5rem 0.65rem;
   border-radius: 8px;
   border: 1px solid rgba(100, 116, 139, 0.55);
-  background: #0b1222;
+  background: var(--input-fill);
   color: var(--text);
   transition: border-color 130ms ease, box-shadow 130ms ease, background-color 130ms ease;
 }
@@ -316,9 +345,9 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(56, 189, 248, 0.75);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
-  background: #0a1326;
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
+  background: var(--focus-bg);
 }
 
 textarea {
@@ -345,19 +374,19 @@ textarea {
   gap: 0.35rem;
   padding: 0.55rem 1rem;
   border-radius: 10px;
-  border: 1px solid rgba(59, 130, 246, 0.7);
+  border: 1px solid var(--btn-chrome-border);
   cursor: pointer;
   font-weight: 600;
   background: linear-gradient(180deg, var(--accent), var(--accent-strong));
-  color: #fff;
-  box-shadow: 0 8px 20px -14px rgba(59, 130, 246, 0.95);
+  color: var(--btn-primary-color);
+  box-shadow: var(--btn-chrome-shadow);
   transition: transform 120ms ease, filter 120ms ease, box-shadow 140ms ease;
 }
 
 .btn:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.05);
-  box-shadow: 0 12px 24px -15px rgba(59, 130, 246, 0.98);
+  box-shadow: var(--btn-chrome-shadow-hover);
 }
 
 .btn:active:not(:disabled) {
@@ -400,9 +429,9 @@ textarea {
 
 .tabs button.active {
   color: var(--text);
-  border-color: rgba(96, 165, 250, 0.9);
-  background: linear-gradient(180deg, rgba(30, 58, 138, 0.95), rgba(30, 64, 175, 0.75));
-  box-shadow: 0 10px 18px -14px rgba(59, 130, 246, 0.85);
+  border-color: var(--tab-active-border);
+  background: var(--tab-active-bg);
+  box-shadow: var(--tab-active-shadow);
 }
 
 .hidden {
@@ -977,14 +1006,14 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
 
 .dash-nav .dash-tab.active {
   color: var(--text);
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.95), rgba(30, 64, 175, 0.84));
-  border-color: rgba(147, 197, 253, 0.95);
-  box-shadow: 0 10px 18px -14px rgba(37, 99, 235, 1);
+  background: var(--dash-tab-active-bg);
+  border-color: var(--dash-tab-active-border);
+  box-shadow: var(--dash-tab-active-shadow);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(96, 165, 250, 0.55) rgba(15, 23, 42, 0.55);
+  scrollbar-color: var(--scrollbar-color-thumb) var(--scrollbar-track);
 }
 
 *::-webkit-scrollbar {
@@ -993,13 +1022,13 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
 }
 
 *::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--scrollbar-track);
 }
 
 *::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  border: 2px solid rgba(15, 23, 42, 0.65);
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.75), rgba(14, 165, 233, 0.68));
+  border: 2px solid var(--scrollbar-thumb-border);
+  background: var(--scrollbar-thumb-gradient);
 }
 
 .notice-banner {
@@ -1079,6 +1108,23 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
   border: none;
   border-top: 1px solid var(--border);
   margin: 1.25rem 0;
+}
+
+.mgr-approvals-activity-log {
+  margin-top: 0.35rem;
+}
+
+.mgr-activity-subhead {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #e2e8f0;
+}
+
+.mgr-activity-table-wrap {
+  max-height: min(42vh, 400px);
+  margin-bottom: 0.35rem;
 }
 
 .mgr-assign-row {
@@ -2026,4 +2072,215 @@ table.infovalley-table tbody tr:hover td {
 .badge.task-pri-5 {
   background: rgba(127, 29, 29, 0.9);
   color: #fee2e2;
+}
+
+/* --------------------------------------------------------------------------
+   Weekday theme rotation (pattern lab A–G): Mon=A … Sun=G. Only CSS variables
+   on <html>; one inline script sets data-weekday-theme at parse time — no
+   intervals, no extra requests, same stylesheet size as before + these blocks.
+   -------------------------------------------------------------------------- */
+
+html[data-weekday-theme="b"] {
+  --bg: #120b1f;
+  --panel: #1e1533;
+  --panel-soft: #261d42;
+  --muted: #c4b5fd;
+  --text: #faf5ff;
+  --accent: #a855f7;
+  --accent-strong: #7e22ce;
+  --border: #4c1d95;
+  --shadow-soft: 0 10px 30px -20px rgba(2, 6, 23, 0.78);
+  --shadow-glow: 0 18px 42px -26px rgba(168, 85, 247, 0.38);
+  --bg-spot-1: rgba(147, 51, 234, 0.32);
+  --bg-spot-2: rgba(236, 72, 153, 0.14);
+  --bg-deep: #0a0614;
+  --bg-mid: #120b1f;
+  --topbar-bg: rgba(24, 10, 42, 0.82);
+  --topbar-border: rgba(192, 132, 252, 0.22);
+  --btn-chrome-border: rgba(192, 132, 252, 0.65);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(168, 85, 247, 0.55);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(192, 132, 252, 0.65);
+  --focus-border: rgba(216, 180, 254, 0.85);
+  --focus-ring: 0 0 0 3px rgba(147, 51, 234, 0.28);
+  --focus-bg: #0f0818;
+  --input-fill: #0f0818;
+  --card-hover-border: rgba(192, 132, 252, 0.35);
+  --tab-active-border: rgba(233, 213, 255, 0.65);
+  --tab-active-bg: linear-gradient(180deg, rgba(126, 34, 206, 0.95), rgba(88, 28, 135, 0.88));
+  --tab-active-shadow: 0 10px 18px -14px rgba(168, 85, 247, 0.8);
+  --brand-g1: #fdf4ff;
+  --brand-g2: #e879f9;
+  --brand-g3: #c084fc;
+  --scrollbar-track: rgba(15, 8, 24, 0.55);
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(168, 85, 247, 0.8), rgba(147, 51, 234, 0.72));
+  --scrollbar-thumb-border: rgba(12, 6, 20, 0.65);
+  --scrollbar-color-thumb: rgba(192, 132, 252, 0.5);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(147, 51, 234, 0.95), rgba(88, 28, 135, 0.9));
+  --dash-tab-active-border: rgba(233, 213, 255, 0.9);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(168, 85, 247, 0.95);
+}
+
+html[data-weekday-theme="c"] {
+  --bg: #0c171d;
+  --panel: #134056;
+  --panel-soft: #155e75;
+  --muted: #99f6e4;
+  --text: #ecfdf5;
+  --accent: #14b8a6;
+  --accent-strong: #0f766e;
+  --border: #164e63;
+  --shadow-glow: 0 18px 42px -26px rgba(45, 212, 191, 0.35);
+  --bg-spot-1: rgba(13, 148, 136, 0.38);
+  --bg-spot-2: rgba(56, 189, 248, 0.12);
+  --bg-deep: #051015;
+  --bg-mid: #0c171d;
+  --topbar-bg: rgba(6, 78, 59, 0.45);
+  --topbar-border: rgba(45, 212, 191, 0.22);
+  --btn-chrome-border: rgba(45, 212, 191, 0.55);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(13, 148, 136, 0.6);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(20, 184, 166, 0.65);
+  --focus-border: rgba(94, 234, 212, 0.85);
+  --focus-ring: 0 0 0 3px rgba(13, 148, 136, 0.25);
+  --focus-bg: #042f2e;
+  --input-fill: #042f2e;
+  --card-hover-border: rgba(94, 234, 212, 0.32);
+  --tab-active-border: rgba(153, 246, 228, 0.85);
+  --tab-active-bg: linear-gradient(180deg, rgba(15, 118, 110, 0.95), rgba(13, 148, 136, 0.85));
+  --tab-active-shadow: 0 10px 18px -14px rgba(20, 184, 166, 0.85);
+  --brand-g1: #ccfbf1;
+  --brand-g2: #5eead4;
+  --brand-g3: #2dd4bf;
+  --scrollbar-track: rgba(4, 47, 46, 0.55);
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(20, 184, 166, 0.85), rgba(13, 148, 136, 0.75));
+  --scrollbar-thumb-border: rgba(4, 30, 28, 0.7);
+  --scrollbar-color-thumb: rgba(45, 212, 191, 0.5);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(15, 118, 110, 0.96), rgba(13, 116, 106, 0.9));
+  --dash-tab-active-border: rgba(167, 243, 208, 0.95);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(13, 148, 136, 0.95);
+}
+
+html[data-weekday-theme="d"] {
+  --accent: #f97316;
+  --accent-strong: #c2410c;
+  --shadow-glow: 0 18px 42px -26px rgba(251, 146, 60, 0.28);
+  --bg-spot-1: rgba(251, 146, 60, 0.18);
+  --bg-spot-2: rgba(248, 250, 252, 0.06);
+  --btn-chrome-border: rgba(253, 186, 116, 0.75);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(249, 115, 22, 0.55);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(251, 146, 60, 0.6);
+  --focus-border: rgba(251, 191, 36, 0.9);
+  --focus-ring: 0 0 0 3px rgba(234, 88, 12, 0.22);
+  --card-hover-border: rgba(251, 146, 60, 0.4);
+  --tab-active-border: rgba(254, 215, 170, 0.95);
+  --tab-active-bg: linear-gradient(180deg, rgba(194, 65, 12, 0.95), rgba(154, 52, 18, 0.88));
+  --tab-active-shadow: 0 10px 18px -14px rgba(249, 115, 22, 0.85);
+  --brand-g1: #fff7ed;
+  --brand-g2: #fdba74;
+  --brand-g3: #fb923c;
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(251, 146, 60, 0.82), rgba(234, 88, 12, 0.72));
+  --scrollbar-color-thumb: rgba(251, 146, 60, 0.5);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(234, 88, 12, 0.95), rgba(194, 65, 12, 0.88));
+  --dash-tab-active-border: rgba(254, 215, 170, 0.95);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(249, 115, 22, 0.9);
+}
+
+html[data-weekday-theme="e"] {
+  --accent: #4ade80;
+  --accent-strong: #15803d;
+  --shadow-glow: 0 18px 42px -26px rgba(74, 222, 128, 0.32);
+  --bg-spot-1: rgba(34, 197, 94, 0.22);
+  --bg-spot-2: rgba(16, 185, 129, 0.14);
+  --btn-chrome-border: rgba(134, 239, 172, 0.55);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(34, 197, 94, 0.5);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(74, 222, 128, 0.55);
+  --focus-border: rgba(134, 239, 172, 0.85);
+  --focus-ring: 0 0 0 3px rgba(22, 163, 74, 0.22);
+  --card-hover-border: rgba(134, 239, 172, 0.32);
+  --tab-active-border: rgba(187, 247, 208, 0.9);
+  --tab-active-bg: linear-gradient(180deg, rgba(21, 128, 61, 0.95), rgba(22, 101, 52, 0.88));
+  --tab-active-shadow: 0 10px 18px -14px rgba(34, 197, 94, 0.75);
+  --brand-g1: #ecfdf5;
+  --brand-g2: #86efac;
+  --brand-g3: #4ade80;
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(34, 197, 94, 0.8), rgba(22, 163, 74, 0.72));
+  --scrollbar-color-thumb: rgba(74, 222, 128, 0.45);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(22, 163, 74, 0.95), rgba(21, 128, 61, 0.9));
+  --dash-tab-active-border: rgba(187, 247, 208, 0.95);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(34, 197, 94, 0.85);
+}
+
+html[data-weekday-theme="f"] {
+  --bg: #18181b;
+  --panel: #27272a;
+  --panel-soft: #3f3f46;
+  --muted: #a1a1aa;
+  --text: #fafafa;
+  --accent: #eab308;
+  --accent-strong: #a16207;
+  --border: #3f3f46;
+  --shadow-soft: 0 10px 30px -20px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 18px 42px -26px rgba(234, 179, 8, 0.18);
+  --bg-spot-1: rgba(234, 179, 8, 0.12);
+  --bg-spot-2: rgba(250, 250, 250, 0.04);
+  --bg-deep: #09090b;
+  --bg-mid: #18181b;
+  --topbar-bg: rgba(9, 9, 11, 0.92);
+  --topbar-border: rgba(250, 250, 250, 0.08);
+  --btn-chrome-border: rgba(253, 224, 71, 0.55);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(234, 179, 8, 0.45);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(250, 204, 21, 0.55);
+  --focus-border: rgba(253, 224, 71, 0.85);
+  --focus-ring: 0 0 0 3px rgba(202, 138, 4, 0.25);
+  --focus-bg: #09090b;
+  --input-fill: #09090b;
+  --card-hover-border: rgba(234, 179, 8, 0.35);
+  --tab-active-border: rgba(253, 224, 71, 0.9);
+  --tab-active-bg: linear-gradient(180deg, rgba(161, 98, 7, 0.95), rgba(113, 63, 18, 0.9));
+  --tab-active-shadow: 0 10px 18px -14px rgba(234, 179, 8, 0.65);
+  --brand-g1: #fefce8;
+  --brand-g2: #fde047;
+  --brand-g3: #eab308;
+  --scrollbar-track: rgba(9, 9, 11, 0.55);
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(234, 179, 8, 0.85), rgba(202, 138, 4, 0.72));
+  --scrollbar-thumb-border: rgba(9, 9, 11, 0.7);
+  --scrollbar-color-thumb: rgba(234, 179, 8, 0.5);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(202, 138, 4, 0.95), rgba(113, 63, 18, 0.9));
+  --dash-tab-active-border: rgba(253, 224, 71, 0.95);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(234, 179, 8, 0.85);
+  --btn-primary-color: #18181b;
+}
+
+html[data-weekday-theme="g"] {
+  --accent: #818cf8;
+  --accent-strong: #4f46e5;
+  --shadow-glow: 0 18px 42px -26px rgba(129, 140, 248, 0.4);
+  --bg-spot-1: rgba(99, 102, 241, 0.35);
+  --bg-spot-2: rgba(165, 180, 252, 0.14);
+  --bg-deep: #0a0a1a;
+  --bg-mid: #0f1022;
+  --panel: #1e1b3c;
+  --panel-soft: #252148;
+  --border: #3730a3;
+  --topbar-bg: rgba(25, 25, 55, 0.82);
+  --topbar-border: rgba(165, 180, 252, 0.2);
+  --btn-chrome-border: rgba(165, 180, 252, 0.6);
+  --btn-chrome-shadow: 0 8px 20px -14px rgba(99, 102, 241, 0.55);
+  --btn-chrome-shadow-hover: 0 12px 24px -15px rgba(129, 140, 248, 0.6);
+  --focus-border: rgba(199, 210, 254, 0.88);
+  --focus-ring: 0 0 0 3px rgba(79, 70, 229, 0.28);
+  --focus-bg: #0c0a24;
+  --input-fill: #0c0a24;
+  --card-hover-border: rgba(165, 180, 252, 0.35);
+  --tab-active-border: rgba(199, 210, 254, 0.9);
+  --tab-active-bg: linear-gradient(180deg, rgba(79, 70, 229, 0.95), rgba(67, 56, 202, 0.88));
+  --tab-active-shadow: 0 10px 18px -14px rgba(99, 102, 241, 0.85);
+  --brand-g1: #eef2ff;
+  --brand-g2: #a5b4fc;
+  --brand-g3: #818cf8;
+  --scrollbar-thumb-gradient: linear-gradient(180deg, rgba(129, 140, 248, 0.82), rgba(79, 70, 229, 0.75));
+  --scrollbar-thumb-border: rgba(10, 10, 26, 0.7);
+  --scrollbar-color-thumb: rgba(165, 180, 252, 0.5);
+  --dash-tab-active-bg: linear-gradient(180deg, rgba(79, 70, 229, 0.96), rgba(55, 48, 163, 0.9));
+  --dash-tab-active-border: rgba(199, 210, 254, 0.95);
+  --dash-tab-active-shadow: 0 10px 18px -14px rgba(99, 102, 241, 0.95);
 }

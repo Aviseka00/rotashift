@@ -8,13 +8,15 @@ services:
     region: frankfurt # change if you prefer another region
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*' --timeout-keep-alive 75
     healthCheckPath: /health/live
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.6"
       - key: ROTASHIFT_ENV
         value: production
+      - key: MONGO_MAX_POOL_SIZE
+        value: "18"
       # Set these in the dashboard (Secrets) — do not commit real values:
       - key: ROTASHIFT_SECRET_KEY
         sync: false

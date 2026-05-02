@@ -41,7 +41,8 @@ ROTASHIFT_ENV = os.getenv("ROTASHIFT_ENV", "development").strip().lower()
 CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "").strip()
 
 # MongoDB driver tuning (scale connection pool with app replicas × expected concurrency)
-MONGO_MAX_POOL_SIZE = int(os.getenv("MONGO_MAX_POOL_SIZE", "50"))
+_default_mongo_max = 18 if ROTASHIFT_ENV == "production" else 50
+MONGO_MAX_POOL_SIZE = int(os.getenv("MONGO_MAX_POOL_SIZE", str(_default_mongo_max)))
 MONGO_MIN_POOL_SIZE = int(os.getenv("MONGO_MIN_POOL_SIZE", "0"))
 MONGO_SERVER_SELECTION_TIMEOUT_MS = int(os.getenv("MONGO_SERVER_SELECTION_TIMEOUT_MS", "5000"))
 

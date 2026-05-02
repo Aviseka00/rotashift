@@ -929,7 +929,11 @@ async function decideLeave(id, status) {
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
   if (state.user.role === "admin") await refreshAdminRequestLog();
-  if (state.user.role === "manager") await refreshManagerRequestLog();
+  if (state.user.role === "manager") {
+    await refreshManagerRequestLog();
+    await refreshManagerInlineApprovalsLog();
+    $("mgr-approvals-activity-log")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }
 
 async function decideChange(id, status) {
@@ -941,7 +945,11 @@ async function decideChange(id, status) {
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
   if (state.user.role === "admin") await refreshAdminRequestLog();
-  if (state.user.role === "manager") await refreshManagerRequestLog();
+  if (state.user.role === "manager") {
+    await refreshManagerRequestLog();
+    await refreshManagerInlineApprovalsLog();
+    $("mgr-approvals-activity-log")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }
 
 async function refreshManagerRoster() {
@@ -1052,19 +1060,27 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
   }
 }
 
-async function refreshManagerRequestLog() {
+/** Load department-scoped leave + shift-change history for managers (same API as Approval log tab). */
+async function fetchAndRenderManagerDeptRequestLog(leaveBox, shiftBox, showDeptColumn) {
   if (state.user?.role !== "manager") return;
-  const leaveBox = $("mgr-records-leave");
-  const shiftBox = $("mgr-records-shift");
   if (!leaveBox || !shiftBox) return;
   leaveBox.innerHTML = '<p class="hint">Loading…</p>';
   shiftBox.innerHTML = "";
   try {
     const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
-    renderRequestActivityTables(lv, ch, leaveBox, shiftBox, false);
+    renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn);
   } catch (e) {
-    leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+    leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+    shiftBox.innerHTML = "";
   }
+}
+
+async function refreshManagerRequestLog() {
+  await fetchAndRenderManagerDeptRequestLog($("mgr-records-leave"), $("mgr-records-shift"), true);
+}
+
+async function refreshManagerInlineApprovalsLog() {
+  await fetchAndRenderManagerDeptRequestLog($("mgr-approvals-leave-log"), $("mgr-approvals-shift-log"), true);
 }
 
 async function refreshAdminRequestLog() {
@@ -1715,6 +1731,7 @@ function activateDashTab(dashId, tabId) {
   }
   if (dashId === "manager" && tabId === "approvals") {
     refreshManagerQueues();
+    refreshManagerInlineApprovalsLog().catch(() => {});
   }
   if (dashId === "manager" && tabId === "records" && state.user?.role === "manager") {
     refreshManagerRequestLog();
@@ -1760,14 +1777,17 @@ function applyRoleVisibility() {
       role === "admin"
         ? "Pending leave and shift-change requests from every department. Approve or reject here. Full history is under the Activity tab."
         : role === "manager"
-          ? "Pending requests from your department only. After you approve or reject, the full audit trail stays under the Approval log tab."
+          ? "Pending requests from your department only. After each action, the full audit trail updates in the Department activity log on this page and on the Approval log tab."
           : "";
   }
+  const mgrActLog = $("mgr-approvals-activity-log");
+  if (mgrActLog) show(mgrActLog, role === "manager");
+
   const apprHist = $("approvals-history-lead");
   if (apprHist) {
     if (role === "manager") {
       apprHist.textContent =
-        "Every decision is saved. Open Approval log for your department’s complete leave and shift-change history (all statuses, decision times, and who approved or rejected).";
+        "Every decision is saved below in the department activity log, and on the Approval log tab (same data).";
       apprHist.classList.remove("hidden");
     } else if (role === "admin") {
       apprHist.textContent =
@@ -1896,6 +1916,7 @@ async function bootAuthenticated() {
   await refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList());
   await refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog());
   await refreshSafe("refreshManagerRequestLog", () => refreshManagerRequestLog());
+  await refreshSafe("refreshManagerInlineApprovalsLog", () => refreshManagerInlineApprovalsLog());
   await refreshSafe("refreshInfoValleyBoard", () => refreshInfoValleyBoard());
 
   const tr = $("table-refresh");

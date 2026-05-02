@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#2563eb" />
+    <!-- Weekday theme: Mon=A … Sun=G. One synchronous assignment; no timers or listeners. -->
+    <script>
+      (function () {
+        var keys = ["a", "b", "c", "d", "e", "f", "g"];
+        var themeColors = ["#2563eb", "#9333ea", "#0d9488", "#ea580c", "#16a34a", "#ca8a04", "#4f46e5"];
+        var d = new Date().getDay();
+        var i = d ? d - 1 : 6;
+        document.documentElement.setAttribute("data-weekday-theme", keys[i]);
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", themeColors[i]);
+      })();
+    </script>
     <meta name="description" content="RotaShift — department calendars, shifts, leave and approvals." />
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
@@ -655,6 +667,22 @@
             <div id="mgr-leave-list" class="list-requests"></div>
             <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
             <div id="mgr-change-list" class="list-requests"></div>
+            <div id="mgr-approvals-activity-log" class="mgr-approvals-activity-log hidden">
+              <hr class="mgr-section-rule" />
+              <h3 style="font-size: 1rem; margin-top: 0.25rem">Department activity log</h3>
+              <p class="hint" id="mgr-activity-log-hint">
+                Your department only — every leave and shift-change request (pending, approved, rejected), with
+                decision time and who approved or rejected. Updates when you use the buttons above.
+              </p>
+              <h4 class="mgr-activity-subhead">Leave requests</h4>
+              <div class="table-scroll admin-records-wrap mgr-activity-table-wrap">
+                <div id="mgr-approvals-leave-log"></div>
+              </div>
+              <h4 class="mgr-activity-subhead">Shift change requests</h4>
+              <div class="table-scroll admin-records-wrap mgr-activity-table-wrap">
+                <div id="mgr-approvals-shift-log"></div>
+              </div>
+            </div>
           </div>
         </div>
         </div>

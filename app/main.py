@@ -4,7 +4,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.requests import Request
 
 from app.config import (
     CORS_ORIGINS_RAW,
@@ -51,6 +54,27 @@ if _origins:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Smaller JSON payloads on slow networks (Render); safe for all environments.
+app.add_middleware(GZipMiddleware, minimum_size=900)
+
+
+class _CacheControlMiddleware(BaseHTTPMiddleware):
+    """Long-cache immutable static assets; avoid stale HTML shell after deploy."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/"):
+            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
+        elif path in ("/manifest.json", "/sw.js"):
+            response.headers.setdefault("Cache-Control", "public, max-age=86400")
+        elif path in ("/", "/app"):
+            response.headers.setdefault("Cache-Control", "private, no-cache")
+        return response
+
+
+app.add_middleware(_CacheControlMiddleware)
 
 app.include_router(health_api.router)
 app.include_router(auth_api.router)

@@ -110,8 +110,13 @@ class DecideBody(BaseModel):
 
 
 def _require_manager_department(user) -> ObjectId:
-    if user.get("role") != "manager" or not user.get("department_id"):
+    if user.get("role") != "manager":
         raise HTTPException(status_code=403, detail="Managers only")
+    if not user.get("department_id"):
+        raise HTTPException(
+            status_code=403,
+            detail="Manager account has no department assigned; ask an administrator to link your user to a department.",
+        )
     return ObjectId(user["department_id"])
 
 
