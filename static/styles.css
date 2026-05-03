@@ -78,6 +78,72 @@ a {
   color: var(--accent);
 }
 
+/* Accessible loading state: circular accent ring (transform-only animation). */
+.rs-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 2rem 1.25rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.02em;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.42);
+  min-height: 9rem;
+  box-sizing: border-box;
+}
+
+.rs-loading-caption {
+  font-weight: 500;
+}
+
+.rs-spinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid rgba(148, 163, 184, 0.22);
+  border-top-color: var(--accent);
+  border-right-color: rgba(125, 211, 252, 0.42);
+  animation: rs-spin 0.72s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes rs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rs-spinner {
+    animation-duration: 1.75s;
+    border-right-color: rgba(148, 163, 184, 0.22);
+  }
+}
+
+.matrix-loading-cell {
+  padding: 0;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.matrix-loading-cell .rs-loading {
+  min-height: 7rem;
+  margin: 0 auto;
+  max-width: 24rem;
+  border-style: solid;
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.matrix-loading-cell--tight .rs-loading {
+  min-height: 5rem;
+  padding: 1rem 0.75rem;
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -1658,8 +1724,7 @@ table.kanban-table {
   background: rgba(67, 56, 202, 0.45);
 }
 
-.my-kanban-empty,
-.my-kanban-loading {
+.my-kanban-empty {
   text-align: center;
   padding: 2rem 1rem;
   color: #94a3b8;
@@ -1667,6 +1732,10 @@ table.kanban-table {
   border-radius: 14px;
   border: 1px dashed rgba(100, 116, 139, 0.35);
   background: rgba(15, 23, 42, 0.35);
+}
+
+#tasks-kanban > .rs-loading {
+  min-height: 12rem;
 }
 
 .my-kanban-empty--below {

@@ -688,7 +688,27 @@ async function refreshTable() {
     }
     params.set("department_id", sel);
   }
-  const data = await api(`/api/shifts/table?${params}`);
+
+  const thead = $("matrix-head");
+  const tbodyPre = $("matrix-body");
+  const cardsPre = $("matrix-cards");
+  if (thead) thead.innerHTML = "";
+  if (tbodyPre) {
+    tbodyPre.innerHTML = `<tr><td colspan="500" class="matrix-loading-cell">${loadingSpinnerHTML("Loading roster…")}</td></tr>`;
+  }
+  if (cardsPre) cardsPre.innerHTML = loadingSpinnerHTML("Loading roster…");
+
+  let data;
+  try {
+    data = await api(`/api/shifts/table?${params}`);
+  } catch (e) {
+    if (thead) thead.innerHTML = "";
+    if (tbodyPre) {
+      tbodyPre.innerHTML = `<tr><td colspan="500" class="matrix-loading-cell"><p class="error">${escapeHtml(e.message || String(e))}</p></td></tr>`;
+    }
+    if (cardsPre) cardsPre.innerHTML = "";
+    return;
+  }
   if (data.shift_legend && typeof data.shift_legend === "object") {
     state.shiftLegend = { ...state.shiftLegend, ...data.shift_legend };
     const fillNonTimed = {
@@ -700,7 +720,6 @@ async function refreshTable() {
     });
     fillMgrAssignShiftSelect();
   }
-  const thead = $("matrix-head");
   const tbody = $("matrix-body");
   const tbl = $("matrix-table");
   thead.innerHTML = "";
@@ -826,6 +845,12 @@ function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/** Accessible loading UI (replaces plain “Loading…” text in tables and panels). */
+function loadingSpinnerHTML(caption = "Loading…") {
+  const label = escapeHtml(caption);
+  return `<div class="rs-loading" role="status" aria-live="polite" aria-busy="true"><div class="rs-spinner" aria-hidden="true"></div><span class="rs-loading-caption">${label}</span></div>`;
+}
+
 function fmtShortDateTime(iso) {
   if (!iso) return "—";
   try {
@@ -863,7 +888,7 @@ async function refreshEmployeeRequestLog() {
   if (!state.user || state.user.role !== "employee") return;
   const box = $("emp-request-log");
   if (!box) return;
-  box.innerHTML = "";
+  box.innerHTML = loadingSpinnerHTML("Loading your requests…");
   try {
     const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
     const rows = [];
@@ -959,7 +984,7 @@ async function refreshManagerRoster() {
   const msg = $("mgr-assign-msg");
   if (!tbody || !selMember) return;
 
-  tbody.innerHTML = "";
+  tbody.innerHTML = `<tr><td colspan="3" class="matrix-loading-cell matrix-loading-cell--tight">${loadingSpinnerHTML("Loading team…")}</td></tr>`;
   selMember.innerHTML = "";
   const ph = document.createElement("option");
   ph.value = "";
@@ -970,6 +995,7 @@ async function refreshManagerRoster() {
   if (state.user.role === "admin") {
     const did = $("mgr-roster-dept") && $("mgr-roster-dept").value;
     if (!did) {
+      tbody.innerHTML = "";
       if (msg) msg.textContent = "Choose a department above to load its team.";
       return;
     }
@@ -980,11 +1006,13 @@ async function refreshManagerRoster() {
   try {
     data = await api(url);
   } catch (e) {
+    tbody.innerHTML = "";
     if (msg) msg.textContent = e.message;
     return;
   }
 
   const users = data.users || [];
+  tbody.innerHTML = "";
   users.forEach((u) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${escapeHtml(u.employee_id)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.role)}</td>`;
@@ -1064,8 +1092,8 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
 async function fetchAndRenderManagerDeptRequestLog(leaveBox, shiftBox, showDeptColumn) {
   if (state.user?.role !== "manager") return;
   if (!leaveBox || !shiftBox) return;
-  leaveBox.innerHTML = '<p class="hint">Loading…</p>';
-  shiftBox.innerHTML = "";
+  leaveBox.innerHTML = loadingSpinnerHTML("Loading leave history…");
+  shiftBox.innerHTML = loadingSpinnerHTML("Loading shift changes…");
   try {
     const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
     renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn);
@@ -1090,8 +1118,8 @@ async function refreshAdminRequestLog() {
   const leaveBox = $("admin-records-leave");
   const shiftBox = $("admin-records-shift");
   if (!leaveBox || !shiftBox) return;
-  leaveBox.innerHTML = '<p class="hint">Loading…</p>';
-  shiftBox.innerHTML = "";
+  leaveBox.innerHTML = loadingSpinnerHTML("Loading leave history…");
+  shiftBox.innerHTML = loadingSpinnerHTML("Loading shift changes…");
   try {
     const [lv, ch] = await Promise.all([
       api(`/api/requests/leave${q}`),
@@ -1100,6 +1128,7 @@ async function refreshAdminRequestLog() {
     renderRequestActivityTables(lv, ch, leaveBox, shiftBox, true);
   } catch (e) {
     leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+    shiftBox.innerHTML = "";
   }
 }
 
@@ -1107,7 +1136,7 @@ async function refreshAdminDeptList() {
   if (state.user.role !== "admin") return;
   const box = $("admin-dept-list");
   if (!box) return;
-  box.innerHTML = "";
+  box.innerHTML = loadingSpinnerHTML("Loading departments…");
   try {
     const data = await api("/api/departments");
     const tbl = document.createElement("table");
@@ -1153,10 +1182,17 @@ async function refreshAdminUsers() {
   if (state.user?.role !== "admin") return;
   const wrap = $("admin-users");
   if (!wrap) return;
+  wrap.innerHTML = loadingSpinnerHTML("Loading users…");
   const filt = $("admin-user-dept-filter")?.value || "";
   let url = "/api/users";
   if (filt) url += `?department_id=${encodeURIComponent(filt)}`;
-  const data = await api(url);
+  let data;
+  try {
+    data = await api(url);
+  } catch (e) {
+    wrap.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+    return;
+  }
   wrap.innerHTML = "";
   const tbl = document.createElement("table");
   tbl.className = "matrix";
@@ -1487,7 +1523,7 @@ async function refreshInfoValleyBoard() {
   if (state.user.role === "admin") {
     path += `?department_id=${encodeURIComponent(deptId)}`;
   }
-  root.innerHTML = '<p class="hint">Loading activities…</p>';
+  root.innerHTML = loadingSpinnerHTML("Loading activities…");
   try {
     const data = await fetchActivitiesJson(path);
     renderInfoValleyTable(data.entries || []);
@@ -1672,7 +1708,7 @@ async function refreshTasksBoard() {
     path += `?department_id=${encodeURIComponent(did)}`;
   }
   setTasksKanbanBanner("", "");
-  root.innerHTML = '<p class="my-kanban-loading">Loading board…</p>';
+  root.innerHTML = loadingSpinnerHTML("Loading tasks…");
   try {
     const data = await fetchTaskBoardJson(path);
     renderKanbanFromTasks(data.tasks || []);
@@ -1718,7 +1754,7 @@ function activateDashTab(dashId, tabId) {
     show(p, p.dataset.tab === tabId);
   });
   if (tabId === "schedule" && state.calendar) {
-    setTimeout(() => state.calendar.updateSize(), 150);
+    requestAnimationFrame(() => requestAnimationFrame(() => state.calendar.updateSize()));
   }
   if (dashId === "employee" && tabId === "requests" && state.user?.role === "employee") {
     refreshEmployeeRequestLog();
@@ -1824,16 +1860,10 @@ async function bootAuthenticated() {
     console.error(`[RotaShift boot] ${label}:`, err);
   };
 
-  try {
-    await loadMeta();
-  } catch (e) {
-    softFail("loadMeta", e);
-  }
-  try {
-    await loadDepartments();
-  } catch (e) {
-    softFail("loadDepartments", e);
-  }
+  await Promise.all([
+    loadMeta().catch((e) => softFail("loadMeta", e)),
+    loadDepartments().catch((e) => softFail("loadDepartments", e)),
+  ]);
 
   mountScheduleForRole(state.user.role);
   mountShiftPanels(state.user.role);
@@ -1908,16 +1938,18 @@ async function bootAuthenticated() {
       softFail(label, e);
     }
   };
-  await refreshSafe("refreshTable", () => refreshTable());
-  await refreshSafe("refreshManagerRoster", () => refreshManagerRoster());
-  await refreshSafe("refreshManagerQueues", () => refreshManagerQueues());
-  await refreshSafe("refreshAdminUsers", () => refreshAdminUsers());
-  await refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog());
-  await refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList());
-  await refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog());
-  await refreshSafe("refreshManagerRequestLog", () => refreshManagerRequestLog());
-  await refreshSafe("refreshManagerInlineApprovalsLog", () => refreshManagerInlineApprovalsLog());
-  await refreshSafe("refreshInfoValleyBoard", () => refreshInfoValleyBoard());
+  await Promise.all([
+    refreshSafe("refreshTable", () => refreshTable()),
+    refreshSafe("refreshManagerRoster", () => refreshManagerRoster()),
+    refreshSafe("refreshManagerQueues", () => refreshManagerQueues()),
+    refreshSafe("refreshAdminUsers", () => refreshAdminUsers()),
+    refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog()),
+    refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList()),
+    refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog()),
+    refreshSafe("refreshManagerRequestLog", () => refreshManagerRequestLog()),
+    refreshSafe("refreshManagerInlineApprovalsLog", () => refreshManagerInlineApprovalsLog()),
+    refreshSafe("refreshInfoValleyBoard", () => refreshInfoValleyBoard()),
+  ]);
 
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
