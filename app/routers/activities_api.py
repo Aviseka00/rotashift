@@ -57,11 +57,20 @@ async def _author_view(db, uid: ObjectId) -> dict:
     return {"id": str(uid), "employee_id": doc.get("employee_id", "?"), "full_name": doc.get("full_name", "?")}
 
 
-async def _entry_out(db, doc: dict) -> dict:
-    author = await _author_view(db, doc["created_by"])
+async def _entry_out(db, doc: dict, authors_by_id: Optional[dict] = None) -> dict:
+    author = None
+    created_by = doc.get("created_by")
+    if authors_by_id and created_by in authors_by_id:
+        author = authors_by_id[created_by]
+    else:
+        author = await _author_view(db, created_by)
     comments = []
     for c in doc.get("comments", []):
-        c_author = await _author_view(db, c["created_by"])
+        c_by = c.get("created_by")
+        if authors_by_id and c_by in authors_by_id:
+            c_author = authors_by_id[c_by]
+        else:
+            c_author = await _author_view(db, c_by)
         comments.append(
             {
                 "id": str(c.get("_id") or ""),
@@ -76,7 +85,11 @@ async def _entry_out(db, doc: dict) -> dict:
         uploader = None
         if image.get("uploaded_by"):
             try:
-                uploader = await _author_view(db, image["uploaded_by"])
+                uploaded_by = image["uploaded_by"]
+                if authors_by_id and uploaded_by in authors_by_id:
+                    uploader = authors_by_id[uploaded_by]
+                else:
+                    uploader = await _author_view(db, uploaded_by)
             except Exception:
                 uploader = None
         out_image = {
@@ -123,9 +136,30 @@ async def list_activities(
     db = get_db()
     dept_oid = _dept_scope(user, department_id)
     cur = db.activities.find({"department_id": dept_oid}).sort([("activity_date", -1), ("created_at", -1)])
-    out = []
+    docs = []
+    author_ids = set()
     async for doc in cur:
-        out.append(await _entry_out(db, doc))
+        docs.append(doc)
+        if doc.get("created_by"):
+            author_ids.add(doc["created_by"])
+        img = doc.get("image") or {}
+        if isinstance(img, dict) and img.get("uploaded_by"):
+            author_ids.add(img["uploaded_by"])
+        for c in doc.get("comments", []):
+            if c.get("created_by"):
+                author_ids.add(c["created_by"])
+
+    authors_by_id = {}
+    if author_ids:
+        async for u in db.users.find({"_id": {"$in": list(author_ids)}}):
+            authors_by_id[u["_id"]] = {
+                "id": str(u["_id"]),
+                "employee_id": u.get("employee_id", "?"),
+                "full_name": u.get("full_name", "?"),
+            }
+    out = []
+    for doc in docs:
+        out.append(await _entry_out(db, doc, authors_by_id=authors_by_id))
     return {"entries": out}
 
 

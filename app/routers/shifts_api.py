@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -159,12 +159,32 @@ async def calendar_feed(
         raise HTTPException(status_code=400, detail="Invalid date range")
 
     events: List[Dict[str, Any]] = []
+    users_by_id: Dict[ObjectId, dict] = {}
+    user_ids: Set[ObjectId] = set()
 
-    async for s in db.shifts.find({"department_id": dept_oid}):
-        day = parse_iso_date(s["date"])
-        if day < d0 or day > d1:
+    shift_q = {"department_id": dept_oid, "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}}
+    shifts_in_range: List[dict] = []
+    async for s in db.shifts.find(shift_q):
+        shifts_in_range.append(s)
+        if s.get("user_id"):
+            user_ids.add(s["user_id"])
+
+    approved_leaves: List[dict] = []
+    async for lv in db.leave_requests.find({"department_id": dept_oid, "status": "approved"}):
+        approved_leaves.append(lv)
+        if lv.get("user_id"):
+            user_ids.add(lv["user_id"])
+
+    if user_ids:
+        async for u in db.users.find({"_id": {"$in": list(user_ids)}}):
+            users_by_id[u["_id"]] = u
+
+    for s in shifts_in_range:
+        try:
+            day = parse_iso_date(s["date"])
+        except Exception:
             continue
-        u = await db.users.find_one({"_id": s["user_id"]})
+        u = users_by_id.get(s.get("user_id"))
         if not u:
             continue
         events.append(
@@ -178,12 +198,12 @@ async def calendar_feed(
             )
         )
 
-    async for lv in db.leave_requests.find({"department_id": dept_oid, "status": "approved"}):
+    for lv in approved_leaves:
         sd = parse_iso_date(lv["start_date"])
         ed = parse_iso_date(lv["end_date"])
         if ed < d0 or sd > d1:
             continue
-        u = await db.users.find_one({"_id": lv["user_id"]})
+        u = users_by_id.get(lv.get("user_id"))
         if not u:
             continue
         events.append(
@@ -239,12 +259,19 @@ async def table_matrix(
     async for u in db.users.find({"department_id": dept_oid}).sort("employee_id", 1):
         users_list.append(u)
 
+    shifts_q = {"department_id": dept_oid, "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}}
+    shifts_by_user: Dict[ObjectId, Dict[str, str]] = {}
+    async for s in db.shifts.find(shifts_q):
+        uid = s.get("user_id")
+        day = s.get("date")
+        if not uid or not day:
+            continue
+        shifts_by_user.setdefault(uid, {})[day] = s.get("shift_code", "")
+
     rows = []
     for u in users_list:
         uid = u["_id"]
-        cells = {}
-        async for s in db.shifts.find({"department_id": dept_oid, "user_id": uid}):
-            cells[s["date"]] = s["shift_code"]
+        cells = shifts_by_user.get(uid, {})
         rows.append(
             {
                 "employee_id": u["employee_id"],
@@ -325,4 +352,64 @@ async def manpower_summary(
         "dates": dates,
         "shift_codes": shift_codes,
         "summary": summary,
+    }
+
+
+@router.get("/manpower-summary/users")
+async def manpower_summary_users(
+    date: str = Query(..., description="YYYY-MM-DD"),
+    shift_code: str = Query(..., description="Shift code like A/B/C/G/L/WO"),
+    department_id: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+):
+    """Drill-down users for one day + one shift in the department scope."""
+    db = get_db()
+    role = user.get("role")
+    if role == "employee":
+        if not user.get("department_id"):
+            return {"department_name": "", "date": date, "shift_code": shift_code, "users": []}
+        dept_oid = ObjectId(user["department_id"])
+    elif role == "manager":
+        if not user.get("department_id"):
+            return {"department_name": "", "date": date, "shift_code": shift_code, "users": []}
+        dept_oid = ObjectId(user["department_id"])
+    else:
+        if not department_id:
+            raise HTTPException(status_code=400, detail="department_id required")
+        try:
+            dept_oid = ObjectId(department_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid department_id")
+
+    try:
+        day = parse_iso_date(date).isoformat()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid date")
+    code = (shift_code or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Invalid shift_code")
+
+    out_users: List[Dict[str, str]] = []
+    q = {"department_id": dept_oid, "date": day, "shift_code": code}
+    user_ids: List[ObjectId] = []
+    async for s in db.shifts.find(q):
+        uid = s.get("user_id")
+        if uid:
+            user_ids.append(uid)
+    if user_ids:
+        async for u in db.users.find({"_id": {"$in": user_ids}}):
+            out_users.append(
+                {
+                    "employee_id": u.get("employee_id", ""),
+                    "full_name": u.get("full_name", ""),
+                    "role": u.get("role", "employee"),
+                }
+            )
+    out_users.sort(key=lambda item: (item.get("employee_id") or ""))
+    dept = await db.departments.find_one({"_id": dept_oid})
+    return {
+        "department_name": dept["name"] if dept else "",
+        "date": day,
+        "shift_code": code,
+        "users": out_users,
     }

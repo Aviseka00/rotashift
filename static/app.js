@@ -456,24 +456,106 @@ function renderManpowerSummary(data) {
   const dynamicCodes = (data?.shift_codes || []).filter((c) => c && !seen.has(c));
   const codes = [...baseCodes, ...dynamicCodes];
   const wrap = document.createElement("div");
-  wrap.className = "table-scroll";
+  wrap.className = "table-scroll manpower-summary-scroll";
   const tbl = document.createElement("table");
-  tbl.className = "matrix";
+  tbl.className = "matrix manpower-summary-table";
   tbl.innerHTML = `<thead><tr><th>Date</th>${codes
-    .map((code) => `<th>${escapeHtml(code)}</th>`)
+    .map((code) => `<th class="manpower-th-shift manpower-th-${String(code).toLowerCase()}">${escapeHtml(code)}</th>`)
     .join("")}<th>Total</th></tr></thead>`;
   const tb = document.createElement("tbody");
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     const counts = row.counts || {};
     tr.innerHTML = `<td>${escapeHtml(formatMatrixDayLabel(row.date || ""))}</td>${codes
-      .map((code) => `<td>${escapeHtml(String(counts[code] || 0))}</td>`)
-      .join("")}<td><strong>${escapeHtml(String(row.total || 0))}</strong></td>`;
+      .map((code) => {
+        const count = Number(counts[code] || 0);
+        const cls = `cell-${String(code).toLowerCase()}`;
+        if (count <= 0) {
+          return `<td class="manpower-cell manpower-cell-empty">${escapeHtml(String(count))}</td>`;
+        }
+        return `<td class="manpower-cell manpower-cell-click ${cls}" data-manpower-date="${escapeHtml(
+          row.date || "",
+        )}" data-manpower-code="${escapeHtml(code)}" title="Click to view users in ${escapeHtml(
+          code,
+        )} shift">${escapeHtml(String(count))}</td>`;
+      })
+      .join("")}<td class="manpower-total-cell"><strong>${escapeHtml(String(row.total || 0))}</strong></td>`;
     tb.appendChild(tr);
   });
   tbl.appendChild(tb);
   wrap.appendChild(tbl);
   root.appendChild(wrap);
+  const detail = document.createElement("div");
+  detail.className = "manpower-drilldown hint";
+  detail.textContent = "Tip: click a colored count cell to view users in a popup.";
+  root.appendChild(detail);
+}
+
+async function openManpowerDrilldown(date, shiftCode) {
+  const modal = ensureManpowerModal();
+  const body = modal.querySelector(".manpower-modal-body");
+  if (!body) return;
+  const params = new URLSearchParams({ date, shift_code: shiftCode });
+  if (state.user?.role === "admin") {
+    const dept = $("table-dept")?.value;
+    if (dept) params.set("department_id", dept);
+  }
+  modal.classList.remove("hidden");
+  body.innerHTML = loadingSpinnerHTML(`Loading ${shiftCode} shift users on ${date}...`);
+  try {
+    const data = await api(`/api/shifts/manpower-summary/users?${params}`);
+    const users = data.users || [];
+    if (!users.length) {
+      body.innerHTML = `<p class="hint">No users in <strong>${escapeHtml(shiftCode)}</strong> on ${escapeHtml(
+        date,
+      )}.</p>`;
+      return;
+    }
+    const names = users
+      .map(
+        (u) =>
+          `<li><strong>${escapeHtml(u.full_name || "")}</strong> <span class="badge">${escapeHtml(u.employee_id || "")}</span> <span class="hint">${escapeHtml(u.role || "")}</span></li>`,
+      )
+      .join("");
+    body.innerHTML = `<h4>Users in ${escapeHtml(shiftCode)} · ${escapeHtml(
+      formatMatrixDayLabel(date),
+    )} (${escapeHtml(data.department_name || "")})</h4><ul class="manpower-user-list">${names}</ul>`;
+  } catch (e) {
+    body.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+  }
+}
+
+function ensureManpowerModal() {
+  let modal = $("manpower-modal");
+  if (modal) return modal;
+  modal = document.createElement("div");
+  modal.id = "manpower-modal";
+  modal.className = "manpower-modal hidden";
+  modal.innerHTML = `
+    <div class="manpower-modal-backdrop" data-manpower-close="1"></div>
+    <div class="manpower-modal-card" role="dialog" aria-modal="true" aria-label="Shift users">
+      <div class="manpower-modal-head">
+        <h3>Shift users</h3>
+        <button type="button" class="btn secondary" data-manpower-close="1">Back to table</button>
+      </div>
+      <div class="manpower-modal-body"></div>
+    </div>
+  `;
+  modal.addEventListener("click", (ev) => {
+    const closer = ev.target.closest("[data-manpower-close='1']");
+    if (closer) modal.classList.add("hidden");
+  });
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function handleManpowerSummaryClick(ev) {
+  const cell = ev.target.closest("[data-manpower-date][data-manpower-code]");
+  if (!cell) return;
+  const date = cell.getAttribute("data-manpower-date");
+  const code = cell.getAttribute("data-manpower-code");
+  if (!date || !code) return;
+  openManpowerDrilldown(date, code);
 }
 
 async function refreshManpowerSummary() {
@@ -903,7 +985,8 @@ async function refreshManagerQueues() {
 }
 
 function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const text = String(s ?? "");
+  return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
 /** Accessible loading UI (replaces plain “Loading…” text in tables and panels). */
@@ -1002,7 +1085,7 @@ async function refreshEmployeeRequestLog() {
     wrap.appendChild(tbl);
     box.appendChild(wrap);
   } catch (e) {
-    box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+    box.innerHTML = `<p class="error">${escapeHtml(e?.message || String(e))}</p>`;
   }
 }
 
@@ -2494,6 +2577,7 @@ $("infovalley-submit")?.addEventListener("click", submitInfoValleyActivity);
 $("infovally-submit")?.addEventListener("click", submitInfoValleyActivity);
 $("infovalley-table")?.addEventListener("click", handleInfoValleyCommentClick);
 $("infovally-table")?.addEventListener("click", handleInfoValleyCommentClick);
+$("manpower-summary")?.addEventListener("click", handleManpowerSummaryClick);
 
 $("export-btn").addEventListener("click", async () => {
   const data = await api("/api/admin/export");
