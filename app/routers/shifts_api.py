@@ -261,3 +261,68 @@ async def table_matrix(
         "shift_legend": SHIFT_DEFINITIONS,
         "rows": rows,
     }
+
+
+@router.get("/manpower-summary")
+async def manpower_summary(
+    start: str = Query(...),
+    end: str = Query(...),
+    department_id: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+):
+    """Date-wise manpower distribution by shift code for the roster table range."""
+    db = get_db()
+    role = user.get("role")
+    if role == "employee":
+        if not user.get("department_id"):
+            return {"department_name": "", "dates": [], "shift_codes": [], "summary": []}
+        dept_oid = ObjectId(user["department_id"])
+    elif role == "manager":
+        if not user.get("department_id"):
+            return {"department_name": "", "dates": [], "shift_codes": [], "summary": []}
+        dept_oid = ObjectId(user["department_id"])
+    else:
+        if not department_id:
+            raise HTTPException(status_code=400, detail="department_id required")
+        try:
+            dept_oid = ObjectId(department_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid department_id")
+
+    d0 = parse_iso_date(start)
+    d1 = parse_iso_date(end)
+    if d1 < d0:
+        raise HTTPException(status_code=400, detail="Invalid date range")
+
+    from datetime import timedelta
+
+    dates: List[str] = []
+    by_day: Dict[str, Dict[str, int]] = {}
+    cur = d0
+    while cur <= d1:
+        day = cur.isoformat()
+        dates.append(day)
+        by_day[day] = {}
+        cur += timedelta(days=1)
+
+    q = {"department_id": dept_oid, "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}}
+    async for s in db.shifts.find(q):
+        day = s.get("date")
+        code = (s.get("shift_code") or "").strip().upper()
+        if not day or not code or day not in by_day:
+            continue
+        by_day[day][code] = by_day[day].get(code, 0) + 1
+
+    shift_codes = sorted({code for counts in by_day.values() for code in counts.keys()})
+    summary = []
+    for day in dates:
+        counts = by_day[day]
+        summary.append({"date": day, "counts": counts, "total": sum(counts.values())})
+
+    dept = await db.departments.find_one({"_id": dept_oid})
+    return {
+        "department_name": dept["name"] if dept else "",
+        "dates": dates,
+        "shift_codes": shift_codes,
+        "summary": summary,
+    }

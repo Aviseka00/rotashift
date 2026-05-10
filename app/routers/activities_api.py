@@ -1,14 +1,20 @@
 from datetime import datetime, timezone
+from pathlib import Path
+import tempfile
 from typing import Any, Optional
+from uuid import uuid4
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.deps import get_current_user
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
+_UPLOAD_DIR = Path(tempfile.gettempdir()) / "rotashift-uploads" / "activities"
+_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 def _iso(dt: Any) -> Optional[str]:
@@ -64,6 +70,22 @@ async def _entry_out(db, doc: dict) -> dict:
                 "created_by": c_author,
             }
         )
+    image = doc.get("image")
+    out_image = None
+    if isinstance(image, dict):
+        uploader = None
+        if image.get("uploaded_by"):
+            try:
+                uploader = await _author_view(db, image["uploaded_by"])
+            except Exception:
+                uploader = None
+        out_image = {
+            "url": image.get("url"),
+            "original_name": image.get("original_name"),
+            "stored_name": image.get("stored_name"),
+            "uploaded_at": _iso(image.get("uploaded_at")),
+            "uploaded_by": uploader,
+        }
     return {
         "id": str(doc["_id"]),
         "department_id": str(doc["department_id"]),
@@ -74,6 +96,7 @@ async def _entry_out(db, doc: dict) -> dict:
         "updated_at": _iso(doc.get("updated_at")),
         "created_by": author,
         "comments": comments,
+        "image": out_image,
     }
 
 
@@ -82,6 +105,9 @@ class ActivityCreateBody(BaseModel):
     title: str = Field(..., min_length=1, max_length=160)
     details: str = Field(..., min_length=1, max_length=4000)
     department_id: Optional[str] = None
+    image_url: Optional[str] = None
+    image_original_name: Optional[str] = None
+    image_stored_name: Optional[str] = None
 
 
 class ActivityCommentBody(BaseModel):
@@ -119,6 +145,14 @@ async def create_activity(body: ActivityCreateBody, user=Depends(get_current_use
         "updated_at": now,
         "comments": [],
     }
+    if body.image_url:
+        doc["image"] = {
+            "url": body.image_url.strip(),
+            "original_name": (body.image_original_name or "").strip() or "image",
+            "stored_name": (body.image_stored_name or "").strip() or "",
+            "uploaded_by": ObjectId(user["_id"]),
+            "uploaded_at": now,
+        }
     res = await db.activities.insert_one(doc)
     created = await db.activities.find_one({"_id": res.inserted_id})
     return await _entry_out(db, created)
@@ -154,3 +188,66 @@ async def add_comment(activity_id: str, body: ActivityCommentBody, user=Depends(
     )
     fresh = await db.activities.find_one({"_id": oid})
     return await _entry_out(db, fresh)
+
+
+@router.post("/upload-image")
+async def upload_activity_image(
+    file: UploadFile = File(...),
+    department_id: Optional[str] = Form(None),
+    user=Depends(get_current_user),
+):
+    db = get_db()
+    dept_oid = _dept_scope(user, department_id)
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image uploads are allowed")
+
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(payload) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="Image too large (max 8MB)")
+
+    original_name = (file.filename or "activity-image").strip() or "activity-image"
+    safe_ext = Path(original_name).suffix.lower()
+    if safe_ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        if content_type == "image/jpeg":
+            safe_ext = ".jpg"
+        elif content_type == "image/png":
+            safe_ext = ".png"
+        elif content_type == "image/webp":
+            safe_ext = ".webp"
+        elif content_type == "image/gif":
+            safe_ext = ".gif"
+        else:
+            safe_ext = ".bin"
+
+    folder = _UPLOAD_DIR / str(dept_oid)
+    folder.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex}{safe_ext}"
+    dest = folder / stored_name
+    dest.write_bytes(payload)
+
+    now = datetime.now(timezone.utc)
+    uploader_oid = ObjectId(user["_id"])
+    await db.activity_uploads.insert_one(
+        {
+            "department_id": dept_oid,
+            "path": str(dest),
+            "url": f"/uploads/activities/{dept_oid}/{stored_name}",
+            "original_name": original_name,
+            "stored_name": stored_name,
+            "content_type": content_type,
+            "size_bytes": len(payload),
+            "uploaded_by": uploader_oid,
+            "uploaded_at": now,
+        }
+    )
+    uploader = await _author_view(db, uploader_oid)
+    return {
+        "url": f"/uploads/activities/{dept_oid}/{stored_name}",
+        "original_name": original_name,
+        "stored_name": stored_name,
+        "uploaded_at": _iso(now),
+        "uploaded_by": uploader,
+    }

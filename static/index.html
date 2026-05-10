@@ -399,7 +399,11 @@
           </div>
           <div class="card grid schedule-grid schedule-card-stretch landscape-compact">
             <div>
-              <h2>Department calendar</h2>
+              <h2>Day-wise manpower summary</h2>
+              <p class="hint">Department-wise shift distribution from the selected range: A, B, C, G, L, WO and total.</p>
+              <div id="manpower-summary"></div>
+
+              <h2 style="margin-top: 1rem">Department calendar</h2>
               <div id="admin-cal-ctl" class="row hidden">
                 <div>
                   <label for="cal-dept">Department (admin)</label>
@@ -577,6 +581,8 @@
             </div>
             <label for="infovalley-details">Details</label>
             <textarea id="infovalley-details" maxlength="4000" placeholder="What was done today? Add key notes, blockers, or outcomes."></textarea>
+            <label for="infovalley-image">Optional photo</label>
+            <input id="infovalley-image" type="file" accept="image/*" />
             <div class="row">
               <div style="flex: 0 0 auto">
                 <button type="button" id="infovalley-submit" class="btn">Post activity</button>

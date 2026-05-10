@@ -191,8 +191,13 @@ async def login(body: LoginBody):
             detail="Invalid credentials — check Employee ID and password, or register if this is a new database.",
         )
     pw_hash = user.get("password_hash") or ""
+    plain = body.password
     try:
-        password_ok = bool(pw_hash) and verify_password(body.password, pw_hash)
+        password_ok = bool(pw_hash) and verify_password(plain, pw_hash)
+        # Accidental leading/trailing spaces in the password field (paste, mobile) are a common
+        # "I'm sure it's correct" case; retry with strip only when input had outer whitespace.
+        if not password_ok and plain.strip() != plain:
+            password_ok = bool(pw_hash) and verify_password(plain.strip(), pw_hash)
     except Exception:
         password_ok = False
     if not password_ok:

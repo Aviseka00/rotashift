@@ -436,11 +436,68 @@ function initCalendar() {
 function setDefaultTableRange() {
   const today = new Date();
   const start = new Date(today);
-  start.setDate(today.getDate() - today.getDay());
-  const end = new Date(start);
-  end.setDate(start.getDate() + 13);
+  const end = new Date(today);
+  end.setDate(today.getDate() + 13);
   $("table-start").value = start.toISOString().slice(0, 10);
   $("table-end").value = end.toISOString().slice(0, 10);
+}
+
+function renderManpowerSummary(data) {
+  const root = $("manpower-summary");
+  if (!root) return;
+  root.innerHTML = "";
+  const rows = data?.summary || [];
+  if (!rows.length) {
+    root.innerHTML = '<p class="hint">No manpower data for this date range.</p>';
+    return;
+  }
+  const baseCodes = ["A", "B", "C", "G", "L", "WO"];
+  const seen = new Set(baseCodes);
+  const dynamicCodes = (data?.shift_codes || []).filter((c) => c && !seen.has(c));
+  const codes = [...baseCodes, ...dynamicCodes];
+  const wrap = document.createElement("div");
+  wrap.className = "table-scroll";
+  const tbl = document.createElement("table");
+  tbl.className = "matrix";
+  tbl.innerHTML = `<thead><tr><th>Date</th>${codes
+    .map((code) => `<th>${escapeHtml(code)}</th>`)
+    .join("")}<th>Total</th></tr></thead>`;
+  const tb = document.createElement("tbody");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const counts = row.counts || {};
+    tr.innerHTML = `<td>${escapeHtml(formatMatrixDayLabel(row.date || ""))}</td>${codes
+      .map((code) => `<td>${escapeHtml(String(counts[code] || 0))}</td>`)
+      .join("")}<td><strong>${escapeHtml(String(row.total || 0))}</strong></td>`;
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  wrap.appendChild(tbl);
+  root.appendChild(wrap);
+}
+
+async function refreshManpowerSummary() {
+  const root = $("manpower-summary");
+  if (!root || !state.user) return;
+  const params = new URLSearchParams({
+    start: $("table-start").value,
+    end: $("table-end").value,
+  });
+  if (state.user.role === "admin") {
+    const sel = $("table-dept")?.value;
+    if (!sel) {
+      root.innerHTML = '<p class="hint">Choose a department to load summary.</p>';
+      return;
+    }
+    params.set("department_id", sel);
+  }
+  root.innerHTML = loadingSpinnerHTML("Loading manpower summary…");
+  try {
+    const data = await api(`/api/shifts/manpower-summary?${params}`);
+    renderManpowerSummary(data);
+  } catch (e) {
+    root.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+  }
 }
 
 function rosterShiftCodeOrder(codes) {
@@ -684,6 +741,8 @@ async function refreshTable() {
       $("matrix-head").innerHTML = "";
       $("matrix-body").innerHTML = "";
       buildMatrixMobileCards({ dates: [], rows: [] });
+      const summaryRoot = $("manpower-summary");
+      if (summaryRoot) summaryRoot.innerHTML = '<p class="hint">Choose a department to load summary.</p>';
       return;
     }
     params.set("department_id", sel);
@@ -707,6 +766,7 @@ async function refreshTable() {
       tbodyPre.innerHTML = `<tr><td colspan="500" class="matrix-loading-cell"><p class="error">${escapeHtml(e.message || String(e))}</p></td></tr>`;
     }
     if (cardsPre) cardsPre.innerHTML = "";
+    await refreshManpowerSummary();
     return;
   }
   if (data.shift_legend && typeof data.shift_legend === "object") {
@@ -774,6 +834,7 @@ async function refreshTable() {
     tbody.appendChild(tr);
   });
   buildMatrixMobileCards(data);
+  await refreshManpowerSummary();
 }
 
 async function refreshManagerQueues() {
@@ -1461,12 +1522,17 @@ function renderInfoValleyTable(entries) {
       })
       .join("");
     const tr = document.createElement("tr");
+    const imageBlock =
+      item.image?.url
+        ? `<div class="infovalley-activity-image-wrap"><a href="${escapeHtml(item.image.url)}" target="_blank" rel="noopener noreferrer"><img class="infovalley-activity-image" src="${escapeHtml(item.image.url)}" alt="${escapeHtml(item.image.original_name || item.title || "Info-valley image")}" loading="lazy" /></a><div class="hint">Image: ${escapeHtml(item.image.original_name || item.image.stored_name || "uploaded")} ${item.image.uploaded_by?.employee_id ? `· uploaded by ${escapeHtml(item.image.uploaded_by.employee_id)}` : ""}</div></div>`
+        : "";
     tr.innerHTML = `
       <td class="infovalley-date-cell"><strong>${escapeHtml(formatInfoValleyDate(item.activity_date))}</strong><div class="hint">${escapeHtml(item.activity_date || "")}</div></td>
       <td>
         <div class="infovalley-activity-title">${escapeHtml(item.title || "")}</div>
         <div class="infovalley-activity-meta hint">By ${escapeHtml(who.full_name || "?")} (${escapeHtml(who.employee_id || "?")}) · ${escapeHtml(cAt)}</div>
         <div class="infovalley-activity-details">${escapeHtml(item.details || "")}</div>
+        ${imageBlock}
       </td>
       <td>
         <div class="infovalley-comments-wrap">${commentsHtml || '<span class="hint">No comments yet.</span>'}</div>
@@ -1480,6 +1546,13 @@ function renderInfoValleyTable(entries) {
   tbl.appendChild(tb);
   wrap.appendChild(tbl);
   root.appendChild(wrap);
+}
+
+async function uploadInfoValleyImage(file, departmentId) {
+  const fd = new FormData();
+  fd.append("file", file);
+  if (departmentId) fd.append("department_id", departmentId);
+  return api("/api/activities/upload-image", { method: "POST", body: fd });
 }
 
 /** GET /api/activities — retry with trailing slash if the server/proxy only exposes /api/activities/ */
@@ -2362,6 +2435,7 @@ async function submitInfoValleyActivity() {
   const titleEl = $("infovalley-activity-title") || $("infovalley-title") || $("infovally-title");
   const detailsEl = $("infovalley-details") || $("infovally-details");
   const dateEl = $("infovalley-date") || $("infovally-date");
+  const imageEl = $("infovalley-image");
   const title = titleEl?.value?.trim() || "";
   const details = detailsEl?.value?.trim() || "";
   const activityDate = dateEl?.value || "";
@@ -2370,17 +2444,26 @@ async function submitInfoValleyActivity() {
     return;
   }
   const body = { activity_date: activityDate, title, details };
+  const deptIdForScope = state.user?.role === "admin" ? infovalleyScopeDeptId() : null;
   if (state.user?.role === "admin") {
-    body.department_id = infovalleyScopeDeptId();
+    body.department_id = deptIdForScope;
     if (!body.department_id) {
       if (msg) msg.textContent = "Pick a department first.";
       return;
     }
   }
   try {
+    const selectedImage = imageEl?.files?.[0];
+    if (selectedImage) {
+      const uploaded = await uploadInfoValleyImage(selectedImage, deptIdForScope);
+      body.image_url = uploaded.url;
+      body.image_original_name = uploaded.original_name;
+      body.image_stored_name = uploaded.stored_name;
+    }
     await postActivityCreate(body);
     if (titleEl) titleEl.value = "";
     if (detailsEl) detailsEl.value = "";
+    if (imageEl) imageEl.value = "";
     if (msg) msg.textContent = "Activity posted.";
     await refreshInfoValleyBoard();
   } catch (e) {

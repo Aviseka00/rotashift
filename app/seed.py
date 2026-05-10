@@ -38,6 +38,7 @@ async def ensure_indexes_and_seed():
     await db.shift_change_requests.create_index([("department_id", 1), ("status", 1)])
     await db.tasks.create_index([("department_id", 1), ("column", 1), ("priority", -1)])
     await db.activities.create_index([("department_id", 1), ("activity_date", -1), ("created_at", -1)])
+    await db.activity_uploads.create_index([("department_id", 1), ("uploaded_at", -1)])
 
     await ensure_default_departments_exist(db)
 

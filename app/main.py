@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import tempfile
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
@@ -9,13 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 
-from app.config import (
-    CORS_ORIGINS_RAW,
-    DB_NAME,
-    DEFAULT_PLACEHOLDER_SECRET,
-    ROTASHIFT_ENV,
-    SECRET_KEY,
-)
+from app.config import CORS_ORIGINS_RAW, DB_NAME, DEFAULT_PLACEHOLDER_SECRET, ROTASHIFT_ENV, SECRET_KEY
 from app.routers import activities_api, admin_api, auth_api, departments_api, health_api, meta_api, requests_api, shifts_api, tasks_api, users_api
 from app.seed import ensure_indexes_and_seed
 
@@ -42,6 +37,8 @@ async def lifespan(app: FastAPI):
 
 
 ROOT = Path(__file__).resolve().parent.parent
+UPLOADS_ROOT = Path(tempfile.gettempdir()) / "rotashift-uploads"
+UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="RotaShift", lifespan=lifespan)
 
@@ -88,6 +85,7 @@ app.include_router(admin_api.router)
 app.include_router(activities_api.router)
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_ROOT)), name="uploads")
 
 
 @app.get("/manifest.json")

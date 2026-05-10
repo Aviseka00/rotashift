@@ -7,7 +7,8 @@ services:
       - "${ROTASHIFT_PORT:-8000}:8000"
     environment:
       ROTASHIFT_ENV: ${ROTASHIFT_ENV:-development}
-      MONGO_URI: mongodb://mongo:27017
+      # Host `.env` can set MONGO_URI to Atlas / production; default keeps using the compose `mongo` service.
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017}
       ROTASHIFT_DB: ${ROTASHIFT_DB:-rotashift}
       # Override in production (e.g. openssl rand -hex 32). Default is for local docker-compose only.
       ROTASHIFT_SECRET_KEY: ${ROTASHIFT_SECRET_KEY:-local-dev-only-change-in-production}

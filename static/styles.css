@@ -1881,6 +1881,19 @@ table.infovalley-table tbody tr:hover td {
   color: #e2e8f0;
 }
 
+.infovalley-activity-image-wrap {
+  margin-top: 0.55rem;
+}
+
+.infovalley-activity-image {
+  display: block;
+  max-width: min(100%, 340px);
+  max-height: 220px;
+  border-radius: 10px;
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  box-shadow: 0 10px 24px -18px rgba(14, 165, 233, 0.75);
+}
+
 .infovalley-comments-wrap {
   display: flex;
   flex-direction: column;
