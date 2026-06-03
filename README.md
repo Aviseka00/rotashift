@@ -2,6 +2,92 @@
 
 Web app for department shift rosters, leave requests, and manager/admin approvals (FastAPI + MongoDB + static UI).
 
+**Repository:** `https://github.com/Aviseka00/rotashift.git`
+
+## Work from any PC (Git clone)
+
+Use this flow on a new laptop, office PC, or home machine. Your code and settings travel via Git; database data stays in **MongoDB** (Atlas or a shared cluster), not in the repo.
+
+### Prerequisites
+
+| Tool | Purpose |
+|------|---------|
+| [Git](https://git-scm.com/downloads) | Clone and pull the project |
+| [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Run API + optional local Mongo (Windows/Mac/Linux) |
+
+### One-time setup on a new machine
+
+```bash
+git clone https://github.com/Aviseka00/rotashift.git
+cd rotashift
+```
+
+1. **Environment file** — scripts create `.env` from `.env.example` on first run, or do it manually:
+
+   ```bash
+   cp .env.example .env    # Mac/Linux
+   copy .env.example .env  # Windows CMD
+   ```
+
+2. **Shared database (recommended)** — edit `.env` and set `MONGO_URI` to your **MongoDB Atlas** connection string (same URI on every PC = same users and rosters). Set `ROTASHIFT_DB=rotashift` if needed.
+
+3. **Secrets** — never commit `.env`. Store Atlas password and `ROTASHIFT_SECRET_KEY` in a password manager or team vault.
+
+### Start the app
+
+**Windows:** double-click `start-docker.bat` or:
+
+```powershell
+.\scripts\dev-start.ps1
+```
+
+**Mac / Linux:**
+
+```bash
+chmod +x start-docker.sh scripts/dev-start.sh
+./start-docker.sh
+```
+
+**Manual (any OS):**
+
+```bash
+docker compose up -d --build
+```
+
+Open **http://localhost:8000**. Check data connection: **http://localhost:8000/api/meta/registration** (`user_count`, `mongo_cluster_host`).
+
+| Action | Command |
+|--------|---------|
+| Stop | `docker compose down` |
+| View logs | `docker compose logs -f api` |
+| Pull latest code | `git pull` then `docker compose up -d --build` |
+
+**Default dev invite codes** (when not overridden in `.env`): manager `MANAGER-DEV-2026`, admin `ADMIN-DEV-2026`.
+
+### Python-only (no Docker)
+
+Requires Python **3.12+** and a reachable MongoDB (`MONGO_URI` in `.env`).
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Mac/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Or on Windows run `start.bat` (uses system Python, not Docker).
+
+### What is in Git vs what is not
+
+| In Git | Not in Git (per machine) |
+|--------|---------------------------|
+| App code, UI, `Dockerfile`, `docker-compose.yml`, `.env.example` | `.env` (passwords, `MONGO_URI`) |
+| `render.yaml` for cloud deploy | Uploaded activity images (server temp dir) |
+| Tests, CI workflow | Local Docker volume `mongo_data` (empty demo DB only) |
+
+---
+
 ## Where user data is in MongoDB
 
 - The app uses the database named **`ROTASHIFT_DB`** (default: **`rotashift`**), **not** necessarily the database name in your `MONGO_URI` path. Many Atlas strings look like `...mongodb.net/test` — you must still open the **`rotashift`** database (or whatever you set `ROTASHIFT_DB` to) in **Atlas → Browse Collections**.
