@@ -2379,23 +2379,158 @@ $("mgr-assign-submit").addEventListener("click", async () => {
 });
 
 /* Bulk */
-$("bulk-submit").addEventListener("click", async () => {
-  const raw = $("bulk-lines").value.trim();
-  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const assignments = [];
-  const errs = [];
-  lines.forEach((line, i) => {
-    const parts = line.split(",").map((x) => x.trim());
-    if (parts.length < 3) {
-      errs.push(`Line ${i + 1}: need EMPLOYEE_ID,YYYY-MM-DD,CODE`);
-      return;
+const MONTH_ABBR = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+// Parse a header cell into an ISO date (YYYY-MM-DD), or null if it is not a date.
+// Supports: 2026-07-07, 07-Jul, 7 Jul, Jul-07, 07-Jul-2026, 07/07/2026, 7/7.
+function parseHeaderDate(raw, fallbackYear) {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); // ISO
+  if (m) return `${m[1]}-${pad2(+m[2])}-${pad2(+m[3])}`;
+  // day + month name (either order), optional year
+  m = s.match(/^(\d{1,2})[\s\-/]([A-Za-z]{3,})\.?(?:[\s\-/](\d{2,4}))?$/);
+  if (!m) {
+    const m2 = s.match(/^([A-Za-z]{3,})\.?[\s\-/](\d{1,2})(?:[\s\-/](\d{2,4}))?$/);
+    if (m2) m = [m2[0], m2[2], m2[1], m2[3]];
+  }
+  if (m) {
+    const day = +m[1];
+    const mon = MONTH_ABBR[String(m[2]).slice(0, 3).toLowerCase()];
+    if (!mon || day < 1 || day > 31) return null;
+    let year = m[3] ? +m[3] : fallbackYear;
+    if (m[3] && String(m[3]).length === 2) year += 2000;
+    return `${year}-${pad2(mon)}-${pad2(day)}`;
+  }
+  // numeric day/month(/year) — assume day-first (DD/MM) as in the pasted grid
+  m = s.match(/^(\d{1,2})[/\-.](\d{1,2})(?:[/\-.](\d{2,4}))?$/);
+  if (m) {
+    const day = +m[1];
+    const mon = +m[2];
+    if (mon < 1 || mon > 12 || day < 1 || day > 31) return null;
+    let year = m[3] ? +m[3] : fallbackYear;
+    if (m[3] && String(m[3]).length === 2) year += 2000;
+    return `${year}-${pad2(mon)}-${pad2(day)}`;
+  }
+  return null;
+}
+
+function splitRow(line) {
+  // Excel/Sheets copy is tab-separated; comma for CSV; otherwise treat runs of
+  // 2+ spaces as column gaps (single spaces stay inside names like "Aviseka Acharya").
+  // Keep empty leading/interior cells for tab/comma so column alignment (e.g. blank
+  // Name + Employee ID above the dates) is preserved — only strip a trailing CR.
+  const clean = line.replace(/\r$/, "");
+  let cells;
+  if (clean.includes("\t")) cells = clean.split("\t");
+  else if (clean.includes(",")) cells = clean.split(",");
+  else {
+    const t = clean.trim();
+    cells = /\s{2,}/.test(t) ? t.split(/\s{2,}/) : t.split(/\s+/);
+  }
+  return cells.map((c) => c.trim());
+}
+
+// Grid paste (Excel/Sheets): a date-header row + one row per employee.
+// Returns { assignments, errors } or null when the text is not a grid.
+//
+// Shift codes are aligned from the RIGHT edge of each data row: a data row is
+// [Name?, Employee ID, code_1 … code_N] so the N shift codes are always the last
+// N cells and the Employee ID is the cell just before them. This is immune to
+// whether the date header's leading empty cells survived copy/paste.
+function parseRosterGrid(raw, fallbackYear) {
+  const rows = raw
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map(splitRow);
+  if (!rows.length) return null;
+
+  // Header row = the row with the most date-parseable cells (needs >= 2 to be a grid).
+  let headerIdx = -1;
+  let dates = [];
+  rows.forEach((cells, i) => {
+    const found = [];
+    cells.forEach((c) => {
+      const iso = parseHeaderDate(c, fallbackYear);
+      if (iso) found.push(iso);
+    });
+    if (found.length > dates.length) {
+      dates = found;
+      headerIdx = i;
     }
-    assignments.push({
-      employee_id: parts[0],
-      date: parts[1],
-      shift_code: parts[2].toUpperCase(),
+  });
+  if (headerIdx < 0 || dates.length < 2) return null;
+  const N = dates.length;
+
+  const validCodes = new Set(
+    Object.keys(state.shiftLegend || {}).map((c) => c.toUpperCase())
+  );
+  const assignments = [];
+  const errors = [];
+  rows.forEach((cells, i) => {
+    if (i === headerIdx) return;
+    if (cells.length < N + 1) return; // need at least an Employee ID + N code cells
+    const codeCells = cells.slice(cells.length - N);
+    const emp = (cells[cells.length - N - 1] || "").trim();
+    if (!emp) return;
+    if (/^(employee|emp|name|id)\b/i.test(emp) || parseHeaderDate(emp, fallbackYear)) return;
+    codeCells.forEach((cell, k) => {
+      const code = (cell || "").trim().toUpperCase();
+      if (!code) return;
+      if (validCodes.size && !validCodes.has(code)) {
+        errors.push(`Row ${i + 1} ${emp}: unknown code "${code}"`);
+        return;
+      }
+      assignments.push({ employee_id: emp, date: dates[k], shift_code: code });
     });
   });
+  return { assignments, errors };
+}
+
+$("bulk-submit").addEventListener("click", async () => {
+  const raw = $("bulk-lines").value.trim();
+  if (!raw) {
+    $("bulk-msg").textContent = "Paste a roster grid or CSV lines first.";
+    return;
+  }
+  const yearVal = parseInt($("bulk-year") && $("bulk-year").value, 10);
+  const fallbackYear = Number.isFinite(yearVal) ? yearVal : new Date().getFullYear();
+
+  let assignments = [];
+  const errs = [];
+  const grid = parseRosterGrid(raw, fallbackYear);
+  if (grid && grid.assignments.length) {
+    assignments = grid.assignments;
+    errs.push(...grid.errors);
+  } else {
+    // Fallback: one assignment per line as EMPLOYEE_ID,YYYY-MM-DD,CODE
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    lines.forEach((line, i) => {
+      const parts = line.split(",").map((x) => x.trim());
+      if (parts.length < 3) {
+        errs.push(`Line ${i + 1}: need EMPLOYEE_ID,YYYY-MM-DD,CODE`);
+        return;
+      }
+      assignments.push({
+        employee_id: parts[0],
+        date: parts[1],
+        shift_code: parts[2].toUpperCase(),
+      });
+    });
+  }
+  if (!assignments.length) {
+    $("bulk-msg").textContent = errs.length
+      ? errs.join(" ")
+      : "Nothing to apply — check the pasted format.";
+    return;
+  }
   if (errs.length) {
     $("bulk-msg").textContent = errs.join(" ");
     return;
@@ -2413,11 +2548,24 @@ $("bulk-submit").addEventListener("click", async () => {
     method: "POST",
     body: JSON.stringify(payload),
   });
-  $("bulk-msg").textContent = `Saved ${res.upserted} rows. ${(res.errors || []).length ? JSON.stringify(res.errors) : ""}`;
-  $("bulk-lines").value = "";
+  const serverErrs = res.errors || [];
+  let msg = `Saved ${res.upserted} shift${res.upserted === 1 ? "" : "s"}.`;
+  if (serverErrs.length) {
+    const shown = serverErrs
+      .slice(0, 5)
+      .map((e) => `${e.employee_id}: ${e.error}`)
+      .join("; ");
+    msg += ` ${serverErrs.length} skipped — ${shown}${serverErrs.length > 5 ? "…" : ""}`;
+  }
+  $("bulk-msg").textContent = msg;
+  if (!serverErrs.length) $("bulk-lines").value = "";
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
 });
+
+if ($("bulk-year") && !$("bulk-year").value) {
+  $("bulk-year").value = String(new Date().getFullYear());
+}
 
 /* Admin — create user */
 $("admin-add-submit").addEventListener("click", async () => {

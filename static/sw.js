@@ -1,4 +1,4 @@
-const CACHE = "rotashift-v31";
+const CACHE = "rotashift-v34";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -16,12 +16,22 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Network-first for app code/pages so new deploys load immediately; cache is only a
+// fallback when offline. (Previously cache-first, which pinned users to stale app.js.)
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.pathname.startsWith("/api/")) {
     return;
   }
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request)),
+    fetch(event.request)
+      .then((resp) => {
+        if (resp && resp.ok && event.request.method === "GET") {
+          const copy = resp.clone();
+          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        }
+        return resp;
+      })
+      .catch(() => caches.match(event.request)),
   );
 });

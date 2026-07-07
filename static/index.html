@@ -650,7 +650,14 @@
 
             <h3 style="font-size: 1rem">Bulk paste (optional)</h3>
             <p class="hint">
-              One assignment per line: <code>EMPLOYEE_ID,YYYY-MM-DD,A</code> — codes A, B, C, G (see legend).
+              Paste a roster grid straight from Excel/Sheets — a date header row plus one
+              row per person (<code>Name</code>, <code>Employee ID</code>, then a code per day):
+            </p>
+            <pre class="bulk-example">Name	Employee ID	07-Jul	08-Jul	09-Jul	10-Jul
+Aviseka Acharya	80100173	G	G	G	WO</pre>
+            <p class="hint">
+              Codes: A, B, C, G, L, WO (see legend). Also still accepts one line each as
+              <code>EMPLOYEE_ID,YYYY-MM-DD,CODE</code>.
             </p>
             <div id="bulk-dept-row" class="row hidden">
               <div>
@@ -658,7 +665,13 @@
                 <select id="bulk-dept"></select>
               </div>
             </div>
-            <textarea id="bulk-lines" placeholder="EMP001,2026-04-21,A  (or B, C, G, L, WO)"></textarea>
+            <div class="row">
+              <div style="flex: 0 0 auto">
+                <label for="bulk-year">Year (for dates like 07-Jul)</label>
+                <input id="bulk-year" type="number" min="2000" max="2100" step="1" style="width: 8rem" />
+              </div>
+            </div>
+            <textarea id="bulk-lines" placeholder="Paste the roster grid here, or EMP001,2026-04-21,A per line"></textarea>
             <button type="button" id="bulk-submit" class="btn">Apply bulk assignment</button>
             <div id="bulk-msg" class="hint"></div>
           </div>
