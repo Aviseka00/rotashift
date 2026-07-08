@@ -693,7 +693,12 @@ table.matrix.roster-matrix td.matrix-data-cell {
   letter-spacing: 0.02em;
 }
 
-table.matrix.roster-matrix tbody tr:nth-child(even) td:not(.sticky) {
+/* Alternating row shade applies only to uncolored cells; colored shift cells keep
+   their defined color on every row (was overriding .cell-* on even rows). */
+table.matrix.roster-matrix
+  tbody
+  tr:nth-child(even)
+  td:not(.sticky):not(.cell-a):not(.cell-b):not(.cell-c):not(.cell-g):not(.cell-l):not(.cell-wo) {
   background: rgba(15, 23, 42, 0.72);
 }
 
