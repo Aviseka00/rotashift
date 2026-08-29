@@ -295,6 +295,44 @@
               <button type="button" id="admin-add-submit" class="btn">Create user</button>
               <div id="admin-add-msg" class="hint"></div>
 
+              <hr class="mgr-section-rule" />
+
+              <h3 style="font-size: 1rem">Bulk add employees (optional)</h3>
+              <p class="hint">
+                Paste just the <code>Name</code> and <code>Employee ID</code> columns from your
+                roster — the same two columns used in the shift bulk-paste grid — one row per
+                person. A header row, or a blank Employee ID cell (like the weekday row in a
+                shift-grid paste), is skipped automatically, so it's fine to paste the whole
+                shift grid here too — only the first two columns are used.
+              </p>
+              <pre class="bulk-example">Name	Employee ID
+Dr Aviseka	80100173
+Amruta Mishra	80100331</pre>
+              <p class="hint">
+                Each new account gets a random temporary password, shown in a list after
+                creation so you can hand it to that person — share it out of band and ask them
+                to change it after they log in. An Employee ID that already exists is left
+                untouched (safe to paste the same list twice).
+              </p>
+              <div class="row">
+                <div>
+                  <label for="admin-bulk-add-dept">Department</label>
+                  <select id="admin-bulk-add-dept"></select>
+                </div>
+                <div>
+                  <label for="admin-bulk-add-role">Role for all rows</label>
+                  <select id="admin-bulk-add-role">
+                    <option value="employee">Employee</option>
+                    <option value="manager">Manager</option>
+                  </select>
+                </div>
+              </div>
+              <textarea id="admin-bulk-add-lines" placeholder="Paste Name + Employee ID rows here"></textarea>
+              <div id="admin-bulk-add-preview" class="bulk-preview hidden"></div>
+              <button type="button" id="admin-bulk-add-submit" class="btn">Create accounts</button>
+              <div id="admin-bulk-add-msg" class="hint"></div>
+              <div id="admin-bulk-add-results" class="table-scroll hidden"></div>
+
               <h3 style="margin-top: 1.25rem; font-size: 1rem">All users (every department)</h3>
               <div class="row">
                 <div>
@@ -651,9 +689,13 @@
             <h3 style="font-size: 1rem">Bulk paste (optional)</h3>
             <p class="hint">
               Paste a roster grid straight from Excel/Sheets — a date header row plus one
-              row per person (<code>Name</code>, <code>Employee ID</code>, then a code per day):
+              row per person (<code>Name</code>, <code>Employee ID</code>, then a code per day).
+              A second header row of weekday names (Mon, Tue, …) sitting above the codes — exactly
+              how Excel shows it above a date range — is fine too; it's detected and ignored
+              automatically, so you can paste the whole block including both header rows as-is.
             </p>
-            <pre class="bulk-example">Name	Employee ID	07-Jul	08-Jul	09-Jul	10-Jul
+            <pre class="bulk-example">Name	Employee ID	31-Aug	01-Sep	02-Sep	03-Sep
+		Mon	Tue	Wed	Thu
 Aviseka Acharya	80100173	G	G	G	WO</pre>
             <p class="hint">
               Codes: A, B, C, G, L, WO (see legend). Also still accepts one line each as
@@ -671,7 +713,8 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
                 <input id="bulk-year" type="number" min="2000" max="2100" step="1" style="width: 8rem" />
               </div>
             </div>
-            <textarea id="bulk-lines" placeholder="Paste the roster grid here, or EMP001,2026-04-21,A per line"></textarea>
+            <textarea id="bulk-lines" placeholder="Paste the roster grid here (headers + one row per person), or EMP001,2026-04-21,A per line"></textarea>
+            <div id="bulk-preview" class="bulk-preview hidden"></div>
             <button type="button" id="bulk-submit" class="btn">Apply bulk assignment</button>
             <div id="bulk-msg" class="hint"></div>
           </div>

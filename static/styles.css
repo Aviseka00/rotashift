@@ -523,6 +523,41 @@ textarea {
   white-space: pre;
 }
 
+#bulk-lines {
+  min-height: 260px;
+}
+
+.bulk-preview {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.75rem;
+  margin: 0.5rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--border, #334155);
+  background: var(--surface-2, rgba(148, 163, 184, 0.12));
+}
+
+.bulk-preview.bulk-preview--ok {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.bulk-preview.bulk-preview--warn {
+  border-color: rgba(234, 179, 8, 0.6);
+}
+
+.bulk-preview.bulk-preview--error {
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+.bulk-preview strong {
+  color: var(--text);
+}
+
+.bulk-preview ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
 .error {
   color: #fecaca;
   font-size: 0.9rem;

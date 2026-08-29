@@ -207,6 +207,7 @@ async function loadDepartments() {
     "bulk-dept",
     "mgr-roster-dept",
     "admin-add-dept",
+    "admin-bulk-add-dept",
     "admin-user-dept-filter",
     "admin-records-dept",
     "tasks-admin-dept",
@@ -2494,37 +2495,125 @@ function parseRosterGrid(raw, fallbackYear) {
   return { assignments, errors };
 }
 
+// Shared by the live preview and the submit handler: try the grid parser first,
+// fall back to one-assignment-per-line CSV (EMPLOYEE_ID,YYYY-MM-DD,CODE).
+function parseBulkInput(raw, fallbackYear) {
+  const grid = parseRosterGrid(raw, fallbackYear);
+  if (grid && grid.assignments.length) {
+    return { assignments: grid.assignments, errs: grid.errors.slice(), mode: "grid" };
+  }
+  const assignments = [];
+  const errs = [];
+  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  lines.forEach((line, i) => {
+    const parts = line.split(",").map((x) => x.trim());
+    if (parts.length < 3) {
+      errs.push(`Line ${i + 1}: need EMPLOYEE_ID,YYYY-MM-DD,CODE`);
+      return;
+    }
+    assignments.push({
+      employee_id: parts[0],
+      date: parts[1],
+      shift_code: parts[2].toUpperCase(),
+    });
+  });
+  return { assignments, errs, mode: "csv" };
+}
+
+function bulkFallbackYear() {
+  const yearVal = parseInt($("bulk-year") && $("bulk-year").value, 10);
+  return Number.isFinite(yearVal) ? yearVal : new Date().getFullYear();
+}
+
+// Employee IDs currently loaded into the team picker (populated by
+// refreshManagerRoster) — used only as a client-side hint in the preview;
+// the server is still the authority on who is actually in-department.
+function currentTeamEmployeeIds() {
+  const sel = $("mgr-assign-member");
+  if (!sel) return null;
+  const ids = Array.from(sel.options)
+    .map((o) => (o.value || "").trim().toUpperCase())
+    .filter(Boolean);
+  return ids.length ? new Set(ids) : null;
+}
+
+let bulkPreviewTimer = null;
+function scheduleBulkPreview() {
+  clearTimeout(bulkPreviewTimer);
+  bulkPreviewTimer = setTimeout(renderBulkPreview, 150);
+}
+
+function renderBulkPreview() {
+  const box = $("bulk-preview");
+  if (!box) return;
+  const raw = $("bulk-lines").value.trim();
+  if (!raw) {
+    box.className = "bulk-preview hidden";
+    box.innerHTML = "";
+    return;
+  }
+
+  const { assignments, errs, mode } = parseBulkInput(raw, bulkFallbackYear());
+
+  if (!assignments.length) {
+    box.className = "bulk-preview bulk-preview--error";
+    box.innerHTML = `<strong>Nothing to apply yet.</strong> ${
+      errs.length
+        ? escapeHtml(errs.slice(0, 5).join(" "))
+        : "Check the pasted format against the example above."
+    }`;
+    return;
+  }
+
+  const empIds = [...new Set(assignments.map((a) => a.employee_id.trim().toUpperCase()))];
+  const dates = [...new Set(assignments.map((a) => a.date))].sort();
+  const known = currentTeamEmployeeIds();
+  const unknown = known ? empIds.filter((id) => !known.has(id)) : [];
+
+  let cls = "bulk-preview bulk-preview--ok";
+  const parts = [
+    `<strong>${assignments.length}</strong> shift code${assignments.length === 1 ? "" : "s"} for ` +
+      `<strong>${empIds.length}</strong> employee${empIds.length === 1 ? "" : "s"}, ` +
+      `<strong>${dates.length}</strong> date${dates.length === 1 ? "" : "s"} ` +
+      `(${escapeHtml(dates[0])} → ${escapeHtml(dates[dates.length - 1])}). ` +
+      `Parsed as ${mode === "grid" ? "a roster grid" : "CSV lines"}.`,
+  ];
+
+  if (errs.length) {
+    cls = "bulk-preview bulk-preview--warn";
+    parts.push(
+      `<div><strong>${errs.length}</strong> row${errs.length === 1 ? "" : "s"} skipped:</div>` +
+        `<ul>${errs
+          .slice(0, 5)
+          .map((e) => `<li>${escapeHtml(e)}</li>`)
+          .join("")}${errs.length > 5 ? `<li>…and ${errs.length - 5} more</li>` : ""}</ul>`
+    );
+  }
+
+  if (unknown.length) {
+    cls = "bulk-preview bulk-preview--warn";
+    parts.push(
+      `<div><strong>${unknown.length}</strong> employee ID${unknown.length === 1 ? "" : "s"} not in the ` +
+        `currently loaded team — double-check the department/IDs:</div>` +
+        `<ul>${unknown
+          .slice(0, 8)
+          .map((id) => `<li>${escapeHtml(id)}</li>`)
+          .join("")}${unknown.length > 8 ? `<li>…and ${unknown.length - 8} more</li>` : ""}</ul>`
+    );
+  }
+
+  box.className = cls;
+  box.innerHTML = parts.join("");
+}
+
 $("bulk-submit").addEventListener("click", async () => {
   const raw = $("bulk-lines").value.trim();
   if (!raw) {
     $("bulk-msg").textContent = "Paste a roster grid or CSV lines first.";
     return;
   }
-  const yearVal = parseInt($("bulk-year") && $("bulk-year").value, 10);
-  const fallbackYear = Number.isFinite(yearVal) ? yearVal : new Date().getFullYear();
-
-  let assignments = [];
-  const errs = [];
-  const grid = parseRosterGrid(raw, fallbackYear);
-  if (grid && grid.assignments.length) {
-    assignments = grid.assignments;
-    errs.push(...grid.errors);
-  } else {
-    // Fallback: one assignment per line as EMPLOYEE_ID,YYYY-MM-DD,CODE
-    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    lines.forEach((line, i) => {
-      const parts = line.split(",").map((x) => x.trim());
-      if (parts.length < 3) {
-        errs.push(`Line ${i + 1}: need EMPLOYEE_ID,YYYY-MM-DD,CODE`);
-        return;
-      }
-      assignments.push({
-        employee_id: parts[0],
-        date: parts[1],
-        shift_code: parts[2].toUpperCase(),
-      });
-    });
-  }
+  const fallbackYear = bulkFallbackYear();
+  const { assignments, errs } = parseBulkInput(raw, fallbackYear);
   if (!assignments.length) {
     $("bulk-msg").textContent = errs.length
       ? errs.join(" ")
@@ -2543,6 +2632,19 @@ $("bulk-submit").addEventListener("click", async () => {
       return;
     }
   }
+
+  const empCount = new Set(assignments.map((a) => a.employee_id.trim().toUpperCase())).size;
+  const dates = [...new Set(assignments.map((a) => a.date))].sort();
+  const confirmed = window.confirm(
+    `Apply ${assignments.length} shift code${assignments.length === 1 ? "" : "s"} for ${empCount} ` +
+      `employee${empCount === 1 ? "" : "s"} from ${dates[0]} to ${dates[dates.length - 1]}?\n\n` +
+      `This overwrites any shift already saved for those employee/date cells.`
+  );
+  if (!confirmed) {
+    $("bulk-msg").textContent = "Cancelled — nothing was saved.";
+    return;
+  }
+
   $("bulk-msg").textContent = "Saving…";
   const res = await api("/api/shifts/bulk", {
     method: "POST",
@@ -2558,10 +2660,20 @@ $("bulk-submit").addEventListener("click", async () => {
     msg += ` ${serverErrs.length} skipped — ${shown}${serverErrs.length > 5 ? "…" : ""}`;
   }
   $("bulk-msg").textContent = msg;
-  if (!serverErrs.length) $("bulk-lines").value = "";
+  if (!serverErrs.length) {
+    $("bulk-lines").value = "";
+    renderBulkPreview();
+  }
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
 });
+
+if ($("bulk-lines")) {
+  $("bulk-lines").addEventListener("input", scheduleBulkPreview);
+}
+if ($("bulk-year")) {
+  $("bulk-year").addEventListener("input", scheduleBulkPreview);
+}
 
 if ($("bulk-year") && !$("bulk-year").value) {
   $("bulk-year").value = String(new Date().getFullYear());
@@ -2592,6 +2704,232 @@ $("admin-add-submit").addEventListener("click", async () => {
   } catch (e) {
     msg.textContent = e.message;
   }
+});
+
+/* Admin — bulk add employees */
+
+// Random temp password: 10 chars, drops 0/O/1/l/I to avoid look-alike mistakes
+// when a password is read aloud or copied from a printed list.
+function generateTempPassword() {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = new Uint8Array(10);
+  if (window.crypto && window.crypto.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
+// Name + Employee ID, one row per person. Tolerates a header row, a blank-ID
+// row (e.g. the weekday row from a shift-grid paste), and extra trailing
+// columns (e.g. someone pastes the whole shift grid here by mistake) — only
+// the first two columns are used.
+function parseNameIdRows(raw) {
+  const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+  const rows = [];
+  const errs = [];
+  lines.forEach((line, i) => {
+    const cells = splitRow(line);
+    if (cells.length < 2) {
+      errs.push(`Row ${i + 1}: need Name and Employee ID (tab- or comma-separated).`);
+      return;
+    }
+    const name = (cells[0] || "").trim();
+    const emp = (cells[1] || "").trim();
+    if (!emp) return; // blank Employee ID cell — header/weekday row, skip silently
+    if (/^(employee|emp|id)\b/i.test(emp)) return; // "Employee ID" header cell itself
+    if (!name || /^name$/i.test(name)) {
+      if (/^name$/i.test(name)) return; // "Name" header cell
+      errs.push(`Row ${i + 1}: missing name for ${emp}.`);
+      return;
+    }
+    rows.push({ full_name: name, employee_id: emp });
+  });
+  // De-dupe by employee ID, keeping the first occurrence.
+  const seen = new Set();
+  const deduped = [];
+  let dupes = 0;
+  rows.forEach((r) => {
+    const key = r.employee_id.trim().toUpperCase();
+    if (seen.has(key)) {
+      dupes++;
+      return;
+    }
+    seen.add(key);
+    deduped.push(r);
+  });
+  return { rows: deduped, errs, dupes };
+}
+
+let adminBulkAddPreviewTimer = null;
+function scheduleAdminBulkAddPreview() {
+  clearTimeout(adminBulkAddPreviewTimer);
+  adminBulkAddPreviewTimer = setTimeout(renderAdminBulkAddPreview, 150);
+}
+
+function renderAdminBulkAddPreview() {
+  const box = $("admin-bulk-add-preview");
+  if (!box) return;
+  const raw = $("admin-bulk-add-lines").value.trim();
+  if (!raw) {
+    box.className = "bulk-preview hidden";
+    box.innerHTML = "";
+    return;
+  }
+  const { rows, errs, dupes } = parseNameIdRows(raw);
+  if (!rows.length) {
+    box.className = "bulk-preview bulk-preview--error";
+    box.innerHTML = `<strong>Nothing to create yet.</strong> ${
+      errs.length
+        ? escapeHtml(errs.slice(0, 5).join(" "))
+        : "Check the pasted format against the example above."
+    }`;
+    return;
+  }
+  let cls = "bulk-preview bulk-preview--ok";
+  const parts = [
+    `<strong>${rows.length}</strong> employee${rows.length === 1 ? "" : "s"} ready to create.`,
+  ];
+  if (dupes) {
+    cls = "bulk-preview bulk-preview--warn";
+    parts.push(`<div><strong>${dupes}</strong> duplicate Employee ID row${dupes === 1 ? "" : "s"} ignored.</div>`);
+  }
+  if (errs.length) {
+    cls = "bulk-preview bulk-preview--warn";
+    parts.push(
+      `<div><strong>${errs.length}</strong> row${errs.length === 1 ? "" : "s"} skipped:</div>` +
+        `<ul>${errs
+          .slice(0, 5)
+          .map((e) => `<li>${escapeHtml(e)}</li>`)
+          .join("")}${errs.length > 5 ? `<li>…and ${errs.length - 5} more</li>` : ""}</ul>`
+    );
+  }
+  box.className = cls;
+  box.innerHTML = parts.join("");
+}
+
+function renderAdminBulkAddResults(results) {
+  const box = $("admin-bulk-add-results");
+  if (!box) return;
+  const created = results.filter((r) => r.status === "created");
+  const rowsHtml = results
+    .map(
+      (r) =>
+        `<tr><td>${escapeHtml(r.employee_id)}</td><td>${escapeHtml(r.full_name)}</td>` +
+        `<td>${escapeHtml(r.status === "created" ? "Created" : r.status === "exists" ? "Already existed" : "Error")}</td>` +
+        `<td>${r.password ? `<code>${escapeHtml(r.password)}</code>` : "—"}</td>` +
+        `<td>${r.error ? escapeHtml(r.error) : ""}</td></tr>`
+    )
+    .join("");
+  box.className = "table-scroll";
+  box.innerHTML =
+    `<table class="matrix log-table"><thead><tr><th>Employee ID</th><th>Name</th><th>Status</th>` +
+    `<th>Temp password</th><th>Detail</th></tr></thead><tbody>${rowsHtml}</tbody></table>` +
+    (created.length
+      ? `<button type="button" id="admin-bulk-add-copy" class="btn secondary" style="margin-top: 0.5rem">Copy new logins</button>`
+      : "");
+  const copyBtn = $("admin-bulk-add-copy");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      const text = created.map((r) => `${r.employee_id}\t${r.full_name}\t${r.password}`).join("\n");
+      try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => (copyBtn.textContent = "Copy new logins"), 1500);
+      } catch {
+        alert(text); // clipboard blocked — fall back to showing it for manual copy
+      }
+    });
+  }
+}
+
+if ($("admin-bulk-add-lines")) {
+  $("admin-bulk-add-lines").addEventListener("input", scheduleAdminBulkAddPreview);
+}
+
+$("admin-bulk-add-submit").addEventListener("click", async () => {
+  const msg = $("admin-bulk-add-msg");
+  const resultsBox = $("admin-bulk-add-results");
+  msg.textContent = "";
+  if (resultsBox) {
+    resultsBox.className = "table-scroll hidden";
+    resultsBox.innerHTML = "";
+  }
+  const deptId = $("admin-bulk-add-dept").value;
+  if (!deptId) {
+    msg.textContent = "Select a department.";
+    return;
+  }
+  const role = $("admin-bulk-add-role").value || "employee";
+  const raw = $("admin-bulk-add-lines").value.trim();
+  if (!raw) {
+    msg.textContent = "Paste Name + Employee ID rows first.";
+    return;
+  }
+  const { rows, errs } = parseNameIdRows(raw);
+  if (!rows.length) {
+    msg.textContent = errs.length ? errs.join(" ") : "Nothing to create — check the pasted format.";
+    return;
+  }
+  if (errs.length) {
+    msg.textContent = errs.join(" ");
+    return;
+  }
+
+  const deptLabel = $("admin-bulk-add-dept").selectedOptions[0]?.textContent || "the selected department";
+  const confirmed = window.confirm(
+    `Create ${rows.length} ${role} account${rows.length === 1 ? "" : "s"} in ${deptLabel}? ` +
+      `Each gets a random temporary password shown in a list afterward.`
+  );
+  if (!confirmed) {
+    msg.textContent = "Cancelled — no accounts were created.";
+    return;
+  }
+
+  msg.textContent = `Creating 0 / ${rows.length}…`;
+  const results = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const password = generateTempPassword();
+    try {
+      await api("/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          employee_id: row.employee_id,
+          full_name: row.full_name,
+          password,
+          department_id: deptId,
+          role,
+        }),
+      });
+      results.push({ ...row, status: "created", password });
+    } catch (e) {
+      if (e.message === "Employee ID already exists") {
+        results.push({ ...row, status: "exists" });
+      } else {
+        results.push({ ...row, status: "error", error: e.message });
+      }
+    }
+    msg.textContent = `Creating ${i + 1} / ${rows.length}…`;
+  }
+
+  const createdCount = results.filter((r) => r.status === "created").length;
+  const existsCount = results.filter((r) => r.status === "exists").length;
+  const errorCount = results.filter((r) => r.status === "error").length;
+  let summary = `Created ${createdCount} account${createdCount === 1 ? "" : "s"}.`;
+  if (existsCount) summary += ` ${existsCount} already existed (skipped).`;
+  if (errorCount) summary += ` ${errorCount} failed.`;
+  msg.textContent = summary;
+
+  renderAdminBulkAddResults(results);
+  if (createdCount) {
+    $("admin-bulk-add-lines").value = "";
+    renderAdminBulkAddPreview();
+  }
+  await refreshAdminUsers();
 });
 
 /* Admin */
