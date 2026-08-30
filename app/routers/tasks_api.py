@@ -112,6 +112,7 @@ async def tasks_kanban_health():
 @router.get("/")
 async def list_tasks(
     department_id: Optional[str] = Query(None),
+    include_members: bool = Query(False),
     user=Depends(get_current_user),
 ):
     db = get_db()
@@ -123,19 +124,25 @@ async def list_tasks(
     creator_ids = {doc["created_by"] for doc in docs if doc.get("created_by")}
     names_by_employee_id = {}
     creators_by_id = {}
-    if employee_ids or creator_ids:
+    members = []
+    if employee_ids or creator_ids or include_members:
         query_parts = []
-        if employee_ids:
+        if include_members:
+            query_parts.append({"department_id": dept_oid})
+        elif employee_ids:
             query_parts.append({"employee_id": {"$in": list(employee_ids)}})
         if creator_ids:
             query_parts.append({"_id": {"$in": list(creator_ids)}})
         query = query_parts[0] if len(query_parts) == 1 else {"$or": query_parts}
-        async for person in db.users.find(query, {"employee_id": 1, "full_name": 1}):
+        async for person in db.users.find(query, {"employee_id": 1, "full_name": 1, "department_id": 1}):
             names_by_employee_id[person.get("employee_id")] = person.get("full_name") or person.get("employee_id")
             creators_by_id[person["_id"]] = {
                 "employee_id": person.get("employee_id"), "full_name": person.get("full_name")
             }
-    return {"tasks": [_task_out(doc, names_by_employee_id, creators_by_id) for doc in docs]}
+            if include_members and person.get("department_id") == dept_oid:
+                members.append({"employee_id": person.get("employee_id"), "full_name": person.get("full_name")})
+    members.sort(key=lambda item: ((item.get("full_name") or "").lower(), item.get("employee_id") or ""))
+    return {"tasks": [_task_out(doc, names_by_employee_id, creators_by_id) for doc in docs], "members": members}
 
 
 @router.post("")

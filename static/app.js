@@ -1953,7 +1953,7 @@ async function refreshTasksBoard() {
         '<p class="my-kanban-empty">Choose a department above to open its <strong>My Kanban</strong> board.</p>';
       return;
     }
-    path += `?department_id=${encodeURIComponent(did)}`;
+    path += `?department_id=${encodeURIComponent(did)}&include_members=true`;
   }
   setTasksKanbanBanner("", "");
   const requestId = ++state.taskBoardRequestId;
@@ -1967,6 +1967,10 @@ async function refreshTasksBoard() {
     if (requestId !== state.taskBoardRequestId) return;
     state.tasks = data.tasks || [];
     state.taskScope = scope;
+    if (role === "admin" && Array.isArray(data.members)) {
+      state.taskAssigneesByScope.set(scope, data.members);
+      renderTaskAssigneeOptions(data.members);
+    }
     renderKanbanFromTasks(state.tasks);
   } catch (e) {
     if (requestId !== state.taskBoardRequestId) return;
@@ -2012,8 +2016,12 @@ function activateDashTab(dashId, tabId) {
   document.querySelectorAll(`[data-dash="${dashId}"].dash-pane`).forEach((p) => {
     show(p, p.dataset.tab === tabId);
   });
-  if (tabId === "schedule" && state.calendar) {
-    requestAnimationFrame(() => requestAnimationFrame(() => state.calendar.updateSize()));
+  if (tabId === "schedule") {
+    if ($("table-start")?.value && $("table-end")?.value) refreshTable().catch(() => {});
+    if (state.user?.role === "admin") {
+      if (!state.calendar) initCalendar().catch(() => {});
+      else requestAnimationFrame(() => requestAnimationFrame(() => state.calendar.updateSize()));
+    }
   }
   if (dashId === "employee" && tabId === "requests" && state.user?.role === "employee") {
     refreshEmployeeRequestLog();
@@ -2038,9 +2046,11 @@ function activateDashTab(dashId, tabId) {
     refreshRegistrationRequests();
     refreshAdminUsers();
   }
+  if ((dashId === "admin" || dashId === "manager") && tabId === "shifts") {
+    refreshManagerRoster().catch(() => {});
+  }
   if (tabId === "tasks") {
     updateTasksBoardUiForRole();
-    loadTaskAssigneeOptions().catch(() => {});
     refreshTasksBoard().catch(() => {});
   }
   if (tabId === "infovalley") {
@@ -2160,7 +2170,6 @@ async function bootAuthenticated() {
     if (taskDept && state.departments[0] && !taskDept.value) taskDept.value = state.departments[0].id;
     if (taskDept) {
       taskDept.onchange = () => {
-        loadTaskAssigneeOptions().catch(() => {});
         refreshTasksBoard().catch(() => {});
       };
     }
@@ -2186,19 +2195,6 @@ async function bootAuthenticated() {
     $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
   }
   setDefaultTableRange();
-  if (state.user.role === "admin") {
-    try {
-      await initCalendar();
-    } catch (e) {
-      softFail("initCalendar", e);
-      const calEl = $("calendar");
-      if (calEl) {
-        calEl.innerHTML = `<p class="error">Calendar failed to start: ${escapeHtml(e.message || String(e))}</p>`;
-      }
-      state.calendar = null;
-    }
-  }
-
   const refreshSafe = async (label, fn) => {
     try {
       await fn();
@@ -2206,19 +2202,9 @@ async function bootAuthenticated() {
       softFail(label, e);
     }
   };
-  await Promise.all([
-    refreshSafe("refreshTable", () => refreshTable()),
-    refreshSafe("refreshManagerRoster", () => refreshManagerRoster()),
-    refreshSafe("refreshManagerQueues", () => refreshManagerQueues()),
-    refreshSafe("refreshAdminUsers", () => refreshAdminUsers()),
-    refreshSafe("refreshRegistrationRequests", () => refreshRegistrationRequests()),
-    refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog()),
-    refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList()),
-    refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog()),
-    refreshSafe("refreshManagerRequestLog", () => refreshManagerRequestLog()),
-    refreshSafe("refreshManagerInlineApprovalsLog", () => refreshManagerInlineApprovalsLog()),
-    refreshSafe("refreshInfoValleyBoard", () => refreshInfoValleyBoard()),
-  ]);
+  if (state.user.role !== "admin") {
+    await refreshSafe("refreshTable", () => refreshTable());
+  }
 
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
@@ -3230,6 +3216,18 @@ function setPasswordModalOpen(open) {
   } else {
     setTimeout(() => $("password-current")?.focus(), 50);
   }
+}
+
+function renderTaskAssigneeOptions(users) {
+  const sel = $("task-new-assignees");
+  if (!sel) return;
+  sel.innerHTML = "";
+  (users || []).forEach((user) => {
+    const option = document.createElement("option");
+    option.value = user.employee_id;
+    option.textContent = `${user.full_name} (${user.employee_id})`;
+    sel.appendChild(option);
+  });
 }
 
 async function changeOwnPassword() {
