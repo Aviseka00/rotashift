@@ -31,7 +31,9 @@ def test_tasks_health(client: TestClient, require_mongo):
     assert r.json().get("ok") is True
 
 
-def test_register_login_me(client: TestClient, require_mongo, unique_employee_id: str):
+def test_register_requires_admin_approval(
+    client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
+):
     reg = {
         "employee_id": unique_employee_id,
         "password": "pytest-pass-9x",
@@ -40,7 +42,20 @@ def test_register_login_me(client: TestClient, require_mongo, unique_employee_id
         "role": "employee",
     }
     r1 = client.post("/api/auth/register", json=reg)
-    assert r1.status_code == 200, r1.text
+    assert r1.status_code == 202, r1.text
+    assert r1.json().get("pending") is True
+
+    before_approval = client.post(
+        "/api/auth/login",
+        json={"employee_id": unique_employee_id, "password": "pytest-pass-9x"},
+    )
+    assert before_approval.status_code == 400
+
+    approval = client.post(
+        f"/api/auth/registration-requests/{r1.json()['request_id']}/approve",
+        headers=admin_headers,
+    )
+    assert approval.status_code == 200, approval.text
 
     r2 = client.post(
         "/api/auth/login",
@@ -56,7 +71,9 @@ def test_register_login_me(client: TestClient, require_mongo, unique_employee_id
     assert me.get("role") == "employee"
 
 
-def test_user_can_change_own_password(client: TestClient, require_mongo, unique_employee_id: str):
+def test_user_can_change_own_password(
+    client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
+):
     old_password = "pytest-old-pass-9x"
     new_password = "pytest-new-pass-8z"
     registration = client.post(
@@ -69,8 +86,15 @@ def test_user_can_change_own_password(client: TestClient, require_mongo, unique_
             "role": "employee",
         },
     )
-    assert registration.status_code == 200, registration.text
-    token = registration.json()["access_token"]
+    assert registration.status_code == 202, registration.text
+    approval = client.post(
+        f"/api/auth/registration-requests/{registration.json()['request_id']}/approve",
+        headers=admin_headers,
+    )
+    assert approval.status_code == 200, approval.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": old_password})
+    assert login.status_code == 200, login.text
+    token = login.json()["access_token"]
 
     changed = client.post(
         "/api/auth/change-password",

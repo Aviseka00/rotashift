@@ -13,6 +13,7 @@ from app.deps import (
     create_access_token,
     get_current_user,
     hash_password,
+    require_roles,
     verify_password,
 )
 from app.seed import ensure_default_departments_exist
@@ -86,7 +87,7 @@ def _normalized_role(user: dict) -> str:
     return "employee"
 
 
-@router.post("/register")
+@router.post("/register", status_code=status.HTTP_202_ACCEPTED)
 async def register(body: RegisterBody):
     emp = body.employee_id.strip().upper()
     if not emp:
@@ -108,6 +109,12 @@ async def register(body: RegisterBody):
         existing = await db.users.find_one({"employee_id": emp})
         if existing:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee ID already registered")
+        pending = await db.registration_requests.find_one({"employee_id": emp, "status": "pending"})
+        if pending:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A registration request for this Employee ID is already awaiting administrator approval.",
+            )
 
         try:
             pw_hash = hash_password(body.password)
@@ -123,10 +130,11 @@ async def register(body: RegisterBody):
             "full_name": body.full_name.strip(),
             "department_id": dept["_id"],
             "role": body.role,
+            "status": "pending",
             "created_at": datetime.now(timezone.utc),
         }
         try:
-            res = await db.users.insert_one(doc)
+            res = await db.registration_requests.insert_one(doc)
         except DuplicateKeyError:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -138,31 +146,10 @@ async def register(body: RegisterBody):
                 detail=f"Database could not save the account (check MongoDB user permissions). {e}",
             ) from e
 
-        print(f"RotaShift REGISTER_OK database={DB_NAME!r} employee_id={emp!r} user_id={res.inserted_id!r}")
-        try:
-            token = create_access_token(
-                str(res.inserted_id),
-                body.role,
-                emp,
-                str(dept["_id"]),
-            )
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Account was created but sign-in token could not be issued: {type(e).__name__}: {e}",
-            ) from e
-
         return {
-            "access_token": token,
-            "token_type": "bearer",
-            "user": {
-                "id": str(res.inserted_id),
-                "employee_id": emp,
-                "full_name": doc["full_name"],
-                "role": body.role,
-                "department_id": str(dept["_id"]),
-                "department_name": dept["name"],
-            },
+            "pending": True,
+            "request_id": str(res.inserted_id),
+            "message": "Registration submitted. You can sign in after an administrator approves your request.",
         }
     except HTTPException:
         raise
@@ -268,3 +255,62 @@ async def change_password(body: ChangePasswordBody, user=Depends(get_current_use
     if result.matched_count != 1:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account was not found.")
     return {"ok": True, "message": "Password changed successfully."}
+
+
+@router.get("/registration-requests")
+async def list_registration_requests(user=Depends(require_roles("admin"))):
+    db = get_db()
+    departments = {d["_id"]: d.get("name", "") async for d in db.departments.find({}, {"name": 1})}
+    requests = []
+    async for item in db.registration_requests.find({"status": "pending"}).sort("created_at", 1):
+        requests.append({
+            "id": str(item["_id"]), "employee_id": item["employee_id"], "full_name": item["full_name"],
+            "role": item.get("role", "employee"), "department_name": departments.get(item.get("department_id"), ""),
+            "created_at": item.get("created_at"),
+        })
+    return {"requests": requests}
+
+
+@router.post("/registration-requests/{request_id}/approve")
+async def approve_registration(request_id: str, user=Depends(require_roles("admin"))):
+    db = get_db()
+    try:
+        oid = ObjectId(request_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid registration request id.")
+    item = await db.registration_requests.find_one({"_id": oid, "status": "pending"})
+    if not item:
+        raise HTTPException(status_code=404, detail="Pending registration request not found.")
+    if await db.users.find_one({"employee_id": item["employee_id"]}):
+        raise HTTPException(status_code=409, detail="This Employee ID already has an account.")
+    now = datetime.now(timezone.utc)
+    try:
+        result = await db.users.insert_one({
+            "employee_id": item["employee_id"], "password_hash": item["password_hash"],
+            "full_name": item["full_name"], "department_id": item["department_id"],
+            "role": item.get("role", "employee"), "created_at": now, "approved_by": ObjectId(user["_id"]),
+        })
+    except DuplicateKeyError:
+        raise HTTPException(status_code=409, detail="This Employee ID already has an account.") from None
+    await db.registration_requests.update_one(
+        {"_id": oid},
+        {"$set": {"status": "approved", "decided_at": now, "decided_by": ObjectId(user["_id"]), "user_id": result.inserted_id}},
+    )
+    return {"ok": True, "message": f"{item['full_name']} can now sign in."}
+
+
+@router.post("/registration-requests/{request_id}/reject")
+async def reject_registration(request_id: str, user=Depends(require_roles("admin"))):
+    db = get_db()
+    try:
+        oid = ObjectId(request_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid registration request id.")
+    now = datetime.now(timezone.utc)
+    result = await db.registration_requests.update_one(
+        {"_id": oid, "status": "pending"},
+        {"$set": {"status": "rejected", "decided_at": now, "decided_by": ObjectId(user["_id"])}},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Pending registration request not found.")
+    return {"ok": True, "message": "Registration request rejected."}

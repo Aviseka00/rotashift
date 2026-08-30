@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=40" />
+    <link rel="stylesheet" href="/static/styles.css?v=41" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -53,7 +53,7 @@
               <li><span aria-hidden="true">✓</span><div><strong>Faster decisions</strong><small>Managers can review and track approvals easily.</small></div></li>
             </ul>
           </div>
-          <p class="auth-help">Need access? Choose <strong>Create account</strong> and register with your employee details.</p>
+          <p class="auth-help">Need access? Submit your employee details, then sign in after an administrator approves your request.</p>
         </div>
         <div class="auth-form-pane">
         <div class="tabs" role="tablist" aria-label="Account access">
@@ -80,8 +80,8 @@
         </div>
         <div id="panel-register" class="hidden">
           <div class="auth-form-heading">
-            <h2>Create your account</h2>
-            <p class="hint">It only takes a minute. Start by choosing your role.</p>
+            <h2>Request an account</h2>
+            <p class="hint">Submit your details for administrator approval. You will be able to sign in after approval.</p>
           </div>
           <p class="hint" style="margin-bottom: 0.75rem">
             Pick who you are registering as. <strong>Manager</strong> and <strong>Administrator</strong> must enter the
@@ -133,7 +133,7 @@
             Departments classify your team (e.g. rota, cholera, malaria, shigella). Administrators can add
             new departments anytime.
           </p>
-          <button type="button" id="register-btn" class="btn auth-submit">Create my account</button>
+          <button type="button" id="register-btn" class="btn auth-submit">Submit registration request</button>
           <div id="reg-err" class="error hidden" role="alert"></div>
         </div>
         </div>
@@ -280,6 +280,14 @@
             <div class="sched-mount" id="adm-sched-mount"></div>
           </div>
           <div class="dash-pane hidden" data-dash="admin" data-tab="people">
+            <div class="card registration-requests-card">
+              <div class="section-heading-row">
+                <div><span class="eyebrow">Access control</span><h2>Pending registrations</h2></div>
+                <button type="button" id="registration-requests-refresh" class="btn secondary">Refresh</button>
+              </div>
+              <p class="hint">Review every self-registration before an account is activated.</p>
+              <div id="registration-requests"></div>
+            </div>
             <div class="card">
               <h2>Add employee or manager</h2>
               <p class="hint">Create an account without self-registration. They log in with Employee ID and password.</p>
@@ -817,7 +825,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=40"></script>
+    <script src="/static/app.js?v=41"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

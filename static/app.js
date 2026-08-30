@@ -1472,6 +1472,32 @@ async function refreshAdminUsers() {
   wrap.appendChild(tbl);
 }
 
+async function refreshRegistrationRequests() {
+  if (state.user?.role !== "admin") return;
+  const root = $("registration-requests");
+  if (!root) return;
+  root.innerHTML = loadingSpinnerHTML("Loading registration requests…");
+  try {
+    const data = await api("/api/auth/registration-requests");
+    const requests = data.requests || [];
+    if (!requests.length) {
+      root.innerHTML = '<div class="empty-approval-state"><strong>All caught up</strong><span>No registrations are waiting for approval.</span></div>';
+      return;
+    }
+    root.innerHTML = `<div class="registration-request-list">${requests.map((item) => `
+      <article class="registration-request" data-registration-id="${escapeHtml(item.id)}">
+        <div><strong>${escapeHtml(item.full_name)}</strong><span>${escapeHtml(item.employee_id)} · ${escapeHtml(item.department_name || "No department")}</span></div>
+        <span class="badge ${escapeHtml(item.role)}">${escapeHtml(item.role)}</span>
+        <div class="registration-request-actions">
+          <button type="button" class="btn secondary" data-registration-action="reject">Reject</button>
+          <button type="button" class="btn" data-registration-action="approve">Approve</button>
+        </div>
+      </article>`).join("")}</div>`;
+  } catch (error) {
+    root.innerHTML = `<p class="error">${escapeHtml(error.message || String(error))}</p>`;
+  }
+}
+
 function mountScheduleForRole(role) {
   const block = $("schedule-block");
   if (!block) return;
@@ -1967,6 +1993,10 @@ function activateDashTab(dashId, tabId) {
   if (dashId === "admin" && tabId === "org" && state.user?.role === "admin") {
     refreshAdminDeptList();
   }
+  if (dashId === "admin" && tabId === "people" && state.user?.role === "admin") {
+    refreshRegistrationRequests();
+    refreshAdminUsers();
+  }
   if (tabId === "tasks") {
     updateTasksBoardUiForRole();
     loadTaskAssigneeOptions().catch(() => {});
@@ -2140,6 +2170,7 @@ async function bootAuthenticated() {
     refreshSafe("refreshManagerRoster", () => refreshManagerRoster()),
     refreshSafe("refreshManagerQueues", () => refreshManagerQueues()),
     refreshSafe("refreshAdminUsers", () => refreshAdminUsers()),
+    refreshSafe("refreshRegistrationRequests", () => refreshRegistrationRequests()),
     refreshSafe("refreshEmployeeRequestLog", () => refreshEmployeeRequestLog()),
     refreshSafe("refreshAdminDeptList", () => refreshAdminDeptList()),
     refreshSafe("refreshAdminRequestLog", () => refreshAdminRequestLog()),
@@ -2259,7 +2290,7 @@ $("register-btn").addEventListener("click", async () => {
   const prevLabel = regBtn?.textContent;
   if (regBtn) {
     regBtn.disabled = true;
-    regBtn.textContent = "Creating account…";
+    regBtn.textContent = "Submitting request…";
   }
   try {
     await loadRegistrationMeta({ downgradeRole: false });
@@ -2297,26 +2328,40 @@ $("register-btn").addEventListener("click", async () => {
       body.registration_code = code;
     }
     const data = await api("/api/auth/register", { method: "POST", body: JSON.stringify(body) });
-    setToken(data.access_token, data.user);
-    try {
-      await bootAuthenticated();
-      $("app-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } catch (bootErr) {
-      logout();
-      throw bootErr;
-    }
+    $("reg-err").textContent = data.message || "Registration submitted for administrator approval.";
+    $("reg-err").classList.remove("hidden", "error");
+    $("reg-err").classList.add("success");
+    if (regBtn) regBtn.textContent = "Request submitted";
   } catch (e) {
     $("reg-err").textContent = e.message;
     $("reg-err").classList.remove("hidden");
   } finally {
     if (regBtn) {
       regBtn.disabled = false;
-      regBtn.textContent = prevLabel || "Create account";
+      regBtn.textContent = prevLabel || "Submit registration request";
     }
   }
 });
 
 $("logout-btn").addEventListener("click", () => logout());
+
+$("registration-requests-refresh")?.addEventListener("click", refreshRegistrationRequests);
+$("registration-requests")?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-registration-action]");
+  const card = event.target.closest("[data-registration-id]");
+  if (!button || !card) return;
+  const action = button.dataset.registrationAction;
+  const requestId = card.dataset.registrationId;
+  if (action === "reject" && !confirm("Reject this registration request?")) return;
+  card.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+  try {
+    await api(`/api/auth/registration-requests/${encodeURIComponent(requestId)}/${action}`, { method: "POST" });
+    await Promise.all([refreshRegistrationRequests(), refreshAdminUsers(), refreshManagerRoster().catch(() => {})]);
+  } catch (error) {
+    alert(error.message || "The registration request could not be updated.");
+    card.querySelectorAll("button").forEach((item) => { item.disabled = false; });
+  }
+});
 
 /* Employee */
 $("leave-submit").addEventListener("click", async () => {

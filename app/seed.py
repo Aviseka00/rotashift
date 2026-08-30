@@ -33,6 +33,8 @@ async def ensure_indexes_and_seed():
     await asyncio.gather(
         db.departments.create_index("name", unique=True),
         db.users.create_index("employee_id", unique=True),
+        db.registration_requests.create_index([("employee_id", ASCENDING), ("status", ASCENDING)]),
+        db.registration_requests.create_index([("status", ASCENDING), ("created_at", DESCENDING)]),
         db.users.create_index([("department_id", ASCENDING), ("employee_id", ASCENDING)]),
         db.shifts.create_index([("department_id", ASCENDING), ("user_id", ASCENDING), ("date", ASCENDING)], unique=True),
         db.shifts.create_index([("department_id", ASCENDING), ("date", ASCENDING)]),
