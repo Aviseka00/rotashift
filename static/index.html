@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=46" />
+    <link rel="stylesheet" href="/static/styles.css?v=47" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -163,7 +163,7 @@
 
               <h3 id="leave-request-section" style="font-size: 1rem">Request leave</h3>
               <p class="hint">
-                Same approval flow as a shift change: your manager reviews it, then it appears on the team calendar when
+                Same approval flow as a shift change: an administrator reviews it, then it appears on the team schedule when
                 approved. Full history is listed below.
               </p>
               <div class="row">
@@ -204,7 +204,7 @@
               <h3 style="margin-top: 1rem; font-size: 1rem">Request log &amp; status</h3>
               <p class="hint">
                 Every leave and shift-change request is listed here with its current status (pending, approved, or
-                rejected). Updated when your manager acts on it.
+                rejected). Updated when an administrator acts on it.
               </p>
               <button type="button" id="emp-log-refresh" class="btn secondary">Refresh status</button>
               <div id="emp-request-log" class="emp-request-log"></div>
@@ -223,12 +223,16 @@
           <nav class="dash-nav" aria-label="Manager dashboard">
             <button type="button" class="dash-tab active" data-dash="manager" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="requests">My requests</button>
           </nav>
           <div class="dash-pane active" data-dash="manager" data-tab="schedule">
             <div class="sched-mount" id="mgr-sched-mount"></div>
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="shifts">
             <div id="mgr-shift-slot"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="manager" data-tab="requests">
+            <div id="mgr-requests-mount"></div>
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="approvals">
             <div id="mgr-approval-slot"></div>
@@ -825,7 +829,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=46"></script>
+    <script src="/static/app.js?v=47"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

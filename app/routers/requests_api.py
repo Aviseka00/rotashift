@@ -193,8 +193,7 @@ async def list_leave(
     if role == "employee":
         cur = db.leave_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
     elif role == "manager":
-        dept = _require_manager_department(user)
-        cur = db.leave_requests.find({"department_id": dept}).sort("created_at", -1)
+        cur = db.leave_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
     else:
         qfilter = {}
         if department_id:
@@ -296,8 +295,7 @@ async def list_shift_change(
     if role == "employee":
         cur = db.shift_change_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
     elif role == "manager":
-        dept = _require_manager_department(user)
-        cur = db.shift_change_requests.find({"department_id": dept}).sort("created_at", -1)
+        cur = db.shift_change_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
     else:
         qfilter = {}
         if department_id:

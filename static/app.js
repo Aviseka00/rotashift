@@ -1512,6 +1512,15 @@ function mountScheduleForRole(role) {
   if (mount) mount.appendChild(block);
 }
 
+function mountRequestTools(role) {
+  const tools = $("employee-tools");
+  if (!tools) return;
+  const mount = role === "manager"
+    ? $("mgr-requests-mount")
+    : document.querySelector('[data-dash="employee"][data-tab="requests"]');
+  if (mount) mount.appendChild(tools);
+}
+
 const TASK_COLUMNS = [
   { id: "todo", label: "To do" },
   { id: "in_progress", label: "In progress" },
@@ -2070,7 +2079,7 @@ function activateDashTab(dashId, tabId) {
       else requestAnimationFrame(() => requestAnimationFrame(() => state.calendar.updateSize()));
     }
   }
-  if (dashId === "employee" && tabId === "requests" && state.user?.role === "employee") {
+  if ((dashId === "employee" || dashId === "manager") && tabId === "requests") {
     refreshEmployeeRequestLog();
   }
   if (dashId === "admin" && tabId === "records" && state.user?.role === "admin") {
@@ -2189,6 +2198,7 @@ async function bootAuthenticated() {
   ]);
 
   mountScheduleForRole(state.user.role);
+  mountRequestTools(state.user.role);
   mountShiftPanels(state.user.role);
   mountTasksModule(state.user.role);
   mountInfoValleyModule(state.user.role);
@@ -2453,7 +2463,7 @@ $("leave-submit").addEventListener("click", async () => {
       }),
     });
     showEmployeeRequestNotice(
-      `Leave request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — your manager will review it. You can track it in the log below.`,
+      `Leave request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
       "success",
     );
     $("leave-reason").value = "";
@@ -2480,7 +2490,7 @@ $("chg-submit").addEventListener("click", async () => {
       }),
     });
     showEmployeeRequestNotice(
-      `Shift change request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — your manager will review it. You can track it in the log below.`,
+      `Shift change request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
       "success",
     );
     $("chg-reason").value = "";

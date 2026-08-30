@@ -53,6 +53,53 @@ def test_admin_can_bulk_delete_tasks(client: TestClient, require_mongo, admin_he
     assert deleted.json()["deleted"] == 2
 
 
+def test_manager_can_request_leave_and_shift_change_for_admin_approval(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "manager-request-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Manager Request QA",
+            "department_id": department_id,
+            "role": "manager",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    manager_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    today = date.today().isoformat()
+
+    leave = client.post(
+        "/api/requests/leave",
+        json={"start_date": today, "end_date": today, "reason": "Manager leave"},
+        headers=manager_headers,
+    )
+    shift = client.post(
+        "/api/requests/shift-change",
+        json={"date": today, "from_shift": "A", "to_shift": "B", "reason": "Manager swap"},
+        headers=manager_headers,
+    )
+    assert leave.status_code == 200, leave.text
+    assert shift.status_code == 200, shift.text
+    own_leave = client.get("/api/requests/leave", headers=manager_headers).json()["requests"]
+    own_shift = client.get("/api/requests/shift-change", headers=manager_headers).json()["requests"]
+    assert any(item["id"] == leave.json()["id"] and item["status"] == "pending" for item in own_leave)
+    assert any(item["id"] == shift.json()["id"] and item["status"] == "pending" for item in own_shift)
+
+    approved = client.patch(
+        f"/api/requests/leave/{leave.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+
 def test_register_requires_admin_approval(
     client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
 ):
