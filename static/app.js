@@ -1226,10 +1226,11 @@ function requestLogStatusBadge(st) {
 function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn) {
   if (!leaveBox || !shiftBox) return;
   const deptTh = showDeptColumn ? "<th>Dept</th>" : "";
+  const colGroup = `<colgroup>${showDeptColumn ? '<col class="activity-col-dept">' : ""}<col class="activity-col-person"><col class="activity-col-request"><col class="activity-col-status"><col class="activity-col-timeline"><col class="activity-col-decider"></colgroup>`;
 
   const tblL = document.createElement("table");
-  tblL.className = "matrix log-table";
-  tblL.innerHTML = `<thead><tr>${deptTh}<th>Employee</th><th>Dates</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>`;
+  tblL.className = "matrix log-table activity-log-table";
+  tblL.innerHTML = `${colGroup}<thead><tr>${deptTh}<th>Employee</th><th>Leave request</th><th>Status</th><th>Submitted / decided</th><th>Decided by</th></tr></thead>`;
   const tbL = document.createElement("tbody");
   (lv.requests || []).forEach((r) => {
     const tr = document.createElement("tr");
@@ -1237,8 +1238,8 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
       ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
       : "—";
     const det = `${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)}`;
-    const deptCell = showDeptColumn ? `<td>${escapeHtml(r.department_name || "—")}</td>` : "";
-    tr.innerHTML = `${deptCell}<td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${requestLogStatusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
+    const deptCell = showDeptColumn ? `<td data-label="Department">${escapeHtml(r.department_name || "—")}</td>` : "";
+    tr.innerHTML = `${deptCell}<td data-label="Employee"><strong>${escapeHtml(r.full_name)}</strong><br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td data-label="Leave request"><strong>${det}</strong><br/><span class="hint">${escapeHtml(r.reason || "No reason supplied")}</span></td><td data-label="Status">${requestLogStatusBadge(r.status)}</td><td data-label="Timeline"><span class="activity-time-label">Sent</span> ${escapeHtml(fmtShortDateTime(r.created_at))}<br/><span class="activity-time-label">Done</span> ${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td data-label="Decided by">${dec}</td>`;
     tbL.appendChild(tr);
   });
   tblL.appendChild(tbL);
@@ -1250,8 +1251,8 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
   }
 
   const tblS = document.createElement("table");
-  tblS.className = "matrix log-table";
-  tblS.innerHTML = `<thead><tr>${deptTh}<th>Employee</th><th>Change</th><th>Submitted</th><th>Status</th><th>Decision</th><th>Approved / rejected by</th></tr></thead>`;
+  tblS.className = "matrix log-table activity-log-table";
+  tblS.innerHTML = `${colGroup}<thead><tr>${deptTh}<th>Employee</th><th>Shift request</th><th>Status</th><th>Submitted / decided</th><th>Decided by</th></tr></thead>`;
   const tbS = document.createElement("tbody");
   (ch.requests || []).forEach((r) => {
     const tr = document.createElement("tr");
@@ -1259,8 +1260,8 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
       ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
       : "—";
     const det = `${escapeHtml(r.date)}: ${escapeHtml(r.from_shift)} → ${escapeHtml(r.to_shift)}`;
-    const deptCell = showDeptColumn ? `<td>${escapeHtml(r.department_name || "—")}</td>` : "";
-    tr.innerHTML = `${deptCell}<td>${escapeHtml(r.full_name)}<br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td>${det}<br/><span class="hint">${escapeHtml(r.reason || "")}</span></td><td>${escapeHtml(fmtShortDateTime(r.created_at))}</td><td>${requestLogStatusBadge(r.status)}</td><td>${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td>${dec}</td>`;
+    const deptCell = showDeptColumn ? `<td data-label="Department">${escapeHtml(r.department_name || "—")}</td>` : "";
+    tr.innerHTML = `${deptCell}<td data-label="Employee"><strong>${escapeHtml(r.full_name)}</strong><br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td data-label="Shift request"><strong>${det}</strong><br/><span class="hint">${escapeHtml(r.reason || "No reason supplied")}</span></td><td data-label="Status">${requestLogStatusBadge(r.status)}</td><td data-label="Timeline"><span class="activity-time-label">Sent</span> ${escapeHtml(fmtShortDateTime(r.created_at))}<br/><span class="activity-time-label">Done</span> ${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td data-label="Decided by">${dec}</td>`;
     tbS.appendChild(tr);
   });
   tblS.appendChild(tbS);

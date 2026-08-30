@@ -281,6 +281,77 @@ a {
   .registration-request-actions .btn { flex: 1; }
 }
 
+.admin-records-wrap {
+  width: 100%;
+  max-width: 100%;
+}
+
+.admin-records-wrap .activity-log-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  font-size: clamp(0.68rem, 0.62rem + 0.22vw, 0.78rem);
+}
+
+.admin-records-wrap .activity-log-table th,
+.admin-records-wrap .activity-log-table td {
+  padding: 0.38rem 0.42rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  line-height: 1.35;
+}
+
+.activity-col-dept { width: 9%; }
+.activity-col-person { width: 17%; }
+.activity-col-request { width: 24%; }
+.activity-col-status { width: 10%; }
+.activity-col-timeline { width: 22%; }
+.activity-col-decider { width: 18%; }
+
+.activity-time-label {
+  display: inline-block;
+  min-width: 2.4rem;
+  color: var(--tan);
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+@media (max-width: 720px) {
+  .admin-records-wrap { overflow: visible; max-height: none; border: 0; }
+  .admin-records-wrap .activity-log-table,
+  .admin-records-wrap .activity-log-table tbody,
+  .admin-records-wrap .activity-log-table tr,
+  .admin-records-wrap .activity-log-table td { display: block; width: 100%; }
+  .admin-records-wrap .activity-log-table colgroup,
+  .admin-records-wrap .activity-log-table thead { display: none; }
+  .admin-records-wrap .activity-log-table tbody { display: grid; gap: 0.75rem; }
+  .admin-records-wrap .activity-log-table tr {
+    overflow: hidden;
+    border: 1px solid rgba(210, 180, 140, 0.3);
+    border-radius: 14px;
+    background: rgba(0, 21, 47, 0.5);
+  }
+  .admin-records-wrap .activity-log-table td {
+    display: grid;
+    grid-template-columns: 6.7rem minmax(0, 1fr);
+    gap: 0.55rem;
+    border: 0;
+    border-bottom: 1px solid rgba(210, 180, 140, 0.13);
+    padding: 0.58rem 0.7rem;
+  }
+  .admin-records-wrap .activity-log-table td:last-child { border-bottom: 0; }
+  .admin-records-wrap .activity-log-table td::before {
+    content: attr(data-label);
+    color: var(--tan);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+}
+
 .brand {
   font-weight: 800;
   letter-spacing: 0.025em;
