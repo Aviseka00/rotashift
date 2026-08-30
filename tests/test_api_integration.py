@@ -100,6 +100,16 @@ def test_shifts_table_employee(client: TestClient, require_mongo, auth_headers: 
     assert isinstance(data["dates"], list)
 
 
+def test_department_calendar_is_admin_only(client: TestClient, require_mongo, auth_headers: dict[str, str]):
+    today = date.today().isoformat()
+    response = client.get(
+        "/api/shifts/calendar",
+        params={"start": today, "end": today},
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
+
+
 def test_local_assistant_answers_authenticated_user(client: TestClient, require_mongo, auth_headers: dict[str, str]):
     response = client.post(
         "/api/assistant/query",

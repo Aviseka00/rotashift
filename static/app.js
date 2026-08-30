@@ -1984,6 +1984,7 @@ function applyRoleVisibility() {
   show($("dash-manager"), role === "manager");
   show($("dash-admin"), role === "admin");
   show($("admin-dash-overview"), role === "admin");
+  show($("admin-calendar-view"), role === "admin");
   show($("admin-cal-ctl"), role === "admin");
   show($("admin-table-ctl"), role === "admin");
   show($("bulk-dept-row"), role === "admin");
@@ -2114,15 +2115,17 @@ async function bootAuthenticated() {
     $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
   }
   setDefaultTableRange();
-  try {
-    await initCalendar();
-  } catch (e) {
-    softFail("initCalendar", e);
-    const calEl = $("calendar");
-    if (calEl) {
-      calEl.innerHTML = `<p class="error">Calendar failed to start: ${escapeHtml(e.message || String(e))}</p>`;
+  if (state.user.role === "admin") {
+    try {
+      await initCalendar();
+    } catch (e) {
+      softFail("initCalendar", e);
+      const calEl = $("calendar");
+      if (calEl) {
+        calEl.innerHTML = `<p class="error">Calendar failed to start: ${escapeHtml(e.message || String(e))}</p>`;
+      }
+      state.calendar = null;
     }
-    state.calendar = null;
   }
 
   const refreshSafe = async (label, fn) => {

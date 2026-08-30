@@ -132,25 +132,15 @@ async def calendar_feed(
     start: str = Query(..., description="ISO date start"),
     end: str = Query(..., description="ISO date end"),
     department_id: Optional[str] = Query(None),
-    user=Depends(get_current_user),
+    user=Depends(require_roles("admin")),
 ):
     db = get_db()
-    role = user.get("role")
-    if role == "employee":
-        if not user.get("department_id"):
-            return {"events": []}
-        dept_oid = ObjectId(user["department_id"])
-    elif role == "manager":
-        if not user.get("department_id"):
-            return {"events": []}
-        dept_oid = ObjectId(user["department_id"])
-    else:
-        if not department_id:
-            raise HTTPException(status_code=400, detail="department_id query required for admin")
-        try:
-            dept_oid = ObjectId(department_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid department_id")
+    if not department_id:
+        raise HTTPException(status_code=400, detail="department_id query required for admin")
+    try:
+        dept_oid = ObjectId(department_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid department_id")
 
     try:
         d0 = parse_iso_date(start)

@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=39" />
+    <link rel="stylesheet" href="/static/styles.css?v=40" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -460,15 +460,17 @@ Amruta Mishra	80100331</pre>
               <p class="hint">Department-wise shift distribution from the selected range: A, B, C, G, L, WO and total.</p>
               <div id="manpower-summary"></div>
 
-              <h2 style="margin-top: 1rem">Department calendar</h2>
-              <div id="admin-cal-ctl" class="row hidden">
-                <div>
-                  <label for="cal-dept">Department (admin)</label>
-                  <select id="cal-dept"></select>
+              <div id="admin-calendar-view" class="hidden">
+                <h2 style="margin-top: 1rem">Department calendar</h2>
+                <div id="admin-cal-ctl" class="row hidden">
+                  <div>
+                    <label for="cal-dept">Department</label>
+                    <select id="cal-dept"></select>
+                  </div>
                 </div>
+                <p class="hint" id="cal-scope-hint">Choose a department to load its shared calendar.</p>
+                <div id="calendar"></div>
               </div>
-              <p class="hint" id="cal-scope-hint"></p>
-              <div id="calendar"></div>
             </div>
             <div class="roster-schedule-col">
               <h2>Shift roster</h2>
@@ -815,7 +817,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=39"></script>
+    <script src="/static/app.js?v=40"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
