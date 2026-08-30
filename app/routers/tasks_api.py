@@ -129,7 +129,7 @@ async def list_tasks(
 
 @router.post("")
 @router.post("/")
-async def create_task(body: TaskCreate, user=Depends(require_roles("manager", "admin"))):
+async def create_task(body: TaskCreate, user=Depends(require_roles("admin"))):
     db = get_db()
     if user["role"] == "admin":
         if not body.department_id:
@@ -167,7 +167,7 @@ async def create_task(body: TaskCreate, user=Depends(require_roles("manager", "a
 
 
 @router.patch("/{task_id}")
-async def update_task(task_id: str, body: TaskUpdate, user=Depends(require_roles("manager", "admin"))):
+async def update_task(task_id: str, body: TaskUpdate, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(task_id)
@@ -205,7 +205,7 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(require_roles
 
 
 @router.delete("/{task_id}")
-async def delete_task(task_id: str, user=Depends(require_roles("manager", "admin"))):
+async def delete_task(task_id: str, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(task_id)

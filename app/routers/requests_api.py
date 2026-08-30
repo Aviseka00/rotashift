@@ -211,7 +211,7 @@ async def list_leave(
 
 
 @router.patch("/leave/{rid}/decide")
-async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("manager", "admin"))):
+async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(rid)
@@ -314,7 +314,7 @@ async def list_shift_change(
 
 
 @router.patch("/shift-change/{rid}/decide")
-async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_roles("manager", "admin"))):
+async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(rid)

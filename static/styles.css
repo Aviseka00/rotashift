@@ -162,6 +162,77 @@ a {
   box-shadow: 0 10px 20px -16px rgba(2, 6, 23, 0.9);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.password-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 33, 71, 0.64);
+  backdrop-filter: blur(8px);
+}
+
+.password-modal.hidden {
+  display: none;
+}
+
+.password-card {
+  width: min(100%, 460px);
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid rgba(61, 141, 122, 0.3);
+  border-radius: 24px;
+  background: #fffacd;
+  color: #002147;
+  box-shadow: 0 28px 75px rgba(0, 33, 71, 0.34);
+}
+
+.password-card-head,
+.password-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.password-card h2 {
+  margin: 0.15rem 0 0;
+}
+
+.password-card label {
+  margin-top: 0.85rem;
+}
+
+.password-card input {
+  width: 100%;
+}
+
+.password-actions {
+  justify-content: flex-end;
+  margin-top: 1.15rem;
+}
+
+.icon-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid rgba(0, 33, 71, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: #002147;
+  font-size: 1.65rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .brand {
   font-weight: 800;
   letter-spacing: 0.025em;

@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=38" />
+    <link rel="stylesheet" href="/static/styles.css?v=39" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -32,7 +32,8 @@
     <header class="topbar">
       <div class="brand">RotaShift</div>
       <div id="user-slot" class="hint"></div>
-      <div>
+      <div class="topbar-actions">
+        <button type="button" id="change-password-btn" class="btn secondary hidden">Change password</button>
         <button type="button" id="logout-btn" class="btn secondary hidden">Log out</button>
       </div>
     </header>
@@ -222,10 +223,6 @@
           <nav class="dash-nav" aria-label="Manager dashboard">
             <button type="button" class="dash-tab active" data-dash="manager" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="records">Approval log</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="infovalley">Info-valley</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="tasks">My Kanban</button>
           </nav>
           <div class="dash-pane active" data-dash="manager" data-tab="schedule">
             <div class="sched-mount" id="mgr-sched-mount"></div>
@@ -771,6 +768,27 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
         </div>
         </div>
       </section>
+
+      <div id="password-modal" class="password-modal hidden" role="dialog" aria-modal="true" aria-labelledby="password-title">
+        <div class="password-card">
+          <div class="password-card-head">
+            <div><span class="eyebrow">Account security</span><h2 id="password-title">Change your password</h2></div>
+            <button type="button" id="password-close" class="icon-btn" aria-label="Close">×</button>
+          </div>
+          <p class="hint">Enter your current password, then choose a new password with at least 8 characters.</p>
+          <label for="password-current">Current password</label>
+          <input id="password-current" type="password" autocomplete="current-password" />
+          <label for="password-new">New password</label>
+          <input id="password-new" type="password" autocomplete="new-password" />
+          <label for="password-confirm">Confirm new password</label>
+          <input id="password-confirm" type="password" autocomplete="new-password" />
+          <div id="password-message" class="hint" role="status" aria-live="polite"></div>
+          <div class="password-actions">
+            <button type="button" id="password-cancel" class="btn secondary">Cancel</button>
+            <button type="button" id="password-save" class="btn">Update password</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <button type="button" id="assistant-fab" class="assistant-fab hidden" aria-controls="assistant-drawer" aria-expanded="false">
@@ -797,7 +815,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=38"></script>
+    <script src="/static/app.js?v=39"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

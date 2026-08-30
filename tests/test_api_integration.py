@@ -56,6 +56,35 @@ def test_register_login_me(client: TestClient, require_mongo, unique_employee_id
     assert me.get("role") == "employee"
 
 
+def test_user_can_change_own_password(client: TestClient, require_mongo, unique_employee_id: str):
+    old_password = "pytest-old-pass-9x"
+    new_password = "pytest-new-pass-8z"
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "employee_id": unique_employee_id,
+            "password": old_password,
+            "full_name": "Password QA",
+            "department_name": "rota",
+            "role": "employee",
+        },
+    )
+    assert registration.status_code == 200, registration.text
+    token = registration.json()["access_token"]
+
+    changed = client.post(
+        "/api/auth/change-password",
+        json={"current_password": old_password, "new_password": new_password},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert changed.status_code == 200, changed.text
+
+    old_login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": old_password})
+    assert old_login.status_code == 400
+    new_login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": new_password})
+    assert new_login.status_code == 200, new_login.text
+
+
 def test_shifts_table_employee(client: TestClient, require_mongo, auth_headers: dict[str, str]):
     today = date.today()
     start = (today - timedelta(days=today.weekday())).isoformat()

@@ -114,8 +114,10 @@ function logout() {
   show($("app-section"), false);
   show($("dashboard-banner"), false);
   show($("logout-btn"), false);
+  show($("change-password-btn"), false);
   show($("assistant-fab"), false);
   show($("assistant-drawer"), false);
+  show($("password-modal"), false);
   $("user-slot").textContent = "";
   if (state.calendar) {
     state.calendar.destroy();
@@ -379,7 +381,7 @@ function updateDashboardBanner() {
     role === "employee"
       ? "Schedule shows your department rota. My Kanban is your team’s shared task board (priorities & owners). Use My requests for leave and shift changes."
       : role === "manager"
-        ? "Use the tabs: Schedule · Manage shifts · Approvals · Approval log (department request history) · Info-valley · My Kanban (team tasks & priorities)."
+        ? "View your department schedule and manage employee shifts. Account and department administration is reserved for administrators."
         : "Tabs: Departments · People · Approvals · Activity · My Kanban (per-department board) · Schedule · Manage shifts.";
   show(banner, true);
 }
@@ -2042,6 +2044,7 @@ async function bootAuthenticated() {
   show($("auth-section"), false);
   show($("app-section"), true);
   show($("logout-btn"), true);
+  show($("change-password-btn"), true);
   show($("assistant-fab"), true);
   $("user-slot").innerHTML = `<span class="badge ${me.role}">${me.role}</span> <strong>${escapeHtml(
     me.full_name,
@@ -3126,6 +3129,59 @@ $("emp-go-shift-change")?.addEventListener("click", () => {
 });
 
 initMatrixTableCellEditor();
+
+function setPasswordModalOpen(open) {
+  show($("password-modal"), open);
+  if (!open) {
+    ["password-current", "password-new", "password-confirm"].forEach((id) => {
+      if ($(id)) $(id).value = "";
+    });
+    if ($("password-message")) $("password-message").textContent = "";
+  } else {
+    setTimeout(() => $("password-current")?.focus(), 50);
+  }
+}
+
+async function changeOwnPassword() {
+  const currentPassword = $("password-current")?.value || "";
+  const newPassword = $("password-new")?.value || "";
+  const confirmPassword = $("password-confirm")?.value || "";
+  const message = $("password-message");
+  if (message) message.textContent = "";
+  if (newPassword.length < 8) {
+    if (message) message.textContent = "New password must contain at least 8 characters.";
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    if (message) message.textContent = "The new passwords do not match.";
+    return;
+  }
+  const save = $("password-save");
+  if (save) save.disabled = true;
+  try {
+    const result = await api("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    if (message) message.textContent = result.message || "Password changed successfully.";
+    setTimeout(() => setPasswordModalOpen(false), 900);
+  } catch (error) {
+    if (message) message.textContent = error.message || "Password could not be changed.";
+  } finally {
+    if (save) save.disabled = false;
+  }
+}
+
+$("change-password-btn")?.addEventListener("click", () => setPasswordModalOpen(true));
+$("password-close")?.addEventListener("click", () => setPasswordModalOpen(false));
+$("password-cancel")?.addEventListener("click", () => setPasswordModalOpen(false));
+$("password-save")?.addEventListener("click", changeOwnPassword);
+$("password-modal")?.addEventListener("click", (event) => {
+  if (event.target === $("password-modal")) setPasswordModalOpen(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("password-modal")?.classList.contains("hidden")) setPasswordModalOpen(false);
+});
 
 function assistantDepartmentId() {
   if (state.user?.role !== "admin") return null;

@@ -74,6 +74,11 @@ class LoginBody(BaseModel):
     password: str
 
 
+class ChangePasswordBody(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
 def _normalized_role(user: dict) -> str:
     r = user.get("role")
     if r in ("employee", "manager", "admin"):
@@ -242,3 +247,24 @@ async def me(user=Depends(get_current_user)):
         "department_id": user["department_id"],
         "department_name": dept["name"] if dept else None,
     }
+
+
+@router.post("/change-password")
+async def change_password(body: ChangePasswordBody, user=Depends(get_current_user)):
+    """Let any signed-in user securely replace their own password."""
+    current_hash = user.get("password_hash") or ""
+    try:
+        current_ok = bool(current_hash) and verify_password(body.current_password, current_hash)
+    except Exception:
+        current_ok = False
+    if not current_ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+    if body.current_password == body.new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a new password different from your current password.")
+
+    new_hash = hash_password(body.new_password)
+    db = get_db()
+    result = await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": {"password_hash": new_hash}})
+    if result.matched_count != 1:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User account was not found.")
+    return {"ok": True, "message": "Password changed successfully."}
