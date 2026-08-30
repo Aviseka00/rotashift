@@ -114,6 +114,8 @@ function logout() {
   show($("app-section"), false);
   show($("dashboard-banner"), false);
   show($("logout-btn"), false);
+  show($("assistant-fab"), false);
+  show($("assistant-drawer"), false);
   $("user-slot").textContent = "";
   if (state.calendar) {
     state.calendar.destroy();
@@ -382,9 +384,39 @@ function updateDashboardBanner() {
   show(banner, true);
 }
 
-function initCalendar() {
+let calendarAssetsPromise = null;
+
+function ensureCalendarAssets() {
+  if (typeof FullCalendar !== "undefined" && FullCalendar.Calendar) return Promise.resolve();
+  if (calendarAssetsPromise) return calendarAssetsPromise;
+  calendarAssetsPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector('link[data-fullcalendar="true"]')) {
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css";
+      css.dataset.fullcalendar = "true";
+      document.head.appendChild(css);
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js";
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Calendar resources could not be loaded."));
+    document.head.appendChild(script);
+  });
+  return calendarAssetsPromise;
+}
+
+async function initCalendar() {
   const el = $("calendar");
   if (!el) return;
+  try {
+    await ensureCalendarAssets();
+  } catch (error) {
+    el.innerHTML = `<p class="error">${escapeHtml(error.message)} You can still use the schedule table.</p>`;
+    state.calendar = null;
+    return;
+  }
   if (typeof FullCalendar === "undefined" || !FullCalendar.Calendar) {
     el.innerHTML =
       '<p class="error">The calendar could not load (FullCalendar blocked or offline). Allow <strong>cdn.jsdelivr.net</strong> in your browser or network, then refresh. You can still use the table and other tabs.</p>';
@@ -1317,6 +1349,7 @@ async function refreshAdminDeptList() {
       tb.appendChild(tr);
     });
     tbl.appendChild(tb);
+    box.innerHTML = "";
     box.appendChild(tbl);
   } catch (e) {
     box.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
@@ -2009,6 +2042,7 @@ async function bootAuthenticated() {
   show($("auth-section"), false);
   show($("app-section"), true);
   show($("logout-btn"), true);
+  show($("assistant-fab"), true);
   $("user-slot").innerHTML = `<span class="badge ${me.role}">${me.role}</span> <strong>${escapeHtml(
     me.full_name,
   )}</strong> · ${escapeHtml(me.employee_id)} · ${escapeHtml(me.department_name || "")}`;
@@ -2078,7 +2112,7 @@ async function bootAuthenticated() {
   }
   setDefaultTableRange();
   try {
-    initCalendar();
+    await initCalendar();
   } catch (e) {
     softFail("initCalendar", e);
     const calEl = $("calendar");
@@ -3092,6 +3126,81 @@ $("emp-go-shift-change")?.addEventListener("click", () => {
 });
 
 initMatrixTableCellEditor();
+
+function assistantDepartmentId() {
+  if (state.user?.role !== "admin") return null;
+  return $("cal-dept")?.value || $("table-dept")?.value || $("tasks-admin-dept")?.value || state.departments[0]?.id || null;
+}
+
+function setAssistantOpen(open) {
+  show($("assistant-drawer"), open);
+  $("assistant-fab")?.setAttribute("aria-expanded", String(open));
+  document.body.classList.toggle("assistant-open", open);
+  if (open) setTimeout(() => $("assistant-input")?.focus(), 80);
+}
+
+function appendAssistantMessage(kind, message, items = []) {
+  const root = $("assistant-messages");
+  if (!root) return null;
+  const row = document.createElement("div");
+  row.className = `assistant-message assistant-message-${kind}`;
+  const avatar = kind === "bot" ? '<div class="assistant-avatar" aria-hidden="true">R</div>' : "";
+  const cards = items.length
+    ? `<div class="assistant-result-list">${items.map((item) => `<div class="assistant-result"><strong>${escapeHtml(item.title || "")}</strong><span>${escapeHtml(item.detail || "")}</span>${item.meta ? `<small>${escapeHtml(item.meta)}</small>` : ""}</div>`).join("")}</div>`
+    : "";
+  row.innerHTML = `${avatar}<div class="assistant-bubble">${escapeHtml(message)}${cards}</div>`;
+  root.appendChild(row);
+  root.scrollTop = root.scrollHeight;
+  return row;
+}
+
+function renderAssistantSuggestions(suggestions = []) {
+  const root = $("assistant-suggestions");
+  if (!root) return;
+  root.innerHTML = suggestions.slice(0, 3).map((prompt) => `<button type="button" data-assistant-prompt="${escapeHtml(prompt)}">${escapeHtml(prompt)}</button>`).join("");
+}
+
+async function askRotaAssistant(message) {
+  const clean = message.trim();
+  if (!clean) return;
+  appendAssistantMessage("user", clean);
+  $("assistant-input").value = "";
+  const send = $("assistant-send");
+  if (send) send.disabled = true;
+  const loading = appendAssistantMessage("bot", "Checking live RotaShift data…");
+  try {
+    const payload = { message: clean };
+    const departmentId = assistantDepartmentId();
+    if (departmentId) payload.department_id = departmentId;
+    const data = await api("/api/assistant/query", { method: "POST", body: JSON.stringify(payload) });
+    loading?.remove();
+    appendAssistantMessage("bot", data.answer || "I could not find an answer.", data.items || []);
+    renderAssistantSuggestions(data.suggestions || []);
+  } catch (error) {
+    loading?.remove();
+    appendAssistantMessage("bot", error.message || "I could not complete that request.");
+  } finally {
+    if (send) send.disabled = false;
+    $("assistant-input")?.focus();
+  }
+}
+
+$("assistant-fab")?.addEventListener("click", () => setAssistantOpen($("assistant-drawer")?.classList.contains("hidden")));
+$("assistant-close")?.addEventListener("click", () => setAssistantOpen(false));
+$("assistant-form")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  askRotaAssistant($("assistant-input")?.value || "");
+});
+$("assistant-input")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    $("assistant-form")?.requestSubmit();
+  }
+});
+$("assistant-suggestions")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-assistant-prompt]");
+  if (button) askRotaAssistant(button.dataset.assistantPrompt || "");
+});
 
 tryRestoreSession();
 if (!state.token) {

@@ -16,7 +16,12 @@ def get_client() -> AsyncIOMotorClient:
     if _client is None:
         kwargs = {
             "serverSelectionTimeoutMS": MONGO_SERVER_SELECTION_TIMEOUT_MS,
+            "connectTimeoutMS": MONGO_SERVER_SELECTION_TIMEOUT_MS,
+            "socketTimeoutMS": 15000,
             "maxPoolSize": MONGO_MAX_POOL_SIZE,
+            "retryReads": True,
+            "retryWrites": True,
+            "appname": "rotashift",
         }
         if MONGO_MIN_POOL_SIZE > 0:
             kwargs["minPoolSize"] = MONGO_MIN_POOL_SIZE

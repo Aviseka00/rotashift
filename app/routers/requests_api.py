@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -92,6 +93,46 @@ async def _shift_change_row(db, x: dict) -> dict:
     }
 
 
+async def _request_lookups(db, docs: list[dict]) -> tuple[dict, dict]:
+    """Fetch users and departments once for an entire response instead of once per row."""
+    user_ids = {x.get("user_id") for x in docs if x.get("user_id")}
+    user_ids.update(x.get("decided_by") for x in docs if x.get("decided_by"))
+    department_ids = {x.get("department_id") for x in docs if x.get("department_id")}
+    users_task = db.users.find(
+        {"_id": {"$in": list(user_ids)}},
+        {"employee_id": 1, "full_name": 1},
+    ).to_list(length=None) if user_ids else asyncio.sleep(0, result=[])
+    departments_task = db.departments.find(
+        {"_id": {"$in": list(department_ids)}},
+        {"name": 1},
+    ).to_list(length=None) if department_ids else asyncio.sleep(0, result=[])
+    users, departments = await asyncio.gather(users_task, departments_task)
+    return ({u["_id"]: u for u in users}, {d["_id"]: d.get("name", "?") for d in departments})
+
+
+def _request_row(x: dict, kind: str, users: dict, departments: dict) -> dict:
+    employee = users.get(x.get("user_id"), {})
+    decider = users.get(x.get("decided_by"), {})
+    row = {
+        "id": str(x["_id"]),
+        "employee_id": employee.get("employee_id", "?"),
+        "full_name": employee.get("full_name", "?"),
+        "reason": x.get("reason", ""),
+        "status": x.get("status", "pending"),
+        "created_at": _iso(x.get("created_at")),
+        "decided_at": _iso(x.get("decided_at")),
+        "department_id": str(x["department_id"]) if x.get("department_id") else None,
+        "department_name": departments.get(x.get("department_id")),
+        "decided_by_name": decider.get("full_name"),
+        "decided_by_employee_id": decider.get("employee_id"),
+    }
+    if kind == "leave":
+        row.update({"start_date": x["start_date"], "end_date": x["end_date"]})
+    else:
+        row.update({"date": x["date"], "from_shift": x["from_shift"], "to_shift": x["to_shift"]})
+    return row
+
+
 class LeaveCreate(BaseModel):
     start_date: str
     end_date: str
@@ -163,9 +204,9 @@ async def list_leave(
                 raise HTTPException(status_code=400, detail="Invalid department_id")
         cur = db.leave_requests.find(qfilter).sort("created_at", -1)
 
-    items = []
-    async for x in cur:
-        items.append(await _leave_row(db, x))
+    docs = await cur.to_list(length=None)
+    users, departments = await _request_lookups(db, docs)
+    items = [_request_row(x, "leave", users, departments) for x in docs]
     return {"requests": items}
 
 
@@ -266,9 +307,9 @@ async def list_shift_change(
                 raise HTTPException(status_code=400, detail="Invalid department_id")
         cur = db.shift_change_requests.find(qfilter).sort("created_at", -1)
 
-    items = []
-    async for x in cur:
-        items.append(await _shift_change_row(db, x))
+    docs = await cur.to_list(length=None)
+    users, departments = await _request_lookups(db, docs)
+    items = [_request_row(x, "shift", users, departments) for x in docs]
     return {"requests": items}
 
 

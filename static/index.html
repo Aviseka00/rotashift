@@ -20,14 +20,13 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=38" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.css" rel="stylesheet" />
   </head>
   <body>
     <header class="topbar">
@@ -41,26 +40,48 @@
     <main class="shell">
       <div id="install-slot"></div>
 
-      <section id="auth-section" class="card">
-        <div class="tabs">
+      <section id="auth-section" class="auth-card">
+        <div class="auth-welcome" aria-labelledby="auth-title">
+          <div class="auth-welcome-content">
+            <span class="eyebrow">Your team, in sync</span>
+            <h1 id="auth-title">Shift planning without the guesswork.</h1>
+            <p>See your rota, request time off, and keep approvals moving—all in one simple workspace.</p>
+            <ul class="auth-benefits" aria-label="RotaShift features">
+              <li><span aria-hidden="true">✓</span><div><strong>One clear schedule</strong><small>Check shifts and team coverage at a glance.</small></div></li>
+              <li><span aria-hidden="true">✓</span><div><strong>Simple requests</strong><small>Submit leave or shift changes in a few steps.</small></div></li>
+              <li><span aria-hidden="true">✓</span><div><strong>Faster decisions</strong><small>Managers can review and track approvals easily.</small></div></li>
+            </ul>
+          </div>
+          <p class="auth-help">Need access? Choose <strong>Create account</strong> and register with your employee details.</p>
+        </div>
+        <div class="auth-form-pane">
+        <div class="tabs" role="tablist" aria-label="Account access">
           <button type="button" id="tab-login" class="active">Log in</button>
-          <button type="button" id="tab-register">Register</button>
+          <button type="button" id="tab-register">Create account</button>
         </div>
         <div id="panel-login">
+          <div class="auth-form-heading">
+            <h2>Welcome back</h2>
+            <p class="hint">Enter your work details to continue to your dashboard.</p>
+          </div>
           <div class="row">
             <div>
               <label for="login-emp">Employee ID</label>
-              <input id="login-emp" autocomplete="username" />
+              <input id="login-emp" autocomplete="username" placeholder="e.g. EMP-1024" autofocus />
             </div>
             <div>
               <label for="login-pass">Password</label>
-              <input id="login-pass" type="password" autocomplete="current-password" />
+              <input id="login-pass" type="password" autocomplete="current-password" placeholder="Enter your password" />
             </div>
           </div>
-          <button type="button" id="login-btn" class="btn">Log in</button>
-          <div id="login-err" class="error hidden"></div>
+          <button type="button" id="login-btn" class="btn auth-submit">Log in to RotaShift</button>
+          <div id="login-err" class="error hidden" role="alert"></div>
         </div>
         <div id="panel-register" class="hidden">
+          <div class="auth-form-heading">
+            <h2>Create your account</h2>
+            <p class="hint">It only takes a minute. Start by choosing your role.</p>
+          </div>
           <p class="hint" style="margin-bottom: 0.75rem">
             Pick who you are registering as. <strong>Manager</strong> and <strong>Administrator</strong> must enter the
             invite code in the section below (your organisation issues these codes).
@@ -73,11 +94,11 @@
           <div class="row">
             <div>
               <label for="reg-emp">Employee ID</label>
-              <input id="reg-emp" autocomplete="username" />
+              <input id="reg-emp" autocomplete="username" placeholder="e.g. EMP-1024" />
             </div>
             <div>
               <label for="reg-name">Full name</label>
-              <input id="reg-name" autocomplete="name" />
+              <input id="reg-name" autocomplete="name" placeholder="Your first and last name" />
             </div>
           </div>
           <div class="row">
@@ -87,7 +108,7 @@
             </div>
             <div>
               <label for="reg-pass">Password</label>
-              <input id="reg-pass" type="password" autocomplete="new-password" />
+              <input id="reg-pass" type="password" autocomplete="new-password" placeholder="Create a secure password" />
             </div>
           </div>
 
@@ -111,8 +132,9 @@
             Departments classify your team (e.g. rota, cholera, malaria, shigella). Administrators can add
             new departments anytime.
           </p>
-          <button type="button" id="register-btn" class="btn">Create account</button>
-          <div id="reg-err" class="error hidden"></div>
+          <button type="button" id="register-btn" class="btn auth-submit">Create my account</button>
+          <div id="reg-err" class="error hidden" role="alert"></div>
+        </div>
         </div>
       </section>
 
@@ -686,7 +708,7 @@ Amruta Mishra	80100331</pre>
 
             <hr class="mgr-section-rule" />
 
-            <h3 style="font-size: 1rem">Bulk paste (optional)</h3>
+            <h3 style="font-size: 1rem">Bulk paste roster</h3>
             <p class="hint">
               Paste a roster grid straight from Excel/Sheets — a date header row plus one
               row per person (<code>Name</code>, <code>Employee ID</code>, then a code per day).
@@ -716,7 +738,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             <textarea id="bulk-lines" placeholder="Paste the roster grid here (headers + one row per person), or EMP001,2026-04-21,A per line"></textarea>
             <div id="bulk-preview" class="bulk-preview hidden"></div>
             <button type="button" id="bulk-submit" class="btn">Apply bulk assignment</button>
-            <div id="bulk-msg" class="hint"></div>
+            <div id="bulk-msg" class="hint" role="status" aria-live="polite"></div>
           </div>
         </div>
 
@@ -751,8 +773,31 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       </section>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.js"></script>
-    <script src="/static/app.js"></script>
+    <button type="button" id="assistant-fab" class="assistant-fab hidden" aria-controls="assistant-drawer" aria-expanded="false">
+      <span class="assistant-fab-mark" aria-hidden="true">✦</span><span>Ask Rota</span>
+    </button>
+    <aside id="assistant-drawer" class="assistant-drawer hidden" aria-label="RotaShift assistant">
+      <header class="assistant-head">
+        <div><span class="assistant-kicker">LOCAL ASSISTANT</span><h2>Ask Rota</h2><p>Schedules, shifts and tasks—answered from live RotaShift data.</p></div>
+        <button type="button" id="assistant-close" class="assistant-close" aria-label="Close assistant">×</button>
+      </header>
+      <div id="assistant-messages" class="assistant-messages" aria-live="polite">
+        <div class="assistant-message assistant-message-bot"><div class="assistant-avatar" aria-hidden="true">R</div><div class="assistant-bubble">Hi! Ask me about your schedule, another employee’s roster, shift coverage, or assigned tasks.</div></div>
+      </div>
+      <div id="assistant-suggestions" class="assistant-suggestions">
+        <button type="button" data-assistant-prompt="Show my schedule">My schedule</button>
+        <button type="button" data-assistant-prompt="Show my tasks">My tasks</button>
+        <button type="button" data-assistant-prompt="Who is on G shift tomorrow?">Tomorrow’s G shift</button>
+      </div>
+      <form id="assistant-form" class="assistant-form">
+        <label class="sr-only" for="assistant-input">Ask a RotaShift question</label>
+        <textarea id="assistant-input" rows="1" maxlength="600" placeholder="Ask: Show schedule for 80100173…"></textarea>
+        <button type="submit" id="assistant-send" class="assistant-send" aria-label="Send question">➜</button>
+      </form>
+      <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
+    </aside>
+
+    <script src="/static/app.js?v=38"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

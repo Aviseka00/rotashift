@@ -44,13 +44,21 @@ async def list_users(
         else:
             q = {}
 
+    users = await db.users.find(
+        q,
+        {"employee_id": 1, "full_name": 1, "role": 1, "department_id": 1},
+    ).sort("employee_id", 1).to_list(length=None)
+    dept_ids = {u["department_id"] for u in users if u.get("department_id")}
+    departments = {}
+    if dept_ids:
+        departments = {
+            d["_id"]: d.get("name", "")
+            for d in await db.departments.find({"_id": {"$in": list(dept_ids)}}, {"name": 1}).to_list(length=None)
+        }
+
     out = []
-    async for u in db.users.find(q).sort("employee_id", 1):
-        dept_name = None
-        if u.get("department_id"):
-            dep = await db.departments.find_one({"_id": u["department_id"]})
-            if dep:
-                dept_name = dep["name"]
+    for u in users:
+        dept_name = departments.get(u.get("department_id"))
         out.append(
             {
                 "id": str(u["_id"]),

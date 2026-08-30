@@ -1,7 +1,9 @@
+import asyncio
 import os
 from datetime import datetime, timezone
 
-from pymongo.errors import DuplicateKeyError, OperationFailure
+from pymongo import ASCENDING, DESCENDING
+from pymongo.errors import OperationFailure
 
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
@@ -14,31 +16,34 @@ DEFAULT_DEPARTMENTS = ["rota", "cholera", "malaria", "shigella"]
 async def ensure_default_departments_exist(db) -> None:
     """Create seed departments if missing (idempotent). Safe to call from registration, not only startup."""
     now = datetime.now(timezone.utc)
+    writes = []
     for n in DEFAULT_DEPARTMENTS:
         name = (n or "").lower().strip()
         if not name:
             continue
-        if await db.departments.find_one({"name": name}):
-            continue
-        try:
-            await db.departments.insert_one({"name": name, "created_at": now})
-        except DuplicateKeyError:
-            pass
-        except OperationFailure:
-            # e.g. Atlas user lacks insert permission — let caller surface a clear HTTP error
-            raise
+        writes.append(db.departments.update_one({"name": name}, {"$setOnInsert": {"name": name, "created_at": now}}, upsert=True))
+    try:
+        await asyncio.gather(*writes)
+    except OperationFailure:
+        raise
 
 
 async def ensure_indexes_and_seed():
     db = get_db()
-    await db.departments.create_index("name", unique=True)
-    await db.users.create_index("employee_id", unique=True)
-    await db.shifts.create_index([("department_id", 1), ("user_id", 1), ("date", 1)], unique=True)
-    await db.leave_requests.create_index([("department_id", 1), ("status", 1)])
-    await db.shift_change_requests.create_index([("department_id", 1), ("status", 1)])
-    await db.tasks.create_index([("department_id", 1), ("column", 1), ("priority", -1)])
-    await db.activities.create_index([("department_id", 1), ("activity_date", -1), ("created_at", -1)])
-    await db.activity_uploads.create_index([("department_id", 1), ("uploaded_at", -1)])
+    await asyncio.gather(
+        db.departments.create_index("name", unique=True),
+        db.users.create_index("employee_id", unique=True),
+        db.users.create_index([("department_id", ASCENDING), ("employee_id", ASCENDING)]),
+        db.shifts.create_index([("department_id", ASCENDING), ("user_id", ASCENDING), ("date", ASCENDING)], unique=True),
+        db.shifts.create_index([("department_id", ASCENDING), ("date", ASCENDING)]),
+        db.leave_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        db.leave_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+        db.shift_change_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        db.shift_change_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+        db.tasks.create_index([("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING)]),
+        db.activities.create_index([("department_id", ASCENDING), ("activity_date", DESCENDING), ("created_at", DESCENDING)]),
+        db.activity_uploads.create_index([("department_id", ASCENDING), ("uploaded_at", DESCENDING)]),
+    )
 
     await ensure_default_departments_exist(db)
 

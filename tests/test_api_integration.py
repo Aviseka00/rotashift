@@ -69,3 +69,15 @@ def test_shifts_table_employee(client: TestClient, require_mongo, auth_headers: 
     data = r.json()
     assert "dates" in data and "rows" in data
     assert isinstance(data["dates"], list)
+
+
+def test_local_assistant_answers_authenticated_user(client: TestClient, require_mongo, auth_headers: dict[str, str]):
+    response = client.post(
+        "/api/assistant/query",
+        json={"message": "Show my tasks"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["intent"] == "tasks"
+    assert "task" in data["answer"].lower()
