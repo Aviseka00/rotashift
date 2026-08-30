@@ -7,6 +7,10 @@ const state = {
   departments: [],
   shiftLegend: {},
   adminShortcutsWired: false,
+  tasks: [],
+  taskScope: null,
+  taskBoardRequestId: 0,
+  taskAssigneesByScope: new Map(),
 };
 
 const regState = {
@@ -1537,10 +1541,16 @@ async function onTaskTableActionClick(ev) {
   if (move) {
     const id = move.getAttribute("data-task-move");
     const col = move.getAttribute("data-col");
+    const previous = state.tasks;
+    state.tasks = state.tasks.map((task) => task.id === id ? { ...task, column: col, updated_at: new Date().toISOString() } : task);
+    renderKanbanFromTasks(state.tasks);
     try {
-      await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ column: col }) });
-      await refreshTasksBoard();
+      const updated = await api(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ column: col }) });
+      state.tasks = state.tasks.map((task) => task.id === id ? updated : task);
+      renderKanbanFromTasks(state.tasks);
     } catch (e) {
+      state.tasks = previous;
+      renderKanbanFromTasks(state.tasks);
       alert(e.message || String(e));
     }
     return;
@@ -1548,10 +1558,14 @@ async function onTaskTableActionClick(ev) {
   if (del) {
     if (!confirm("Delete this task?")) return;
     const id = del.getAttribute("data-task-del");
+    const previous = state.tasks;
+    state.tasks = state.tasks.filter((task) => task.id !== id);
+    renderKanbanFromTasks(state.tasks);
     try {
       await api(`/api/tasks/${id}`, { method: "DELETE" });
-      await refreshTasksBoard();
     } catch (e) {
+      state.tasks = previous;
+      renderKanbanFromTasks(state.tasks);
       alert(e.message || String(e));
     }
   }
@@ -1751,7 +1765,12 @@ async function refreshInfoValleyBoard() {
 }
 
 function tasksCanEdit() {
-  return state.user && ["manager", "admin"].includes(state.user.role);
+  return state.user?.role === "admin";
+}
+
+function taskScopeKey() {
+  if (!state.user) return null;
+  return state.user.role === "admin" ? ($("tasks-admin-dept")?.value || null) : state.user.department_id;
 }
 
 function setTasksKanbanBanner(message, kind) {
@@ -1790,6 +1809,11 @@ async function loadTaskAssigneeOptions() {
   const sel = $("task-new-assignees");
   if (!sel || !tasksCanEdit()) return;
   const role = state.user.role;
+  const scope = taskScopeKey();
+  if (!scope) {
+    sel.innerHTML = "";
+    return;
+  }
   let url = "/api/users";
   if (role === "admin") {
     const did = $("tasks-admin-dept")?.value;
@@ -1800,9 +1824,14 @@ async function loadTaskAssigneeOptions() {
     url += `?department_id=${encodeURIComponent(did)}`;
   }
   try {
-    const data = await api(url);
+    let users = state.taskAssigneesByScope.get(scope);
+    if (!users) {
+      const data = await api(url);
+      users = data.users || [];
+      state.taskAssigneesByScope.set(scope, users);
+    }
     sel.innerHTML = "";
-    (data.users || []).forEach((u) => {
+    users.forEach((u) => {
       const o = document.createElement("option");
       o.value = u.employee_id;
       o.textContent = `${u.full_name} (${u.employee_id})`;
@@ -1914,6 +1943,7 @@ async function refreshTasksBoard() {
   const root = $("tasks-kanban");
   if (!root || !state.user) return;
   const role = state.user.role;
+  const scope = taskScopeKey();
   let path = "/api/tasks";
   if (role === "admin") {
     const did = $("tasks-admin-dept")?.value;
@@ -1926,14 +1956,25 @@ async function refreshTasksBoard() {
     path += `?department_id=${encodeURIComponent(did)}`;
   }
   setTasksKanbanBanner("", "");
-  root.innerHTML = loadingSpinnerHTML("Loading tasks…");
+  const requestId = ++state.taskBoardRequestId;
+  if (state.taskScope !== scope || !state.tasks.length) {
+    root.innerHTML = loadingSpinnerHTML("Loading tasks…");
+  } else {
+    root.setAttribute("aria-busy", "true");
+  }
   try {
     const data = await fetchTaskBoardJson(path);
-    renderKanbanFromTasks(data.tasks || []);
+    if (requestId !== state.taskBoardRequestId) return;
+    state.tasks = data.tasks || [];
+    state.taskScope = scope;
+    renderKanbanFromTasks(state.tasks);
   } catch (e) {
+    if (requestId !== state.taskBoardRequestId) return;
     const { text, kind } = tasksKanbanFailureBanner(e);
     setTasksKanbanBanner(text, kind);
-    renderKanbanFromTasks([]);
+    if (state.taskScope !== scope) renderKanbanFromTasks([]);
+  } finally {
+    if (requestId === state.taskBoardRequestId) root.removeAttribute("aria-busy");
   }
 }
 
@@ -3065,12 +3106,13 @@ $("task-create-btn")?.addEventListener("click", async () => {
     }
   }
   try {
-    await postTaskCreate(body);
+    const created = await postTaskCreate(body);
     $("task-new-title").value = "";
     $("task-new-desc").value = "";
     if (msg) msg.textContent = "Task added.";
-    await refreshTasksBoard();
-    await loadTaskAssigneeOptions();
+    state.tasks = [...state.tasks, created];
+    state.taskScope = taskScopeKey();
+    renderKanbanFromTasks(state.tasks);
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
   }

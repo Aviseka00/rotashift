@@ -23,17 +23,11 @@ def _iso(dt: Any) -> Optional[str]:
     return str(dt)
 
 
-async def _task_out(db, doc: dict) -> dict:
+def _task_out(doc: dict, names_by_employee_id: Optional[dict] = None, creators_by_id: Optional[dict] = None) -> dict:
     assignees = doc.get("assignee_employee_ids") or []
-    names = []
-    for eid in assignees:
-        u = await db.users.find_one({"employee_id": eid})
-        names.append(u["full_name"] if u else eid)
-    creator = None
-    if doc.get("created_by"):
-        cu = await db.users.find_one({"_id": doc["created_by"]})
-        if cu:
-            creator = {"employee_id": cu.get("employee_id"), "full_name": cu.get("full_name")}
+    names_map = names_by_employee_id or {}
+    names = [names_map.get(eid, eid) for eid in assignees]
+    creator = (creators_by_id or {}).get(doc.get("created_by"))
     return {
         "id": str(doc["_id"]),
         "department_id": str(doc["department_id"]),
@@ -52,15 +46,17 @@ async def _task_out(db, doc: dict) -> dict:
 async def _valid_assignees_in_department(db, dept_oid: ObjectId, employee_ids: List[str]) -> List[str]:
     if not employee_ids:
         return []
-    out: List[str] = []
-    for eid in employee_ids:
-        eid = (eid or "").strip()
-        if not eid:
-            continue
-        u = await db.users.find_one({"employee_id": eid, "department_id": dept_oid})
-        if u:
-            out.append(u["employee_id"])
-    return out
+    requested = list(dict.fromkeys((eid or "").strip().upper() for eid in employee_ids if (eid or "").strip()))
+    if not requested:
+        return []
+    valid = {
+        u["employee_id"]
+        async for u in db.users.find(
+            {"employee_id": {"$in": requested}, "department_id": dept_oid},
+            {"employee_id": 1},
+        )
+    }
+    return [eid for eid in requested if eid in valid]
 
 
 def _require_dept_for_list(user, department_id: Optional[str]) -> ObjectId:
@@ -120,11 +116,26 @@ async def list_tasks(
 ):
     db = get_db()
     dept_oid = _require_dept_for_list(user, department_id)
-    cur = db.tasks.find({"department_id": dept_oid}).sort([("column", 1), ("priority", -1), ("updated_at", -1)])
-    items = []
-    async for doc in cur:
-        items.append(await _task_out(db, doc))
-    return {"tasks": items}
+    docs = await db.tasks.find({"department_id": dept_oid}).sort(
+        [("column", 1), ("priority", -1), ("updated_at", -1)]
+    ).to_list(length=None)
+    employee_ids = {eid for doc in docs for eid in (doc.get("assignee_employee_ids") or [])}
+    creator_ids = {doc["created_by"] for doc in docs if doc.get("created_by")}
+    names_by_employee_id = {}
+    creators_by_id = {}
+    if employee_ids or creator_ids:
+        query_parts = []
+        if employee_ids:
+            query_parts.append({"employee_id": {"$in": list(employee_ids)}})
+        if creator_ids:
+            query_parts.append({"_id": {"$in": list(creator_ids)}})
+        query = query_parts[0] if len(query_parts) == 1 else {"$or": query_parts}
+        async for person in db.users.find(query, {"employee_id": 1, "full_name": 1}):
+            names_by_employee_id[person.get("employee_id")] = person.get("full_name") or person.get("employee_id")
+            creators_by_id[person["_id"]] = {
+                "employee_id": person.get("employee_id"), "full_name": person.get("full_name")
+            }
+    return {"tasks": [_task_out(doc, names_by_employee_id, creators_by_id) for doc in docs]}
 
 
 @router.post("")
@@ -162,8 +173,13 @@ async def create_task(body: TaskCreate, user=Depends(require_roles("admin"))):
         "updated_at": now,
     }
     res = await db.tasks.insert_one(doc)
-    created = await db.tasks.find_one({"_id": res.inserted_id})
-    return await _task_out(db, created)
+    doc["_id"] = res.inserted_id
+    creator = {ObjectId(user["_id"]): {"employee_id": user.get("employee_id"), "full_name": user.get("full_name")}}
+    assignee_names = {}
+    if assignees:
+        async for person in db.users.find({"employee_id": {"$in": assignees}}, {"employee_id": 1, "full_name": 1}):
+            assignee_names[person["employee_id"]] = person.get("full_name") or person["employee_id"]
+    return _task_out(doc, assignee_names, creator)
 
 
 @router.patch("/{task_id}")
@@ -200,8 +216,18 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(require_roles
         )
 
     await db.tasks.update_one({"_id": oid}, {"$set": updates})
-    fresh = await db.tasks.find_one({"_id": oid})
-    return await _task_out(db, fresh)
+    fresh = {**doc, **updates}
+    assignee_ids = fresh.get("assignee_employee_ids") or []
+    assignee_names = {}
+    if assignee_ids:
+        async for person in db.users.find({"employee_id": {"$in": assignee_ids}}, {"employee_id": 1, "full_name": 1}):
+            assignee_names[person["employee_id"]] = person.get("full_name") or person["employee_id"]
+    creator = {}
+    if fresh.get("created_by"):
+        person = await db.users.find_one({"_id": fresh["created_by"]}, {"employee_id": 1, "full_name": 1})
+        if person:
+            creator[person["_id"]] = {"employee_id": person.get("employee_id"), "full_name": person.get("full_name")}
+    return _task_out(fresh, assignee_names, creator)
 
 
 @router.delete("/{task_id}")

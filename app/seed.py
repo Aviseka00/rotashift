@@ -43,6 +43,9 @@ async def ensure_indexes_and_seed():
         db.shift_change_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         db.shift_change_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
         db.tasks.create_index([("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING)]),
+        db.tasks.create_index(
+            [("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING), ("updated_at", DESCENDING)]
+        ),
         db.activities.create_index([("department_id", ASCENDING), ("activity_date", DESCENDING), ("created_at", DESCENDING)]),
         db.activity_uploads.create_index([("department_id", ASCENDING), ("uploaded_at", DESCENDING)]),
     )
