@@ -3,8 +3,8 @@ uvicorn[standard]==0.32.1
 motor==3.6.0
 pymongo>=4.9,<4.10
 passlib[bcrypt]==1.7.4
-# Pin bcrypt: passlib 1.7.4 + bcrypt 4.2+ can raise at runtime on some Linux/Render builds (opaque HTTP 500 on register).
-bcrypt>=4.0.1,<4.2
+# Passlib 1.7.4 reads bcrypt.__about__, which bcrypt 4.1+ removed.
+bcrypt==4.0.1
 python-jose[cryptography]==3.3.0
 python-multipart==0.0.17
 python-dotenv==1.0.1
