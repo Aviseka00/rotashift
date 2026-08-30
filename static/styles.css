@@ -3151,3 +3151,152 @@ a { color: var(--tan); }
   .assistant-bubble { max-width: 90%; }
   body.assistant-open { overflow: hidden; }
 }
+
+/* Phone-first employee and manager schedule. Some Android browsers report a
+   wide CSS viewport, so coarse-pointer portrait devices are included too. */
+@media (max-width: 1180px), (pointer: coarse) and (orientation: portrait) {
+  #schedule-block .schedule-card-stretch.schedule-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-height: 0;
+    gap: 1.15rem;
+  }
+
+  #schedule-block .schedule-card-stretch.schedule-grid > div {
+    min-height: 0;
+  }
+
+  #schedule-block .roster-schedule-col {
+    order: -1;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px), (pointer: coarse) and (orientation: portrait) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem 0.7rem;
+    padding: max(0.6rem, env(safe-area-inset-top)) 0.75rem 0.65rem;
+  }
+
+  .brand { font-size: 1.35rem; }
+  .brand::before { width: 2rem; height: 2rem; }
+
+  .topbar-actions {
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+  }
+
+  .topbar-actions .btn {
+    min-height: 36px;
+    padding: 0.45rem 0.62rem;
+    border-radius: 9px;
+    font-size: 0.74rem;
+  }
+
+  #user-slot {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: none;
+    padding: 0.45rem 0.6rem;
+    overflow: hidden;
+    border: 1px solid rgba(210, 180, 140, 0.2);
+    border-radius: 10px;
+    background: rgba(0, 21, 47, 0.48);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.72rem;
+  }
+
+  .shell { padding: 0.65rem; }
+  .dash-shell { gap: 0.7rem; }
+  .dashboard-banner { padding: 1rem; }
+  .dashboard-banner h1 { font-size: 1.42rem; }
+  .dashboard-banner p { font-size: 0.78rem; line-height: 1.5; }
+
+  .dash-nav {
+    top: 112px;
+    width: calc(100vw - 1.3rem);
+    padding: 0.32rem;
+  }
+
+  .dash-nav .dash-tab {
+    min-height: 38px;
+    padding: 0.48rem 0.75rem;
+    font-size: 0.78rem;
+  }
+
+  .card { padding: 0.9rem; border-radius: 16px; }
+  #schedule-block .schedule-card-stretch.schedule-grid { gap: 1.35rem; }
+  #schedule-block .schedule-card-stretch.schedule-grid > div:first-child {
+    padding-top: 1rem;
+    border-top: 1px solid rgba(210, 180, 140, 0.25);
+  }
+
+  .emp-schedule-quick { padding: 0.85rem; }
+  .emp-schedule-quick-lead { font-size: 0.76rem; }
+  .emp-schedule-quick-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .emp-schedule-quick-actions .btn { min-width: 0; padding-inline: 0.5rem; font-size: 0.76rem; }
+
+  #schedule-block .roster-schedule-col > h2,
+  #schedule-block .schedule-card-stretch > div:first-child > h2 {
+    font-size: 1.25rem;
+    margin-bottom: 0.35rem;
+  }
+
+  #roster-view-hint { font-size: 0.74rem; line-height: 1.45; }
+  #schedule-block .roster-schedule-col > .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.55rem;
+  }
+
+  #schedule-block .roster-schedule-col > .row > div { min-width: 0; }
+  #schedule-block .roster-schedule-col > .row > div:last-child { grid-column: 1 / -1; }
+  #schedule-block .roster-schedule-col > .row .btn { width: 100%; }
+
+  .matrix-wrap-desktop { display: none !important; }
+  .matrix-mobile-cards { display: flex !important; gap: 0.65rem; }
+  .matrix-scroll-hint { display: none !important; }
+
+  .roster-person-card {
+    padding: 0;
+    overflow: hidden;
+    border-color: rgba(210, 180, 140, 0.32);
+    border-radius: 15px;
+    background: linear-gradient(160deg, rgba(18, 59, 97, 0.96), rgba(0, 21, 47, 0.96));
+    box-shadow: 0 14px 30px -24px rgba(0, 0, 0, 0.95);
+  }
+
+  .roster-person-card-head {
+    justify-content: space-between;
+    margin: 0;
+    padding: 0.72rem 0.8rem;
+    border-bottom: 1px solid rgba(210, 180, 140, 0.2);
+    background: rgba(61, 141, 122, 0.14);
+  }
+
+  table.roster-mobile-table { font-size: 0.8rem; }
+  table.roster-mobile-table td { padding: 0.55rem 0.72rem; }
+  table.roster-mobile-table td.roster-mobile-date { width: 58%; color: rgba(255, 250, 205, 0.75); }
+  table.roster-mobile-table td.matrix-data-cell { border-left-width: 2px; font-size: 0.82rem; }
+
+  .manpower-summary-scroll {
+    width: 100%;
+    max-width: 100%;
+    max-height: 390px;
+    border-radius: 13px;
+  }
+
+  .manpower-summary-scroll table { min-width: 570px; }
+  table.manpower-summary-table td.manpower-cell { font-size: 0.76rem; }
+  table.manpower-summary-table thead th { font-size: 0.65rem; }
+
+  .assistant-fab {
+    min-height: 46px;
+    padding: 0.5rem 0.75rem 0.5rem 0.55rem;
+    font-size: 0.76rem;
+  }
+
+  .assistant-fab-mark { width: 30px; height: 30px; }
+}
