@@ -31,6 +31,28 @@ def test_tasks_health(client: TestClient, require_mongo):
     assert r.json().get("ok") is True
 
 
+def test_admin_can_bulk_delete_tasks(client: TestClient, require_mongo, admin_headers: dict[str, str]):
+    departments = client.get("/api/departments").json()["departments"]
+    department_id = departments[0]["id"]
+    task_ids = []
+    for suffix in ("one", "two"):
+        created = client.post(
+            "/api/tasks",
+            json={"title": f"Bulk delete {suffix}", "department_id": department_id},
+            headers=admin_headers,
+        )
+        assert created.status_code == 200, created.text
+        task_ids.append(created.json()["id"])
+
+    deleted = client.post(
+        "/api/tasks/bulk-delete",
+        json={"task_ids": task_ids, "department_id": department_id},
+        headers=admin_headers,
+    )
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] == 2
+
+
 def test_register_requires_admin_approval(
     client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
 ):

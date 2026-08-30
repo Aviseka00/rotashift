@@ -11,6 +11,7 @@ const state = {
   taskScope: null,
   taskBoardRequestId: 0,
   taskAssigneesByScope: new Map(),
+  selectedTaskIds: new Set(),
 };
 
 const regState = {
@@ -1594,6 +1595,7 @@ function buildTaskTableRow(task) {
   const tr = document.createElement("tr");
   tr.className = `kanban-table-tr kanban-table-tr--${col}`;
   tr.innerHTML = `
+    ${canEdit ? `<td class="kanban-table-td-select"><input type="checkbox" data-task-select="${escapeHtml(task.id)}" aria-label="Select ${escapeHtml(task.title)}" ${state.selectedTaskIds.has(task.id) ? "checked" : ""}></td>` : ""}
     <td class="kanban-table-td-status"><span class="kanban-status-pill kanban-status-pill--${col}">${escapeHtml(taskTableStatusLabel(task.column))}</span></td>
     <td class="kanban-table-td-pri"><span class="kanban-pri-pill kanban-pri-pill-${pri}">P${pri}</span></td>
     <td class="kanban-table-td-title"><strong>${escapeHtml(task.title)}</strong>${descHtml}</td>
@@ -1851,7 +1853,16 @@ function renderKanbanFromTasks(tasks) {
   const tbl = document.createElement("table");
   tbl.className = "kanban-table";
   const canEdit = tasksCanEdit();
+  const availableIds = new Set((tasks || []).map((task) => task.id));
+  state.selectedTaskIds = new Set([...state.selectedTaskIds].filter((id) => availableIds.has(id)));
+  if (canEdit) {
+    const toolbar = document.createElement("div");
+    toolbar.className = "kanban-bulk-toolbar";
+    toolbar.innerHTML = `<label><input type="checkbox" id="tasks-select-all" ${tasks.length && state.selectedTaskIds.size === tasks.length ? "checked" : ""}> Select all</label><span id="tasks-selected-count">${state.selectedTaskIds.size} selected</span><button type="button" id="tasks-delete-selected" class="btn danger" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete selected</button>`;
+    root.appendChild(toolbar);
+  }
   const theadRow = `<tr>
+    ${canEdit ? '<th scope="col" class="kanban-table-th-select"><span class="sr-only">Select</span></th>' : ""}
     <th scope="col">Status</th>
     <th scope="col">Priority</th>
     <th scope="col">Title</th>
@@ -1864,7 +1875,7 @@ function renderKanbanFromTasks(tasks) {
   if (!sorted.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = canEdit ? 5 : 4;
+    td.colSpan = canEdit ? 6 : 4;
     td.className = "kanban-table-empty";
     td.innerHTML =
       canEdit && (state.user.role !== "admin" || $("tasks-admin-dept")?.value)
@@ -1881,6 +1892,42 @@ function renderKanbanFromTasks(tasks) {
   tbl.appendChild(tb);
   wrap.appendChild(tbl);
   root.appendChild(wrap);
+
+  if (canEdit) {
+    tbl.addEventListener("change", (event) => {
+      const checkbox = event.target.closest("[data-task-select]");
+      if (!checkbox) return;
+      if (checkbox.checked) state.selectedTaskIds.add(checkbox.dataset.taskSelect);
+      else state.selectedTaskIds.delete(checkbox.dataset.taskSelect);
+      renderKanbanFromTasks(state.tasks);
+    });
+    $("tasks-select-all")?.addEventListener("change", (event) => {
+      state.selectedTaskIds = event.target.checked ? new Set(state.tasks.map((task) => task.id)) : new Set();
+      renderKanbanFromTasks(state.tasks);
+    });
+    $("tasks-delete-selected")?.addEventListener("click", deleteSelectedTasks);
+  }
+}
+
+async function deleteSelectedTasks() {
+  const ids = [...state.selectedTaskIds];
+  const departmentId = taskScopeKey();
+  if (!ids.length || !departmentId) return;
+  if (!confirm(`Delete ${ids.length} selected task${ids.length === 1 ? "" : "s"}?`)) return;
+  const previous = state.tasks;
+  state.tasks = state.tasks.filter((task) => !state.selectedTaskIds.has(task.id));
+  state.selectedTaskIds = new Set();
+  renderKanbanFromTasks(state.tasks);
+  try {
+    await api("/api/tasks/bulk-delete", {
+      method: "POST",
+      body: JSON.stringify({ task_ids: ids, department_id: departmentId }),
+    });
+  } catch (error) {
+    state.tasks = previous;
+    renderKanbanFromTasks(state.tasks);
+    alert(error.message || "Selected tasks could not be deleted.");
+  }
 }
 
 /** Load task list; retries with trailing slash if the server/proxy only exposes /api/tasks/ */

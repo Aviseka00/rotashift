@@ -102,6 +102,11 @@ class TaskUpdate(BaseModel):
     assignee_employee_ids: Optional[List[str]] = None
 
 
+class TaskBulkDelete(BaseModel):
+    task_ids: List[str] = Field(..., min_length=1, max_length=500)
+    department_id: str
+
+
 @router.get("/health")
 async def tasks_kanban_health():
     """Probe that the My Kanban API is deployed (load balancers / old images often miss new routes)."""
@@ -187,6 +192,23 @@ async def create_task(body: TaskCreate, user=Depends(require_roles("admin"))):
         async for person in db.users.find({"employee_id": {"$in": assignees}}, {"employee_id": 1, "full_name": 1}):
             assignee_names[person["employee_id"]] = person.get("full_name") or person["employee_id"]
     return _task_out(doc, assignee_names, creator)
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_tasks(body: TaskBulkDelete, user=Depends(require_roles("admin"))):
+    db = get_db()
+    try:
+        dept_oid = ObjectId(body.department_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid department_id")
+    task_oids = []
+    for raw_id in dict.fromkeys(body.task_ids):
+        try:
+            task_oids.append(ObjectId(raw_id))
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Invalid task id: {raw_id}") from None
+    result = await db.tasks.delete_many({"_id": {"$in": task_oids}, "department_id": dept_oid})
+    return {"ok": True, "deleted": result.deleted_count}
 
 
 @router.patch("/{task_id}")
