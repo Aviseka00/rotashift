@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.database import get_db
 from app.deps import get_current_user, hash_password, require_roles
@@ -17,10 +17,37 @@ class UserCreateBody(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=120)
     department_id: str
     role: Literal["employee", "manager", "admin"]
+    gmail: Optional[str] = Field(None, max_length=254)
+
+    @field_validator("gmail")
+    @classmethod
+    def validate_gmail(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_gmail(value)
 
 
 class UserResetPasswordBody(BaseModel):
     password: str = Field(..., min_length=6, max_length=128)
+
+
+class GmailBody(BaseModel):
+    gmail: Optional[str] = Field(None, max_length=254)
+
+    @field_validator("gmail")
+    @classmethod
+    def validate_gmail(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_gmail(value)
+
+
+def _normalize_gmail(value: Optional[str]) -> Optional[str]:
+    email = (value or "").strip().lower()
+    if not email:
+        return None
+    local, separator, domain = email.rpartition("@")
+    if not separator or not local or domain not in {"gmail.com", "googlemail.com"}:
+        raise ValueError("Enter a valid Gmail address ending in @gmail.com")
+    if any(ch.isspace() for ch in email) or "." not in domain:
+        raise ValueError("Enter a valid Gmail address")
+    return email
 
 
 @router.get("")
@@ -46,7 +73,7 @@ async def list_users(
 
     users = await db.users.find(
         q,
-        {"employee_id": 1, "full_name": 1, "role": 1, "department_id": 1},
+        {"employee_id": 1, "full_name": 1, "role": 1, "department_id": 1, "gmail": 1},
     ).sort("employee_id", 1).to_list(length=None)
     dept_ids = {u["department_id"] for u in users if u.get("department_id")}
     departments = {}
@@ -67,6 +94,7 @@ async def list_users(
                 "role": u["role"],
                 "department_id": str(u["department_id"]) if u.get("department_id") else None,
                 "department_name": dept_name,
+                "gmail": u.get("gmail"),
             }
         )
     return {"users": out}
@@ -94,6 +122,7 @@ async def create_user(
         "full_name": body.full_name.strip(),
         "department_id": dept_oid,
         "role": body.role,
+        "gmail": body.gmail,
         "created_at": datetime.now(timezone.utc),
         "created_by_admin": ObjectId(user["_id"]),
     }
@@ -104,7 +133,45 @@ async def create_user(
         "full_name": doc["full_name"],
         "role": body.role,
         "department_id": str(dept_oid),
+        "gmail": body.gmail,
     }
+
+
+@router.get("/meet-directory")
+async def meet_directory(user=Depends(get_current_user)):
+    """Return callable colleagues without exposing anyone outside the user's permitted scope."""
+    db = get_db()
+    if user.get("role") == "admin":
+        query = {"gmail": {"$nin": [None, ""]}}
+    elif user.get("department_id"):
+        query = {
+            "department_id": ObjectId(user["department_id"]),
+            "gmail": {"$nin": [None, ""]},
+        }
+    else:
+        return {"users": []}
+    rows = await db.users.find(
+        query, {"employee_id": 1, "full_name": 1, "department_id": 1, "gmail": 1}
+    ).sort("full_name", 1).to_list(length=500)
+    return {
+        "users": [
+            {
+                "id": str(row["_id"]),
+                "employee_id": row.get("employee_id", ""),
+                "full_name": row.get("full_name", ""),
+                "gmail": row.get("gmail"),
+                "is_me": str(row["_id"]) == str(user["_id"]),
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.patch("/me/gmail")
+async def update_my_gmail(body: GmailBody, user=Depends(get_current_user)):
+    db = get_db()
+    await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": {"gmail": body.gmail}})
+    return {"ok": True, "gmail": body.gmail}
 
 
 @router.delete("/{target_id}")

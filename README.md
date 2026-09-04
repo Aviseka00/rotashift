@@ -1,5 +1,9 @@
 # RotaShift
 
+## Free Google Meet calls
+
+Signed-in users can open **Meet calls** from the top bar, save a Gmail address, and start a Google Meet with a colleague. The app copies the recipient's Gmail address and opens `meet.google.com/new`; paste the address into Meet's **Add others** box. This uses the participants' existing Google accounts and does not require a paid telephony provider or Google API credentials. Normal Google Meet account limits still apply.
+
 Web app for department shift rosters, leave requests, and manager/admin approvals (FastAPI + MongoDB + static UI).
 
 **Repository:** `https://github.com/Aviseka00/rotashift.git`

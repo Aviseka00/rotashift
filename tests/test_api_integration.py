@@ -178,6 +178,49 @@ def test_user_can_change_own_password(
     assert new_login.status_code == 200, new_login.text
 
 
+def test_free_meet_directory_uses_saved_gmail_and_department_scope(
+    client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "meet-directory-pass-9x"
+    gmail = f"{unique_employee_id.lower()}@gmail.com"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Meet Directory QA",
+            "department_id": department_id,
+            "role": "employee",
+            "gmail": gmail,
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    employee_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    me = client.get("/api/auth/me", headers=employee_headers)
+    assert me.status_code == 200
+    assert me.json()["gmail"] == gmail
+
+    directory = client.get("/api/users/meet-directory", headers=employee_headers)
+    assert directory.status_code == 200, directory.text
+    assert any(row["employee_id"] == unique_employee_id and row["gmail"] == gmail for row in directory.json()["users"])
+
+    updated = client.patch("/api/users/me/gmail", json={"gmail": "updated.qa@gmail.com"}, headers=employee_headers)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["gmail"] == "updated.qa@gmail.com"
+
+
+def test_meet_gmail_rejects_non_gmail_address(client: TestClient, require_mongo, auth_headers: dict[str, str]):
+    response = client.patch(
+        "/api/users/me/gmail", json={"gmail": "someone@example.com"}, headers=auth_headers
+    )
+    assert response.status_code == 422
+
+
 def test_shifts_table_employee(client: TestClient, require_mongo, auth_headers: dict[str, str]):
     today = date.today()
     start = (today - timedelta(days=today.weekday())).isoformat()

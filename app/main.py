@@ -11,6 +11,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
 
 from app.config import CORS_ORIGINS_RAW, DB_NAME, DEFAULT_PLACEHOLDER_SECRET, ROTASHIFT_ENV, SECRET_KEY
+from app.database import close_client
 from app.routers import activities_api, admin_api, assistant_api, auth_api, departments_api, health_api, meta_api, requests_api, shifts_api, tasks_api, users_api
 from app.seed import ensure_indexes_and_seed
 
@@ -33,7 +34,10 @@ async def lifespan(app: FastAPI):
         print(f"Details: {type(e).__name__}: {e}")
         print("=" * 60 + "\n")
         raise
-    yield
+    try:
+        yield
+    finally:
+        close_client()
 
 
 ROOT = Path(__file__).resolve().parent.parent

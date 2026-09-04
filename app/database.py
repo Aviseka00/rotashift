@@ -31,3 +31,11 @@ def get_client() -> AsyncIOMotorClient:
 
 def get_db():
     return get_client()[DB_NAME]
+
+
+def close_client() -> None:
+    """Close and forget the client so a later app lifespan gets a fresh event-loop binding."""
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None

@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymongo.errors import DuplicateKeyError, OperationFailure, PyMongoError
 
 from app.config import DB_NAME, REGISTER_CODE_ADMIN, REGISTER_CODE_MANAGER
@@ -17,6 +17,7 @@ from app.deps import (
     verify_password,
 )
 from app.seed import ensure_default_departments_exist
+from app.routers.users_api import _normalize_gmail
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -68,6 +69,12 @@ class RegisterBody(BaseModel):
     department_name: str = Field(..., min_length=1, max_length=120)
     role: Literal["employee", "manager", "admin"] = "employee"
     registration_code: Optional[str] = None
+    gmail: Optional[str] = Field(None, max_length=254)
+
+    @field_validator("gmail")
+    @classmethod
+    def validate_gmail(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_gmail(value)
 
 
 class LoginBody(BaseModel):
@@ -131,6 +138,7 @@ async def register(body: RegisterBody):
             "department_id": dept["_id"],
             "role": body.role,
             "status": "pending",
+            "gmail": body.gmail,
             "created_at": datetime.now(timezone.utc),
         }
         try:
@@ -216,6 +224,7 @@ async def login(body: LoginBody):
             "role": role,
             "department_id": str(user["department_id"]) if user.get("department_id") else None,
             "department_name": dept["name"] if dept else None,
+            "gmail": user.get("gmail"),
         },
     }
 
@@ -233,6 +242,7 @@ async def me(user=Depends(get_current_user)):
         "role": _normalized_role(user),
         "department_id": user["department_id"],
         "department_name": dept["name"] if dept else None,
+        "gmail": user.get("gmail"),
     }
 
 
@@ -289,6 +299,7 @@ async def approve_registration(request_id: str, user=Depends(require_roles("admi
             "employee_id": item["employee_id"], "password_hash": item["password_hash"],
             "full_name": item["full_name"], "department_id": item["department_id"],
             "role": item.get("role", "employee"), "created_at": now, "approved_by": ObjectId(user["_id"]),
+            "gmail": item.get("gmail"),
         })
     except DuplicateKeyError:
         raise HTTPException(status_code=409, detail="This Employee ID already has an account.") from None

@@ -12,6 +12,7 @@ const state = {
   taskBoardRequestId: 0,
   taskAssigneesByScope: new Map(),
   selectedTaskIds: new Set(),
+  meetPeople: [],
 };
 
 const regState = {
@@ -120,9 +121,11 @@ function logout() {
   show($("dashboard-banner"), false);
   show($("logout-btn"), false);
   show($("change-password-btn"), false);
+  show($("meet-call-btn"), false);
   show($("assistant-fab"), false);
   show($("assistant-drawer"), false);
   show($("password-modal"), false);
+  show($("meet-modal"), false);
   $("user-slot").textContent = "";
   if (state.calendar) {
     state.calendar.destroy();
@@ -2184,6 +2187,7 @@ async function bootAuthenticated() {
   show($("app-section"), true);
   show($("logout-btn"), true);
   show($("change-password-btn"), true);
+  show($("meet-call-btn"), true);
   show($("assistant-fab"), true);
   $("user-slot").innerHTML = `<span class="badge ${me.role}">${me.role}</span> <strong>${escapeHtml(
     me.full_name,
@@ -2404,6 +2408,7 @@ $("register-btn").addEventListener("click", async () => {
       full_name: fullName,
       department_name: deptName,
       role: regState.role,
+      gmail: $("reg-gmail").value.trim() || null,
     };
     if (regState.role === "manager" || regState.role === "admin") {
       const code = $("reg-code")?.value?.trim() || "";
@@ -2864,12 +2869,14 @@ $("admin-add-submit").addEventListener("click", async () => {
         password: $("admin-add-pass").value,
         department_id: deptId,
         role: $("admin-add-role").value,
+        gmail: $("admin-add-gmail").value.trim() || null,
       }),
     });
     msg.textContent = "User created. They can log in with their Employee ID and password.";
     $("admin-add-emp").value = "";
     $("admin-add-name").value = "";
     $("admin-add-pass").value = "";
+    $("admin-add-gmail").value = "";
     await refreshAdminUsers();
   } catch (e) {
     msg.textContent = e.message;
@@ -3322,6 +3329,134 @@ $("change-password-btn")?.addEventListener("click", () => setPasswordModalOpen(t
 $("password-close")?.addEventListener("click", () => setPasswordModalOpen(false));
 $("password-cancel")?.addEventListener("click", () => setPasswordModalOpen(false));
 $("password-save")?.addEventListener("click", changeOwnPassword);
+
+function setMeetModalOpen(open) {
+  show($("meet-modal"), open);
+  if (!open) return;
+  $("meet-my-gmail").value = state.user?.gmail || "";
+  $("meet-message").textContent = "";
+  refreshMeetDirectory();
+}
+
+async function copyText(value) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const area = document.createElement("textarea");
+  area.value = value;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  document.execCommand("copy");
+  area.remove();
+}
+
+async function startMeetWith(person) {
+  const msg = $("meet-message");
+  try {
+    await copyText(person.gmail);
+    msg.textContent = `${person.gmail} copied. In Google Meet, choose Add others and paste it.`;
+  } catch {
+    msg.textContent = `Meet is opening. Add ${person.gmail} using Add others.`;
+  }
+  window.open("https://meet.google.com/new", "_blank", "noopener,noreferrer");
+}
+
+function emailMeetInvite(person) {
+  const subject = encodeURIComponent("Google Meet call invitation");
+  const body = encodeURIComponent(
+    `Hi ${person.full_name},\n\nI'd like to speak with you on Google Meet. I'll send the meeting link as soon as the room opens.\n\nThanks`,
+  );
+  window.open(
+    `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(person.gmail)}&su=${subject}&body=${body}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+}
+
+async function refreshMeetDirectory() {
+  const root = $("meet-directory");
+  const picker = $("meet-person-select");
+  const callSelected = $("meet-start-selected");
+  if (!root) return;
+  root.innerHTML = loadingSpinnerHTML("Loading Gmail contacts…");
+  if (picker) picker.innerHTML = '<option value="">Select a team member…</option>';
+  if (callSelected) callSelected.disabled = true;
+  try {
+    const data = await api("/api/users/meet-directory");
+    const people = (data.users || []).filter((person) => !person.is_me);
+    state.meetPeople = people;
+    root.innerHTML = "";
+    if (!people.length) {
+      root.innerHTML = '<p class="hint">No colleagues have added a Gmail address yet.</p>';
+      return;
+    }
+    people.forEach((person) => {
+      if (picker) {
+        const option = document.createElement("option");
+        option.value = person.id;
+        option.textContent = `${person.full_name} (${person.employee_id}) — ${person.gmail}`;
+        picker.appendChild(option);
+      }
+      const row = document.createElement("div");
+      row.className = "meet-person";
+      row.innerHTML = `<div class="meet-person-info"><strong>${escapeHtml(person.full_name)}</strong><span class="hint">${escapeHtml(person.employee_id)} · ${escapeHtml(person.gmail)}</span></div>`;
+      const actions = document.createElement("div");
+      actions.className = "meet-person-actions";
+      const call = document.createElement("button");
+      call.type = "button";
+      call.className = "btn";
+      call.textContent = "Start Meet";
+      call.addEventListener("click", () => startMeetWith(person));
+      const email = document.createElement("button");
+      email.type = "button";
+      email.className = "btn secondary";
+      email.textContent = "Email invite";
+      email.addEventListener("click", () => emailMeetInvite(person));
+      actions.append(call, email);
+      row.appendChild(actions);
+      root.appendChild(row);
+    });
+  } catch (e) {
+    root.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function saveMyGmail() {
+  const msg = $("meet-message");
+  try {
+    const gmail = $("meet-my-gmail").value.trim() || null;
+    const data = await api("/api/users/me/gmail", {
+      method: "PATCH",
+      body: JSON.stringify({ gmail }),
+    });
+    state.user.gmail = data.gmail;
+    msg.textContent = data.gmail ? "Gmail address saved." : "Gmail address removed.";
+    await refreshMeetDirectory();
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+}
+
+$("meet-call-btn")?.addEventListener("click", () => setMeetModalOpen(true));
+$("meet-close")?.addEventListener("click", () => setMeetModalOpen(false));
+$("meet-refresh")?.addEventListener("click", refreshMeetDirectory);
+$("meet-save-gmail")?.addEventListener("click", saveMyGmail);
+$("meet-person-select")?.addEventListener("change", () => {
+  $("meet-start-selected").disabled = !$("meet-person-select").value;
+});
+$("meet-start-selected")?.addEventListener("click", () => {
+  const person = (state.meetPeople || []).find((item) => item.id === $("meet-person-select").value);
+  if (person) startMeetWith(person);
+});
+$("meet-modal")?.addEventListener("click", (event) => {
+  if (event.target === $("meet-modal")) setMeetModalOpen(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !$("meet-modal")?.classList.contains("hidden")) setMeetModalOpen(false);
+});
 $("password-modal")?.addEventListener("click", (event) => {
   if (event.target === $("password-modal")) setPasswordModalOpen(false);
 });

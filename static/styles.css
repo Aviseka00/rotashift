@@ -215,6 +215,23 @@ a {
   width: 100%;
 }
 
+.meet-card { width: min(680px, calc(100vw - 2rem)); }
+.meet-profile-row { display: flex; gap: 0.65rem; align-items: center; }
+.meet-profile-row input { margin: 0; flex: 1 1 auto; }
+.meet-profile-row select { margin: 0; flex: 1 1 auto; }
+.meet-picker-row { margin-bottom: 0.8rem; }
+.meet-directory-head { margin-top: 1.25rem; }
+.meet-directory { display: grid; gap: 0.6rem; max-height: 48vh; overflow-y: auto; }
+.meet-person { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 12px; }
+.meet-person-info { min-width: 0; }
+.meet-person-info strong, .meet-person-info span { display: block; overflow-wrap: anywhere; }
+.meet-person-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 620px) {
+  .meet-profile-row, .meet-person { align-items: stretch; flex-direction: column; }
+  .meet-person-actions { justify-content: stretch; }
+  .meet-person-actions .btn { flex: 1 1 auto; }
+}
+
 .password-actions {
   justify-content: flex-end;
   margin-top: 1.15rem;

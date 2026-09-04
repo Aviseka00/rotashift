@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=48" />
+    <link rel="stylesheet" href="/static/styles.css?v=49" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -33,6 +33,7 @@
       <div class="brand">RotaShift</div>
       <div id="user-slot" class="hint"></div>
       <div class="topbar-actions">
+        <button type="button" id="meet-call-btn" class="btn hidden">Meet calls</button>
         <button type="button" id="change-password-btn" class="btn secondary hidden">Change password</button>
         <button type="button" id="logout-btn" class="btn secondary hidden">Log out</button>
       </div>
@@ -112,6 +113,8 @@
               <input id="reg-pass" type="password" autocomplete="new-password" placeholder="Create a secure password" />
             </div>
           </div>
+          <label for="reg-gmail">Gmail address for free Meet calls (optional)</label>
+          <input id="reg-gmail" type="email" autocomplete="email" placeholder="name@gmail.com" />
 
           <div id="reg-invite-panel" class="reg-invite-panel hidden" aria-live="polite">
             <h3 class="reg-invite-heading" id="reg-invite-heading">Organisation invite code</h3>
@@ -323,6 +326,8 @@
                   </select>
                 </div>
               </div>
+              <label for="admin-add-gmail">Gmail address for Meet calls (optional)</label>
+              <input id="admin-add-gmail" type="email" autocomplete="off" placeholder="name@gmail.com" />
               <button type="button" id="admin-add-submit" class="btn">Create user</button>
               <div id="admin-add-msg" class="hint"></div>
 
@@ -803,6 +808,34 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
           </div>
         </div>
       </div>
+
+      <div id="meet-modal" class="password-modal hidden" role="dialog" aria-modal="true" aria-labelledby="meet-title">
+        <div class="password-card meet-card">
+          <div class="password-card-head">
+            <div><span class="eyebrow">Free with Gmail</span><h2 id="meet-title">Google Meet calls</h2></div>
+            <button type="button" id="meet-close" class="icon-btn" aria-label="Close">×</button>
+          </div>
+          <p class="hint">Start a free Meet, then paste the copied Gmail address into <strong>Add others</strong>. No paid calling provider is used.</p>
+          <label for="meet-my-gmail">Your Gmail address</label>
+          <div class="meet-profile-row">
+            <input id="meet-my-gmail" type="email" autocomplete="email" placeholder="name@gmail.com" />
+            <button type="button" id="meet-save-gmail" class="btn secondary">Save</button>
+          </div>
+          <div id="meet-message" class="hint" role="status" aria-live="polite"></div>
+          <div class="section-heading-row meet-directory-head">
+            <h3>Call a team member</h3>
+            <button type="button" id="meet-refresh" class="btn secondary">Refresh</button>
+          </div>
+          <label for="meet-person-select">Choose someone from your department</label>
+          <div class="meet-profile-row meet-picker-row">
+            <select id="meet-person-select">
+              <option value="">Select a team member…</option>
+            </select>
+            <button type="button" id="meet-start-selected" class="btn" disabled>Call with Meet</button>
+          </div>
+          <div id="meet-directory" class="meet-directory"></div>
+        </div>
+      </div>
     </main>
 
     <button type="button" id="assistant-fab" class="assistant-fab hidden" aria-controls="assistant-drawer" aria-expanded="false">
@@ -829,7 +862,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=48"></script>
+    <script src="/static/app.js?v=49"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
