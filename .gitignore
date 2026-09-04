@@ -22,3 +22,5 @@ Desktop.ini
 # Local / personal
 *.docx
 rotashift-team-test.zip
+.secrets/
+client_secret_*.json

@@ -48,6 +48,8 @@ async def ensure_indexes_and_seed():
         ),
         db.activities.create_index([("department_id", ASCENDING), ("activity_date", DESCENDING), ("created_at", DESCENDING)]),
         db.activity_uploads.create_index([("department_id", ASCENDING), ("uploaded_at", DESCENDING)]),
+        db.call_notifications.create_index([("target_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        db.call_notifications.create_index("expires_at", expireAfterSeconds=0),
     )
 
     await ensure_default_departments_exist(db)

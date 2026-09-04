@@ -220,6 +220,12 @@ a {
 .meet-profile-row input { margin: 0; flex: 1 1 auto; }
 .meet-profile-row select { margin: 0; flex: 1 1 auto; }
 .meet-picker-row { margin-bottom: 0.8rem; }
+.meet-google-connect { display: flex; align-items: center; gap: 0.75rem; margin: 0.9rem 0; }
+.incoming-call-modal { z-index: 1200; }
+.incoming-call-card { max-width: 430px; text-align: center; }
+.incoming-call-pulse { width: 72px; height: 72px; margin: 0 auto 1rem; display: grid; place-items: center; border-radius: 50%; background: #22c55e; color: white; font-size: 2rem; animation: incoming-ring 1.2s ease-in-out infinite; }
+.incoming-call-actions { display: flex; justify-content: center; gap: 0.75rem; margin-top: 1.25rem; }
+@keyframes incoming-ring { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34,197,94,.45); } 50% { transform: scale(1.06); box-shadow: 0 0 0 18px rgba(34,197,94,0); } }
 .meet-directory-head { margin-top: 1.25rem; }
 .meet-directory { display: grid; gap: 0.6rem; max-height: 48vh; overflow-y: auto; }
 .meet-person { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 12px; }

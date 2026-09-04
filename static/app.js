@@ -13,6 +13,9 @@ const state = {
   taskAssigneesByScope: new Map(),
   selectedTaskIds: new Set(),
   meetPeople: [],
+  googleConnected: false,
+  incomingCallId: null,
+  incomingCallPoll: null,
 };
 
 const regState = {
@@ -126,6 +129,10 @@ function logout() {
   show($("assistant-drawer"), false);
   show($("password-modal"), false);
   show($("meet-modal"), false);
+  show($("incoming-call-modal"), false);
+  if (state.incomingCallPoll) clearInterval(state.incomingCallPoll);
+  state.incomingCallPoll = null;
+  state.incomingCallId = null;
   $("user-slot").textContent = "";
   if (state.calendar) {
     state.calendar.destroy();
@@ -2183,6 +2190,7 @@ document.querySelectorAll(".dash-tab").forEach((btn) => {
 async function bootAuthenticated() {
   const me = await api("/api/auth/me");
   state.user = me;
+  startIncomingCallPolling();
   show($("auth-section"), false);
   show($("app-section"), true);
   show($("logout-btn"), true);
@@ -3335,6 +3343,7 @@ function setMeetModalOpen(open) {
   if (!open) return;
   $("meet-my-gmail").value = state.user?.gmail || "";
   $("meet-message").textContent = "";
+  refreshGoogleStatus();
   refreshMeetDirectory();
 }
 
@@ -3355,13 +3364,46 @@ async function copyText(value) {
 
 async function startMeetWith(person) {
   const msg = $("meet-message");
-  try {
-    await copyText(person.gmail);
-    msg.textContent = `${person.gmail} copied. In Google Meet, choose Add others and paste it.`;
-  } catch {
-    msg.textContent = `Meet is opening. Add ${person.gmail} using Add others.`;
+  if (!state.googleConnected) {
+    msg.textContent = "Connect your Google account first, then press Call again.";
+    await connectGoogle();
+    return;
   }
-  window.open("https://meet.google.com/new", "_blank", "noopener,noreferrer");
+  try {
+    msg.textContent = `Creating a Meet and emailing ${person.gmail}…`;
+    const data = await api("/api/google/meet-invite", {
+      method: "POST",
+      body: JSON.stringify({ target_user_id: person.id }),
+    });
+    msg.textContent = `Invitation emailed automatically to ${data.recipient}. Opening Meet…`;
+    window.open(data.meet_url, "_blank", "noopener,noreferrer");
+  } catch (e) {
+    msg.textContent = e.message;
+    if (e.status === 409) state.googleConnected = false;
+  }
+}
+
+async function refreshGoogleStatus() {
+  const label = $("meet-google-status");
+  const button = $("meet-google-connect");
+  try {
+    const data = await api("/api/google/status");
+    state.googleConnected = Boolean(data.connected);
+    label.textContent = data.connected
+      ? `Connected as ${data.email || "Google user"}`
+      : data.configured
+        ? "Connect once to send Meet invitations automatically."
+        : "Google calling is not configured on this server.";
+    button.textContent = data.connected ? "Reconnect Google" : "Connect Google";
+    button.disabled = !data.configured;
+  } catch (e) {
+    label.textContent = e.message;
+  }
+}
+
+async function connectGoogle() {
+  const data = await api("/api/google/connect", { method: "POST" });
+  window.location.assign(data.authorization_url);
 }
 
 function emailMeetInvite(person) {
@@ -3444,6 +3486,9 @@ $("meet-call-btn")?.addEventListener("click", () => setMeetModalOpen(true));
 $("meet-close")?.addEventListener("click", () => setMeetModalOpen(false));
 $("meet-refresh")?.addEventListener("click", refreshMeetDirectory);
 $("meet-save-gmail")?.addEventListener("click", saveMyGmail);
+$("meet-google-connect")?.addEventListener("click", () => connectGoogle().catch((e) => {
+  $("meet-message").textContent = e.message;
+}));
 $("meet-person-select")?.addEventListener("change", () => {
   $("meet-start-selected").disabled = !$("meet-person-select").value;
 });
@@ -3457,6 +3502,47 @@ $("meet-modal")?.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("meet-modal")?.classList.contains("hidden")) setMeetModalOpen(false);
 });
+
+async function checkIncomingCall() {
+  if (!state.user || state.incomingCallId) return;
+  try {
+    const data = await api("/api/google/incoming-call");
+    const call = data.call;
+    if (!call) return;
+    state.incomingCallId = call.id;
+    $("incoming-call-from").textContent = `${call.caller_name} (${call.caller_employee_id}) is calling you.`;
+    show($("incoming-call-modal"), true);
+  } catch (e) {
+    console.error("Incoming call check failed:", e);
+  }
+}
+
+function startIncomingCallPolling() {
+  if (state.incomingCallPoll) clearInterval(state.incomingCallPoll);
+  checkIncomingCall();
+  state.incomingCallPoll = setInterval(checkIncomingCall, 3000);
+}
+
+async function answerIncomingCall(decision) {
+  const callId = state.incomingCallId;
+  if (!callId) return;
+  try {
+    const data = await api(`/api/google/incoming-call/${encodeURIComponent(callId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ decision }),
+    });
+    show($("incoming-call-modal"), false);
+    state.incomingCallId = null;
+    if (decision === "accepted" && data.meet_url) {
+      window.open(data.meet_url, "_blank", "noopener,noreferrer");
+    }
+  } catch (e) {
+    $("incoming-call-from").textContent = e.message;
+  }
+}
+
+$("incoming-call-accept")?.addEventListener("click", () => answerIncomingCall("accepted"));
+$("incoming-call-decline")?.addEventListener("click", () => answerIncomingCall("declined"));
 $("password-modal")?.addEventListener("click", (event) => {
   if (event.target === $("password-modal")) setPasswordModalOpen(false);
 });

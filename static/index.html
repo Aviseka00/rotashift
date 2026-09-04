@@ -815,7 +815,11 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             <div><span class="eyebrow">Free with Gmail</span><h2 id="meet-title">Google Meet calls</h2></div>
             <button type="button" id="meet-close" class="icon-btn" aria-label="Close">×</button>
           </div>
-          <p class="hint">Start a free Meet, then paste the copied Gmail address into <strong>Add others</strong>. No paid calling provider is used.</p>
+          <p class="hint">Connect Google once. Calling creates a free Meet and emails the selected colleague automatically—no paid phone provider is used.</p>
+          <div class="meet-google-connect">
+            <button type="button" id="meet-google-connect" class="btn secondary">Connect Google</button>
+            <span id="meet-google-status" class="hint">Checking Google connection…</span>
+          </div>
           <label for="meet-my-gmail">Your Gmail address</label>
           <div class="meet-profile-row">
             <input id="meet-my-gmail" type="email" autocomplete="email" placeholder="name@gmail.com" />
@@ -834,6 +838,19 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             <button type="button" id="meet-start-selected" class="btn" disabled>Call with Meet</button>
           </div>
           <div id="meet-directory" class="meet-directory"></div>
+        </div>
+      </div>
+
+      <div id="incoming-call-modal" class="password-modal incoming-call-modal hidden" role="dialog" aria-modal="true" aria-labelledby="incoming-call-title">
+        <div class="password-card incoming-call-card">
+          <div class="incoming-call-pulse" aria-hidden="true">☎</div>
+          <span class="eyebrow">Incoming RotaShift call</span>
+          <h2 id="incoming-call-title">Google Meet call</h2>
+          <p id="incoming-call-from"></p>
+          <div class="incoming-call-actions">
+            <button type="button" id="incoming-call-decline" class="btn danger">Decline</button>
+            <button type="button" id="incoming-call-accept" class="btn">Accept &amp; join</button>
+          </div>
         </div>
       </div>
     </main>
@@ -862,7 +879,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=49"></script>
+    <script src="/static/app.js?v=51"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
