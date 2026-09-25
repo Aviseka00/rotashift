@@ -100,6 +100,42 @@ def test_manager_can_request_leave_and_shift_change_for_admin_approval(
     assert approved.status_code == 200, approved.text
 
 
+def test_user_can_request_swap_from_wo_or_leave(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "swap-wo-leave-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Swap WO Leave QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    today = date.today().isoformat()
+
+    from_wo = client.post(
+        "/api/requests/shift-change",
+        json={"date": today, "from_shift": "WO", "to_shift": "A", "reason": "Work on week off"},
+        headers=headers,
+    )
+    from_leave = client.post(
+        "/api/requests/shift-change",
+        json={"date": today, "from_shift": "L", "to_shift": "G", "reason": "Cancel leave for duty"},
+        headers=headers,
+    )
+    assert from_wo.status_code == 200, from_wo.text
+    assert from_leave.status_code == 200, from_leave.text
+
+
 def test_register_requires_admin_approval(
     client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
 ):

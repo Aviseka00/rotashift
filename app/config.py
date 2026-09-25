@@ -59,8 +59,10 @@ SHIFT_DEFINITIONS = {
     "WO": {"label": "Week off", "description": "Week off"},
 }
 
-# Roster / calendar codes with clock times (employee shift-change requests stay on these only).
+# Roster / calendar codes with clock times.
 TIMED_SHIFT_CODES = frozenset(k for k, v in SHIFT_DEFINITIONS.items() if v.get("start"))
+# Shift-change / swap requests may start from or go to any roster code, including L and WO.
+SWAP_SHIFT_CODES = frozenset(SHIFT_DEFINITIONS.keys())
 
 # Canonical roster cell codes (client always merges these into pickers even if an older API omits some).
 ROSTER_SHIFT_CODES: tuple[str, ...] = tuple(SHIFT_DEFINITIONS.keys())

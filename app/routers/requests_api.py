@@ -6,7 +6,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.config import TIMED_SHIFT_CODES
+from app.config import SWAP_SHIFT_CODES
 from app.database import get_db
 from app.deps import get_current_user, require_roles
 
@@ -141,8 +141,8 @@ class LeaveCreate(BaseModel):
 
 class ShiftChangeCreate(BaseModel):
     date: str
-    from_shift: str = Field(..., pattern="^[ABCG]$")
-    to_shift: str = Field(..., pattern="^[ABCG]$")
+    from_shift: str = Field(..., pattern="^(A|B|C|G|L|WO)$")
+    to_shift: str = Field(..., pattern="^(A|B|C|G|L|WO)$")
     reason: str = Field("", max_length=2000)
 
 
@@ -269,8 +269,10 @@ async def create_shift_change(body: ShiftChangeCreate, user=Depends(get_current_
         raise HTTPException(status_code=400, detail="User must belong to a department")
     fs = body.from_shift.upper()
     ts = body.to_shift.upper()
-    if fs not in TIMED_SHIFT_CODES or ts not in TIMED_SHIFT_CODES:
-        raise HTTPException(status_code=400, detail="Invalid shift codes (use A, B, C, or G)")
+    if fs not in SWAP_SHIFT_CODES or ts not in SWAP_SHIFT_CODES:
+        raise HTTPException(status_code=400, detail="Invalid shift codes (use A, B, C, G, L, or WO)")
+    if fs == ts:
+        raise HTTPException(status_code=400, detail="Choose a different shift to swap to")
     doc = {
         "user_id": ObjectId(user["_id"]),
         "department_id": ObjectId(user["department_id"]),

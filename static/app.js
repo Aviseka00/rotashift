@@ -180,15 +180,16 @@ async function loadMeta() {
   });
   ["chg-from", "chg-to"].forEach((id) => {
     const sel = $(id);
+    if (!sel) return;
+    const cur = sel.value;
     sel.innerHTML = "";
-    Object.keys(state.shiftLegend).forEach((c) => {
-      const inf = state.shiftLegend[c];
-      if (!inf || !inf.start || !inf.end) return;
+    matrixShiftCodes().forEach((c) => {
       const o = document.createElement("option");
       o.value = c;
-      o.textContent = `${c} (${inf.start}–${inf.end})`;
+      o.textContent = shiftOptionLabel(c);
       sel.appendChild(o);
     });
+    if (cur && [...sel.options].some((opt) => opt.value === cur)) sel.value = cur;
   });
   fillMgrAssignShiftSelect();
 }
