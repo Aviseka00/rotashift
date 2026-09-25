@@ -14,6 +14,9 @@ def test_meta_shifts_no_db(client: TestClient):
     assert r.status_code == 200
     data = r.json()
     assert "shifts" in data and "A" in data["shifts"]
+    assert data["shifts"]["C"]["start"] == "10:00"
+    assert data["shifts"]["C"]["end"] == "06:30"
+    assert data["shifts"]["C"].get("overnight") is True
 
 
 def test_meta_seed_departments(client: TestClient):

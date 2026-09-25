@@ -16,6 +16,10 @@ const state = {
   googleConnected: false,
   incomingCallId: null,
   incomingCallPoll: null,
+  rosterRequest: null,
+  taskNotifyPoll: null,
+  taskNotifyItems: [],
+  taskNotifyOpen: false,
 };
 
 const regState = {
@@ -133,6 +137,10 @@ function logout() {
   if (state.incomingCallPoll) clearInterval(state.incomingCallPoll);
   state.incomingCallPoll = null;
   state.incomingCallId = null;
+  stopKanbanActivityPolling();
+  show($("notify-wrap"), false);
+  closeNotifyPanel();
+  closeRosterRequestModal();
   $("user-slot").textContent = "";
   if (state.calendar) {
     state.calendar.destroy();
@@ -395,10 +403,10 @@ function updateDashboardBanner() {
         : "Administrator dashboard";
   sub.textContent =
     role === "employee"
-      ? "Schedule shows your department rota. My Kanban is your team’s shared task board (priorities & owners). Use My requests for leave and shift changes."
+      ? "Today is your home: shift, tasks, and one-tap leave or swap. Open Schedule for the full roster."
       : role === "manager"
-        ? "View your department schedule and manage employee shifts. Account and department administration is reserved for administrators."
-        : "Tabs: Departments · People · Approvals · Activity · My Kanban (per-department board) · Schedule · Manage shifts.";
+        ? "Today shows coverage, pending approvals, and your work. Approve with a coverage warning before you decide."
+        : "Today summarizes pending work. Departments, People, Approvals, and the roster stay one tap away.";
   show(banner, true);
 }
 
@@ -482,6 +490,36 @@ async function initCalendar() {
     },
   });
   state.calendar.render();
+}
+
+function isoLocalDate(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDaysIso(iso, days) {
+  const d = new Date(`${String(iso).slice(0, 10)}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return isoLocalDate(d);
+}
+
+function formatFriendlyDay(iso) {
+  try {
+    const d = new Date(`${String(iso).slice(0, 10)}T12:00:00`);
+    return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function shiftHoursLabel(code) {
+  const inf = state.shiftLegend?.[String(code || "").toUpperCase()];
+  if (inf?.start && inf?.end) return `${inf.start}–${inf.end}`;
+  if (inf?.description) return inf.description;
+  if (inf?.label) return inf.label;
+  return "";
 }
 
 function setDefaultTableRange() {
@@ -681,7 +719,10 @@ function paintMatrixDataCell(td, code, editable) {
   }
   if (editable) {
     td.classList.add("matrix-cell-editable");
-    td.title = "Tap to choose A, B, C, G, L (leave), or WO (week off)";
+    td.title =
+      state.user?.role === "employee"
+        ? "Tap to request leave or a shift change for this day"
+        : "Tap to choose A, B, C, G, L (leave), or WO (week off)";
   }
 }
 
@@ -718,9 +759,95 @@ async function saveMatrixCellShift(td, shiftCode) {
   await refreshTable();
 }
 
+function fillRosterRequestSelect(fromCode) {
+  const sel = $("roster-request-to");
+  if (!sel) return;
+  sel.innerHTML = "";
+  matrixShiftCodes().forEach((code) => {
+    if (code === fromCode) return;
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = code === "L" ? "Leave (L)" : shiftOptionLabel(code);
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some((o) => o.value === "L")) sel.value = "L";
+}
+
+function closeRosterRequestModal() {
+  show($("roster-request-modal"), false);
+  state.rosterRequest = null;
+  const msg = $("roster-request-msg");
+  if (msg) msg.textContent = "";
+}
+
+function openRosterRequestModal(td) {
+  const date = td.dataset.date;
+  const fromCode = (td.dataset.shiftCode || "").trim().toUpperCase();
+  state.rosterRequest = { date, fromCode };
+  fillRosterRequestSelect(fromCode);
+  const meta = $("roster-request-meta");
+  if (meta) {
+    const hours = fromCode ? shiftHoursLabel(fromCode) : "not assigned";
+    meta.textContent = `${formatFriendlyDay(date)} · currently ${fromCode || "—"} ${hours ? `(${hours})` : ""}`;
+  }
+  if ($("roster-request-reason")) $("roster-request-reason").value = "";
+  const msg = $("roster-request-msg");
+  if (msg) msg.textContent = "";
+  show($("roster-request-modal"), true);
+}
+
+async function submitRosterCellRequest() {
+  const req = state.rosterRequest;
+  const msg = $("roster-request-msg");
+  if (!req) return;
+  const toCode = $("roster-request-to")?.value;
+  const reason = $("roster-request-reason")?.value || "";
+  if (!toCode) {
+    if (msg) msg.textContent = "Choose a new code.";
+    return;
+  }
+  if (msg) msg.textContent = "Submitting…";
+  try {
+    if (toCode === "L") {
+      await api("/api/requests/leave", {
+        method: "POST",
+        body: JSON.stringify({ start_date: req.date, end_date: req.date, reason }),
+      });
+    } else {
+      const fromShift = req.fromCode && matrixShiftCodes().includes(req.fromCode) ? req.fromCode : "WO";
+      if (fromShift === toCode) throw new Error("Choose a different shift.");
+      await api("/api/requests/shift-change", {
+        method: "POST",
+        body: JSON.stringify({
+          date: req.date,
+          from_shift: fromShift,
+          to_shift: toCode,
+          reason,
+        }),
+      });
+    }
+    closeRosterRequestModal();
+    showEmployeeRequestNotice(
+      toCode === "L"
+        ? `Leave requested for ${req.date}. Track it under My requests.`
+        : `Shift change requested: ${req.fromCode || "—"} → ${toCode} on ${req.date}.`,
+      "success",
+    );
+    refreshEmployeeRequestLog().catch(() => {});
+    refreshTodayHome().catch(() => {});
+    activateDashTab(state.user?.role === "manager" ? "manager" : "employee", "requests");
+  } catch (e) {
+    if (msg) msg.textContent = e.message || String(e);
+  }
+}
+
 function openMatrixCellEditor(td) {
   if (!td || td.classList.contains("sticky")) return;
   if (!canEditMatrixCell(td.dataset.employeeId)) return;
+  if (state.user?.role === "employee") {
+    openRosterRequestModal(td);
+    return;
+  }
   restoreOpenMatrixCellEditor();
   const current = (td.dataset.shiftCode || "").trim().toUpperCase();
   const sel = document.createElement("select");
@@ -970,9 +1097,33 @@ async function refreshTable() {
   await refreshManpowerSummary();
 }
 
+function managerDeptRequestsUrl(kind) {
+  if (state.user?.role === "manager") return `/api/requests/${kind}?scope=department`;
+  return `/api/requests/${kind}`;
+}
+
+async function fetchCoveragePreview(kind, id) {
+  try {
+    return await api(`/api/requests/coverage-preview?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+function coverageBannerHtml(preview) {
+  if (!preview) return "";
+  if (preview.warnings && preview.warnings.length) {
+    return `<div class="coverage-warn">${preview.warnings.map((w) => escapeHtml(w)).join("<br/>")}</div>`;
+  }
+  return `<div class="coverage-ok">Coverage stays healthy if you approve this.</div>`;
+}
+
 async function refreshManagerQueues() {
   if (!state.user || !["manager", "admin"].includes(state.user.role)) return;
-  const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
+  const [lv, ch] = await Promise.all([
+    api(managerDeptRequestsUrl("leave")),
+    api(managerDeptRequestsUrl("shift-change")),
+  ]);
 
   if (state.user.role === "admin") {
     const summary = $("admin-pending-summary");
@@ -997,7 +1148,8 @@ async function refreshManagerQueues() {
         ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
         : "";
     div.innerHTML = `<div>${deptBadge}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
-      <div>${r.start_date} → ${r.end_date}</div><div class="hint">${escapeHtml(r.reason || "")}</div>`;
+      <div>${r.start_date} → ${r.end_date}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
+      <div class="coverage-slot" data-coverage-kind="leave" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
     if (state.user.role === "manager" || state.user.role === "admin") {
       const actions = document.createElement("div");
       actions.className = "req-actions";
@@ -1009,6 +1161,11 @@ async function refreshManagerQueues() {
   });
   box.querySelectorAll('button[data-kind="leave"]').forEach((btn) => {
     btn.addEventListener("click", () => decideLeave(btn.dataset.id, btn.dataset.status));
+  });
+  box.querySelectorAll("[data-coverage-kind]").forEach((slot) => {
+    fetchCoveragePreview(slot.dataset.coverageKind, slot.dataset.coverageId).then((preview) => {
+      slot.innerHTML = coverageBannerHtml(preview);
+    });
   });
 
   const cbox = $("mgr-change-list");
@@ -1022,7 +1179,8 @@ async function refreshManagerQueues() {
         ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
         : "";
     div.innerHTML = `<div>${deptChg}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
-      <div>${r.date}: ${r.from_shift} → ${r.to_shift}</div><div class="hint">${escapeHtml(r.reason || "")}</div>`;
+      <div>${r.date}: ${r.from_shift} → ${r.to_shift}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
+      <div class="coverage-slot" data-coverage-kind="shift" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
     const actions = document.createElement("div");
     actions.className = "req-actions";
     actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="chg" data-status="approved">Approve</button>
@@ -1032,6 +1190,11 @@ async function refreshManagerQueues() {
   });
   cbox.querySelectorAll('button[data-kind="chg"]').forEach((btn) => {
     btn.addEventListener("click", () => decideChange(btn.dataset.id, btn.dataset.status));
+  });
+  cbox.querySelectorAll("[data-coverage-kind]").forEach((slot) => {
+    fetchCoveragePreview(slot.dataset.coverageKind, slot.dataset.coverageId).then((preview) => {
+      slot.innerHTML = coverageBannerHtml(preview);
+    });
   });
 }
 
@@ -1080,7 +1243,7 @@ function showEmployeeRequestNotice(message, kind) {
 }
 
 async function refreshEmployeeRequestLog() {
-  if (!state.user || state.user.role !== "employee") return;
+  if (!state.user || !["employee", "manager"].includes(state.user.role)) return;
   const box = $("emp-request-log");
   if (!box) return;
   box.innerHTML = loadingSpinnerHTML("Loading your requests…");
@@ -1140,7 +1303,15 @@ async function refreshEmployeeRequestLog() {
   }
 }
 
+async function confirmCoverageIfNeeded(kind, id, status) {
+  if (status !== "approved") return true;
+  const preview = await fetchCoveragePreview(kind, id);
+  if (!preview?.warnings?.length) return true;
+  return window.confirm(`${preview.warnings.join("\n\n")}\n\nApprove anyway?`);
+}
+
 async function decideLeave(id, status) {
+  if (!(await confirmCoverageIfNeeded("leave", id, status))) return;
   await api(`/api/requests/leave/${id}/decide`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
@@ -1148,6 +1319,7 @@ async function decideLeave(id, status) {
   await refreshManagerQueues();
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
+  await refreshTodayHome().catch(() => {});
   if (state.user.role === "admin") await refreshAdminRequestLog();
   if (state.user.role === "manager") {
     await refreshManagerRequestLog();
@@ -1157,6 +1329,7 @@ async function decideLeave(id, status) {
 }
 
 async function decideChange(id, status) {
+  if (!(await confirmCoverageIfNeeded("shift", id, status))) return;
   await api(`/api/requests/shift-change/${id}/decide`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
@@ -1164,6 +1337,7 @@ async function decideChange(id, status) {
   await refreshManagerQueues();
   if (state.calendar) state.calendar.refetchEvents();
   await refreshTable();
+  await refreshTodayHome().catch(() => {});
   if (state.user.role === "admin") await refreshAdminRequestLog();
   if (state.user.role === "manager") {
     await refreshManagerRequestLog();
@@ -1291,7 +1465,10 @@ async function fetchAndRenderManagerDeptRequestLog(leaveBox, shiftBox, showDeptC
   leaveBox.innerHTML = loadingSpinnerHTML("Loading leave history…");
   shiftBox.innerHTML = loadingSpinnerHTML("Loading shift changes…");
   try {
-    const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
+    const [lv, ch] = await Promise.all([
+      api(managerDeptRequestsUrl("leave")),
+      api(managerDeptRequestsUrl("shift-change")),
+    ]);
     renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn);
   } catch (e) {
     leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
@@ -1791,6 +1968,14 @@ function tasksCanEdit() {
   return state.user?.role === "admin";
 }
 
+function tasksCanCreate() {
+  return state.user?.role === "admin" || state.user?.role === "manager";
+}
+
+function tasksCanMove() {
+  return Boolean(state.user);
+}
+
 function taskScopeKey() {
   if (!state.user) return null;
   return state.user.role === "admin" ? ($("tasks-admin-dept")?.value || null) : state.user.department_id;
@@ -1819,10 +2004,10 @@ function updateTasksBoardUiForRole() {
   if (hint) {
     hint.textContent =
       role === "employee"
-        ? "The task table (top) lists your department’s work in strong colors by status and priority — managers update rows below."
+        ? "Your cards are listed first. Drag them between columns — or use the buttons. Outlined cards are yours."
         : role === "manager"
-          ? "Use the high-contrast table first, then add or change tasks below. Priority 5 = most urgent; rows sort by status then priority."
-          : "Pick a department, then read the table. Everyone in that department sees the same rows; you and managers can add tasks under the table.";
+          ? "Your cards first. Drag to move work. Add tasks below. Priority 5 is most urgent."
+          : "Pick a department to open its board. Your cards appear first; drag to move them.";
   }
   if (adminWrap) show(adminWrap, role === "admin");
   if (createPanel) show(createPanel, role === "manager" || role === "admin");
@@ -1830,7 +2015,7 @@ function updateTasksBoardUiForRole() {
 
 async function loadTaskAssigneeOptions() {
   const sel = $("task-new-assignees");
-  if (!sel || !tasksCanEdit()) return;
+  if (!sel || !tasksCanCreate()) return;
   const role = state.user.role;
   const scope = taskScopeKey();
   if (!scope) {
@@ -1865,57 +2050,105 @@ async function loadTaskAssigneeOptions() {
   }
 }
 
+function taskIsMine(task) {
+  const mine = String(state.user?.employee_id || "").toUpperCase();
+  if (!mine) return false;
+  return (task.assignee_employee_ids || []).some((id) => String(id || "").toUpperCase() === mine);
+}
+
+function sortKanbanColumnTasks(items) {
+  return [...items].sort((a, b) => {
+    const mineA = taskIsMine(a) ? 0 : 1;
+    const mineB = taskIsMine(b) ? 0 : 1;
+    if (mineA !== mineB) return mineA - mineB;
+    return (Number(b.priority) || 0) - (Number(a.priority) || 0);
+  });
+}
+
+function buildKanbanCard(task) {
+  const pri = Math.min(5, Math.max(1, Number(task.priority) || 3));
+  const canEdit = tasksCanEdit();
+  const canMove = tasksCanMove();
+  const mine = taskIsMine(task);
+  const rawDesc = (task.description || "").trim();
+  const people =
+    task.assignee_names && task.assignee_names.length
+      ? task.assignee_names.map((n) => escapeHtml(n)).join(", ")
+      : "Unassigned";
+  const moveBtns = canMove
+    ? TASK_COLUMNS.map((c) =>
+        c.id === task.column
+          ? ""
+          : `<button type="button" class="kanban-table-act" data-task-move="${escapeHtml(task.id)}" data-col="${c.id}">${escapeHtml(c.label)}</button>`,
+      ).join("")
+    : "";
+  const delBtn = canEdit
+    ? `<button type="button" class="kanban-table-act kanban-table-act-del" data-task-del="${escapeHtml(task.id)}">Delete</button>`
+    : "";
+  const actions = moveBtns || delBtn ? `<div class="kanban-card-actions">${moveBtns}${delBtn}</div>` : "";
+  const select = canEdit
+    ? `<label class="kanban-card-select"><input type="checkbox" data-task-select="${escapeHtml(task.id)}" ${state.selectedTaskIds.has(task.id) ? "checked" : ""} aria-label="Select ${escapeHtml(task.title)}" /></label>`
+    : "";
+  const card = document.createElement("article");
+  card.className = `kanban-card${mine ? " kanban-card--mine" : ""}`;
+  card.dataset.taskId = task.id;
+  if (canMove) card.draggable = true;
+  card.innerHTML = `
+    <header class="kanban-card-head">
+      ${select}
+      <span class="kanban-pri-pill kanban-pri-pill-${pri}">P${pri}</span>
+      <strong>${escapeHtml(task.title)}${mine ? '<span class="kanban-mine-chip">Yours</span>' : ""}</strong>
+    </header>
+    ${rawDesc ? `<p class="kanban-card-desc">${escapeHtml(rawDesc.slice(0, 160))}${rawDesc.length > 160 ? "…" : ""}</p>` : ""}
+    <p class="kanban-card-people">${people}</p>
+    ${actions}`;
+  return card;
+}
+
 function renderKanbanFromTasks(tasks) {
   const root = $("tasks-kanban");
   if (!root) return;
   root.innerHTML = "";
-  const wrap = document.createElement("div");
-  wrap.className = "kanban-table-scroll";
-  const tbl = document.createElement("table");
-  tbl.className = "kanban-table";
   const canEdit = tasksCanEdit();
-  const availableIds = new Set((tasks || []).map((task) => task.id));
+  const list = tasks || [];
+  const availableIds = new Set(list.map((task) => task.id));
   state.selectedTaskIds = new Set([...state.selectedTaskIds].filter((id) => availableIds.has(id)));
   if (canEdit) {
     const toolbar = document.createElement("div");
     toolbar.className = "kanban-bulk-toolbar";
-    toolbar.innerHTML = `<label><input type="checkbox" id="tasks-select-all" ${tasks.length && state.selectedTaskIds.size === tasks.length ? "checked" : ""}> Select all</label><span id="tasks-selected-count">${state.selectedTaskIds.size} selected</span><button type="button" id="tasks-delete-selected" class="btn danger" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete selected</button>`;
+    toolbar.innerHTML = `<label><input type="checkbox" id="tasks-select-all" ${list.length && state.selectedTaskIds.size === list.length ? "checked" : ""}> Select all</label><span id="tasks-selected-count">${state.selectedTaskIds.size} selected</span><button type="button" id="tasks-delete-selected" class="btn danger" ${state.selectedTaskIds.size ? "" : "disabled"}>Delete selected</button>`;
     root.appendChild(toolbar);
   }
-  const theadRow = `<tr>
-    ${canEdit ? '<th scope="col" class="kanban-table-th-select"><span class="sr-only">Select</span></th>' : ""}
-    <th scope="col">Status</th>
-    <th scope="col">Priority</th>
-    <th scope="col">Title</th>
-    <th scope="col">Responsible</th>
-    ${canEdit ? '<th scope="col">Actions</th>' : ""}
-  </tr>`;
-  tbl.innerHTML = `<thead>${theadRow}</thead>`;
-  const tb = document.createElement("tbody");
-  const sorted = sortedTasksForTable(tasks);
-  if (!sorted.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = canEdit ? 6 : 4;
-    td.className = "kanban-table-empty";
-    td.innerHTML =
-      canEdit && (state.user.role !== "admin" || $("tasks-admin-dept")?.value)
-        ? "No tasks in this table yet — add one in <strong>New task</strong> below."
-        : "No tasks in this table yet.";
-    tr.appendChild(td);
-    tb.appendChild(tr);
-  } else {
-    sorted.forEach((t) => tb.appendChild(buildTaskTableRow(t)));
-    if (canEdit) {
-      tb.addEventListener("click", onTaskTableActionClick);
-    }
-  }
-  tbl.appendChild(tb);
-  wrap.appendChild(tbl);
-  root.appendChild(wrap);
 
+  const board = document.createElement("div");
+  board.className = "kanban-board";
+  TASK_COLUMNS.forEach((col) => {
+    const items = sortKanbanColumnTasks(
+      list.filter((t) => (TASK_TABLE_COL_ORDER[t.column] !== undefined ? t.column : "todo") === col.id),
+    );
+    const section = document.createElement("section");
+    section.className = `kanban-col kanban-col--${col.id}`;
+    section.innerHTML = `<header class="kanban-col-head"><h4>${escapeHtml(col.label)}</h4><span class="kanban-col-count">${items.length}</span></header>`;
+    const body = document.createElement("div");
+    body.className = "kanban-col-body";
+    body.dataset.col = col.id;
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "kanban-col-empty";
+      empty.textContent = "No cards here yet.";
+      body.appendChild(empty);
+    } else {
+      items.forEach((task) => body.appendChild(buildKanbanCard(task)));
+    }
+    section.appendChild(body);
+    board.appendChild(section);
+  });
+  root.appendChild(board);
+
+  board.addEventListener("click", onTaskTableActionClick);
+  bindKanbanDrag(board);
   if (canEdit) {
-    tbl.addEventListener("change", (event) => {
+    board.addEventListener("change", (event) => {
       const checkbox = event.target.closest("[data-task-select]");
       if (!checkbox) return;
       if (checkbox.checked) state.selectedTaskIds.add(checkbox.dataset.taskSelect);
@@ -1928,6 +2161,45 @@ function renderKanbanFromTasks(tasks) {
     });
     $("tasks-delete-selected")?.addEventListener("click", deleteSelectedTasks);
   }
+}
+
+function bindKanbanDrag(board) {
+  if (!tasksCanMove() || !board) return;
+  board.querySelectorAll(".kanban-card[draggable='true']").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      if (event.target.closest("button, input, select, textarea, a")) {
+        event.preventDefault();
+        return;
+      }
+      card.classList.add("kanban-card--dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", card.dataset.taskId || "");
+    });
+    card.addEventListener("dragend", () => card.classList.remove("kanban-card--dragging"));
+  });
+  board.querySelectorAll(".kanban-col-body").forEach((body) => {
+    body.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      body.classList.add("kanban-col-drop");
+      event.dataTransfer.dropEffect = "move";
+    });
+    body.addEventListener("dragleave", (event) => {
+      if (!body.contains(event.relatedTarget)) body.classList.remove("kanban-col-drop");
+    });
+    body.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      body.classList.remove("kanban-col-drop");
+      const id = event.dataTransfer.getData("text/plain");
+      const col = body.dataset.col;
+      if (!id || !col) return;
+      const task = (state.tasks || []).find((t) => t.id === id);
+      if (!task || task.column === col) return;
+      const fakeBtn = document.createElement("button");
+      fakeBtn.setAttribute("data-task-move", id);
+      fakeBtn.setAttribute("data-col", col);
+      await onTaskTableActionClick({ target: fakeBtn });
+    });
+  });
 }
 
 async function deleteSelectedTasks() {
@@ -2012,7 +2284,7 @@ async function refreshTasksBoard() {
   if (!root || !state.user) return;
   const role = state.user.role;
   const scope = taskScopeKey();
-  let path = "/api/tasks";
+  let path = "/api/tasks?include_members=true";
   if (role === "admin") {
     const did = $("tasks-admin-dept")?.value;
     if (!did) {
@@ -2021,7 +2293,7 @@ async function refreshTasksBoard() {
         '<p class="my-kanban-empty">Choose a department above to open its <strong>My Kanban</strong> board.</p>';
       return;
     }
-    path += `?department_id=${encodeURIComponent(did)}&include_members=true`;
+    path = `/api/tasks?department_id=${encodeURIComponent(did)}&include_members=true`;
   }
   setTasksKanbanBanner("", "");
   const requestId = ++state.taskBoardRequestId;
@@ -2035,7 +2307,7 @@ async function refreshTasksBoard() {
     if (requestId !== state.taskBoardRequestId) return;
     state.tasks = data.tasks || [];
     state.taskScope = scope;
-    if (role === "admin" && Array.isArray(data.members)) {
+    if (Array.isArray(data.members)) {
       state.taskAssigneesByScope.set(scope, data.members);
       renderTaskAssigneeOptions(data.members);
     }
@@ -2077,6 +2349,283 @@ function mountShiftPanels(role) {
   }
 }
 
+function todayMountEl() {
+  const role = state.user?.role;
+  if (role === "manager") return $("mgr-today-mount");
+  if (role === "admin") return $("adm-today-mount");
+  return $("emp-today-mount");
+}
+
+function findOwnRosterCodes(tableData, employeeId) {
+  const mine = String(employeeId || "").toUpperCase();
+  const row = (tableData?.rows || []).find((r) => String(r.employee_id || "").toUpperCase() === mine);
+  return row?.cells || {};
+}
+
+function todayCodeCard(label, dateIso, code) {
+  const hours = shiftHoursLabel(code);
+  return `<article class="today-shift-pill cell-${String(code || "wo").toLowerCase()}">
+    <span class="eyebrow">${escapeHtml(label)}</span>
+    <div class="today-shift-code">${escapeHtml(code || "—")}</div>
+    <div class="hint">${escapeHtml(formatFriendlyDay(dateIso))}${hours ? ` · ${escapeHtml(hours)}` : ""}</div>
+  </article>`;
+}
+
+async function fetchTodayTasks() {
+  const role = state.user?.role;
+  let path = "/api/tasks?include_members=true";
+  if (role === "admin") {
+    const did = $("tasks-admin-dept")?.value || state.departments[0]?.id;
+    if (!did) return [];
+    path = `/api/tasks?department_id=${encodeURIComponent(did)}&include_members=true`;
+  }
+  try {
+    const data = await fetchTaskBoardJson(path);
+    return data.tasks || [];
+  } catch {
+    return [];
+  }
+}
+
+async function refreshTodayHome() {
+  const root = todayMountEl();
+  if (!root || !state.user) return;
+  root.innerHTML = loadingSpinnerHTML("Loading your day…");
+  const today = isoLocalDate();
+  const tomorrow = addDaysIso(today, 1);
+  const role = state.user.role;
+  const tableParams = new URLSearchParams({ start: today, end: tomorrow });
+  if (role === "admin") {
+    const did = $("table-dept")?.value || $("tasks-admin-dept")?.value || state.departments[0]?.id;
+    if (did) tableParams.set("department_id", did);
+  }
+  const ownReqUrl = (kind) => `/api/requests/${kind}`;
+  try {
+    const [table, lvMine, chMine, tasks, lvQueue, chQueue] = await Promise.all([
+      role === "admin" && !tableParams.get("department_id")
+        ? Promise.resolve({ rows: [], dates: [today, tomorrow] })
+        : api(`/api/shifts/table?${tableParams}`),
+      api(ownReqUrl("leave")).catch(() => ({ requests: [] })),
+      api(ownReqUrl("shift-change")).catch(() => ({ requests: [] })),
+      fetchTodayTasks(),
+      role === "employee" ? Promise.resolve({ requests: [] }) : api(managerDeptRequestsUrl("leave")).catch(() => ({ requests: [] })),
+      role === "employee" ? Promise.resolve({ requests: [] }) : api(managerDeptRequestsUrl("shift-change")).catch(() => ({ requests: [] })),
+    ]);
+    if (table.shift_legend) {
+      state.shiftLegend = { ...state.shiftLegend, ...table.shift_legend };
+    }
+    const cells = findOwnRosterCodes(table, state.user.employee_id);
+    const todayCode = cells[today] || "";
+    const tomorrowCode = cells[tomorrow] || "";
+    const myTasks = (tasks || []).filter(taskIsMine);
+    const openMine = myTasks.filter((t) => t.column !== "done");
+    const pendingMine = [...(lvMine.requests || []), ...(chMine.requests || [])].filter((r) => r.status === "pending");
+    const pendingQueue = [...(lvQueue.requests || []), ...(chQueue.requests || [])].filter((r) => r.status === "pending");
+    const firstName = (state.user.full_name || "there").split(" ")[0];
+    const taskHtml = openMine.length
+      ? openMine
+          .slice(0, 5)
+          .map(
+            (t) =>
+              `<div class="today-task-item"><div><strong>${escapeHtml(t.title)}</strong><div class="hint">${escapeHtml(taskTableStatusLabel(t.column))} · P${escapeHtml(t.priority)}</div></div></div>`,
+          )
+          .join("")
+      : '<p class="hint">No open tasks assigned to you.</p>';
+    const reqHtml = pendingMine.length
+      ? pendingMine
+          .slice(0, 4)
+          .map((r) => {
+            const detail = r.start_date ? `${r.start_date} → ${r.end_date}` : `${r.date}: ${r.from_shift} → ${r.to_shift}`;
+            return `<div class="today-req-item"><div><strong>${r.start_date ? "Leave" : "Shift change"}</strong><div class="hint">${escapeHtml(detail)}</div></div><span class="badge status-pending">pending</span></div>`;
+          })
+          .join("")
+      : '<p class="hint">No pending requests.</p>';
+    const queueCard =
+      role === "employee"
+        ? ""
+        : `<section class="today-card">
+            <h3>Approvals waiting</h3>
+            <div class="today-stat-grid">
+              <div class="today-stat"><span class="hint">Pending</span><strong>${pendingQueue.length}</strong></div>
+            </div>
+            <div class="today-actions">
+              <button type="button" class="btn" data-today-go="approvals">Review approvals</button>
+            </div>
+          </section>`;
+    root.innerHTML = `
+      <section class="today-hero">
+        <span class="eyebrow">Good to see you</span>
+        <h2>${escapeHtml(firstName)}, here’s today</h2>
+        <p class="hint">${escapeHtml(state.user.department_name || "Your department")} · ${escapeHtml(formatFriendlyDay(today))}</p>
+        <div class="today-shift-row">
+          ${todayCodeCard("Today", today, todayCode)}
+          ${todayCodeCard("Tomorrow", tomorrow, tomorrowCode)}
+        </div>
+        <div class="today-actions">
+          <button type="button" class="btn" data-today-go="swap">Request swap / leave</button>
+          <button type="button" class="btn secondary" data-today-go="tasks">Open Kanban</button>
+          <button type="button" class="btn secondary" data-today-go="schedule">Full schedule</button>
+        </div>
+      </section>
+      <section class="today-card">
+        <h3>Your work</h3>
+        <div class="today-stat-grid">
+          <div class="today-stat"><span class="hint">Open tasks</span><strong>${openMine.length}</strong></div>
+          <div class="today-stat"><span class="hint">My requests</span><strong>${pendingMine.length}</strong></div>
+        </div>
+        <div class="today-task-list">${taskHtml}</div>
+      </section>
+      <section class="today-card">
+        <h3>Pending requests</h3>
+        <div class="today-req-list">${reqHtml}</div>
+        <div class="today-actions">
+          <button type="button" class="btn secondary" data-today-go="requests">My requests</button>
+        </div>
+      </section>
+      ${queueCard}`;
+    root.querySelectorAll("[data-today-go]").forEach((btn) => {
+      btn.addEventListener("click", () => handleTodayAction(btn.dataset.todayGo, today, todayCode));
+    });
+  } catch (e) {
+    root.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+  }
+}
+
+function handleTodayAction(action, today, todayCode) {
+  const dash = state.user?.role || "employee";
+  if (action === "tasks") {
+    activateDashTab(dash, "tasks");
+    return;
+  }
+  if (action === "schedule") {
+    activateDashTab(dash, "schedule");
+    return;
+  }
+  if (action === "approvals") {
+    activateDashTab(dash === "employee" ? "employee" : dash, "approvals");
+    return;
+  }
+  if (action === "requests") {
+    activateDashTab(dash === "admin" ? "admin" : dash, dash === "admin" ? "approvals" : "requests");
+    return;
+  }
+  if (action === "swap") {
+    if (dash === "employee") {
+      const fakeTd = document.createElement("td");
+      fakeTd.dataset.date = today;
+      fakeTd.dataset.shiftCode = todayCode || "";
+      fakeTd.dataset.employeeId = state.user.employee_id;
+      openRosterRequestModal(fakeTd);
+      return;
+    }
+    activateDashTab(dash, dash === "admin" ? "schedule" : "requests");
+  }
+}
+
+function kanbanSeenKey() {
+  return `rs_kanban_seen_${state.user?.employee_id || "anon"}`;
+}
+
+function readKanbanSeenAt() {
+  return localStorage.getItem(kanbanSeenKey()) || "";
+}
+
+function writeKanbanSeenAt(iso) {
+  localStorage.setItem(kanbanSeenKey(), iso || new Date().toISOString());
+}
+
+function closeNotifyPanel() {
+  state.taskNotifyOpen = false;
+  show($("notify-panel"), false);
+  $("notify-bell-btn")?.setAttribute("aria-expanded", "false");
+}
+
+function renderNotifyPanel() {
+  const list = $("notify-list");
+  if (!list) return;
+  const items = state.taskNotifyItems || [];
+  if (!items.length) {
+    list.innerHTML = '<p class="hint">No new Kanban updates.</p>';
+    return;
+  }
+  list.innerHTML = items
+    .map(
+      (t) =>
+        `<button type="button" class="notify-item" data-notify-task="${escapeHtml(t.id)}">
+          <strong>${escapeHtml(t.title)}</strong>
+          <span>${escapeHtml(taskTableStatusLabel(t.column))} · ${escapeHtml(fmtShortDateTime(t.updated_at || t.created_at))}</span>
+        </button>`,
+    )
+    .join("");
+  list.querySelectorAll("[data-notify-task]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      markKanbanActivitySeen();
+      closeNotifyPanel();
+      activateDashTab(state.user?.role || "employee", "tasks");
+    });
+  });
+}
+
+function updateNotifyBadge(count) {
+  const badge = $("notify-bell-count");
+  if (!badge) return;
+  if (count > 0) {
+    badge.textContent = count > 9 ? "9+" : String(count);
+    badge.classList.remove("hidden");
+  } else {
+    badge.textContent = "0";
+    badge.classList.add("hidden");
+  }
+}
+
+function markKanbanActivitySeen() {
+  writeKanbanSeenAt(new Date().toISOString());
+  state.taskNotifyItems = [];
+  updateNotifyBadge(0);
+  renderNotifyPanel();
+}
+
+async function pollKanbanActivity() {
+  if (!state.user) return;
+  const role = state.user.role;
+  let path = "/api/tasks?include_members=true";
+  if (role === "admin") {
+    const did = $("tasks-admin-dept")?.value || state.departments[0]?.id;
+    if (!did) return;
+    path = `/api/tasks?department_id=${encodeURIComponent(did)}&include_members=true`;
+  }
+  try {
+    const data = await fetchTaskBoardJson(path);
+    const tasks = data.tasks || [];
+    const seen = readKanbanSeenAt();
+    const fresh = tasks
+      .filter((t) => {
+        const stamp = t.updated_at || t.created_at || "";
+        return stamp && (!seen || stamp > seen);
+      })
+      .sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
+    state.taskNotifyItems = fresh.slice(0, 8);
+    updateNotifyBadge(fresh.length);
+    if (state.taskNotifyOpen) renderNotifyPanel();
+  } catch {
+    /* keep last badge */
+  }
+}
+
+function startKanbanActivityPolling() {
+  show($("notify-wrap"), true);
+  if (!readKanbanSeenAt()) writeKanbanSeenAt(new Date().toISOString());
+  pollKanbanActivity();
+  if (state.taskNotifyPoll) clearInterval(state.taskNotifyPoll);
+  state.taskNotifyPoll = setInterval(pollKanbanActivity, 40000);
+}
+
+function stopKanbanActivityPolling() {
+  if (state.taskNotifyPoll) clearInterval(state.taskNotifyPoll);
+  state.taskNotifyPoll = null;
+  state.taskNotifyItems = [];
+}
+
 function activateDashTab(dashId, tabId) {
   document.querySelectorAll(`[data-dash="${dashId}"].dash-tab`).forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tabId);
@@ -2084,6 +2633,9 @@ function activateDashTab(dashId, tabId) {
   document.querySelectorAll(`[data-dash="${dashId}"].dash-pane`).forEach((p) => {
     show(p, p.dataset.tab === tabId);
   });
+  if (tabId === "today") {
+    refreshTodayHome().catch(() => {});
+  }
   if (tabId === "schedule") {
     if ($("table-start")?.value && $("table-end")?.value) refreshTable().catch(() => {});
     if (state.user?.role === "admin") {
@@ -2120,6 +2672,7 @@ function activateDashTab(dashId, tabId) {
   if (tabId === "tasks") {
     updateTasksBoardUiForRole();
     refreshTasksBoard().catch(() => {});
+    markKanbanActivitySeen();
   }
   if (tabId === "infovalley") {
     updateInfoValleyUiForRole();
@@ -2177,9 +2730,9 @@ function applyRoleVisibility() {
     }
   }
   updateDashboardBanner();
-  if (role === "employee") activateDashTab("employee", "schedule");
-  if (role === "manager") activateDashTab("manager", "schedule");
-  if (role === "admin") activateDashTab("admin", "org");
+  if (role === "employee") activateDashTab("employee", "today");
+  if (role === "manager") activateDashTab("manager", "today");
+  if (role === "admin") activateDashTab("admin", "today");
 }
 
 document.querySelectorAll(".dash-tab").forEach((btn) => {
@@ -2254,6 +2807,7 @@ async function bootAuthenticated() {
   }
 
   applyRoleVisibility();
+  startKanbanActivityPolling();
 
   if ($("mgr-assign-date") && !$("mgr-assign-date").value) {
     $("mgr-assign-date").value = new Date().toISOString().slice(0, 10);
@@ -2294,6 +2848,7 @@ async function bootAuthenticated() {
     $("admin-go-approvals")?.addEventListener("click", () => activateDashTab("admin", "approvals"));
     $("admin-go-records")?.addEventListener("click", () => activateDashTab("admin", "records"));
     $("admin-go-shifts")?.addEventListener("click", () => activateDashTab("admin", "shifts"));
+    $("admin-go-today")?.addEventListener("click", () => activateDashTab("admin", "today"));
   }
 }
 
@@ -2350,15 +2905,19 @@ document.querySelectorAll("#reg-role-tabs button").forEach((btn) => {
   });
 });
 
-const regCodeToggle = $("reg-code-toggle");
-const regCodeInput = $("reg-code");
-if (regCodeToggle && regCodeInput) {
-  regCodeToggle.addEventListener("click", () => {
-    const isPwd = regCodeInput.type === "password";
-    regCodeInput.type = isPwd ? "text" : "password";
-    regCodeToggle.textContent = isPwd ? "Hide" : "Show";
+function bindPasswordVisibility(wrap) {
+  const input = wrap.querySelector("input");
+  const btn = wrap.querySelector(".password-toggle, .reg-code-toggle");
+  if (!input || !btn) return;
+  btn.addEventListener("click", () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    btn.textContent = show ? "Hide" : "Show";
+    btn.setAttribute("aria-label", show ? "Hide password" : "Show password");
   });
 }
+
+document.querySelectorAll(".password-input-wrap, .reg-code-input-wrap").forEach(bindPasswordVisibility);
 
 $("login-btn").addEventListener("click", async () => {
   $("login-err").classList.add("hidden");
@@ -2444,6 +3003,37 @@ $("register-btn").addEventListener("click", async () => {
 
 $("logout-btn").addEventListener("click", () => logout());
 
+$("roster-request-close")?.addEventListener("click", closeRosterRequestModal);
+$("roster-request-cancel")?.addEventListener("click", closeRosterRequestModal);
+$("roster-request-submit")?.addEventListener("click", () => submitRosterCellRequest().catch((e) => {
+  const msg = $("roster-request-msg");
+  if (msg) msg.textContent = e.message || String(e);
+}));
+$("roster-request-modal")?.addEventListener("click", (event) => {
+  if (event.target === $("roster-request-modal")) closeRosterRequestModal();
+});
+
+$("notify-bell-btn")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const open = !state.taskNotifyOpen;
+  state.taskNotifyOpen = open;
+  show($("notify-panel"), open);
+  $("notify-bell-btn")?.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) {
+    renderNotifyPanel();
+    pollKanbanActivity();
+  }
+});
+$("notify-mark-read")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  markKanbanActivitySeen();
+});
+document.addEventListener("click", (event) => {
+  if (!state.taskNotifyOpen) return;
+  if (event.target.closest("#notify-wrap")) return;
+  closeNotifyPanel();
+});
+
 $("registration-requests-refresh")?.addEventListener("click", refreshRegistrationRequests);
 $("registration-requests")?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-registration-action]");
@@ -2484,6 +3074,7 @@ $("leave-submit").addEventListener("click", async () => {
     $("leave-reason").value = "";
     await refreshEmployeeRequestLog();
     await refreshManagerQueues();
+    await refreshTodayHome().catch(() => {});
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");
   }
@@ -2511,6 +3102,7 @@ $("chg-submit").addEventListener("click", async () => {
     $("chg-reason").value = "";
     await refreshEmployeeRequestLog();
     await refreshManagerQueues();
+    await refreshTodayHome().catch(() => {});
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");
   }
@@ -3173,6 +3765,8 @@ $("task-create-btn")?.addEventListener("click", async () => {
     state.tasks = [...state.tasks, created];
     state.taskScope = taskScopeKey();
     renderKanbanFromTasks(state.tasks);
+    pollKanbanActivity().catch(() => {});
+    refreshTodayHome().catch(() => {});
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
   }

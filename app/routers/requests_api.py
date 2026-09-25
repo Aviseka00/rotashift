@@ -6,7 +6,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.config import SWAP_SHIFT_CODES
+from app.config import SWAP_SHIFT_CODES, TIMED_SHIFT_CODES
 from app.database import get_db
 from app.deps import get_current_user, require_roles
 
@@ -183,9 +183,16 @@ async def create_leave(body: LeaveCreate, user=Depends(get_current_user)):
     return {"id": str(res.inserted_id), "status": "pending"}
 
 
+def _manager_request_filter(user, scope: str | None) -> dict:
+    if (scope or "mine").strip().lower() == "department":
+        return {"department_id": _require_manager_department(user)}
+    return {"user_id": ObjectId(user["_id"])}
+
+
 @router.get("/leave")
 async def list_leave(
     department_id: str | None = Query(None),
+    scope: str | None = Query(None, description="mine (default) or department — managers only"),
     user=Depends(get_current_user),
 ):
     db = get_db()
@@ -193,7 +200,7 @@ async def list_leave(
     if role == "employee":
         cur = db.leave_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
     elif role == "manager":
-        cur = db.leave_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
+        cur = db.leave_requests.find(_manager_request_filter(user, scope)).sort("created_at", -1)
     else:
         qfilter = {}
         if department_id:
@@ -210,7 +217,7 @@ async def list_leave(
 
 
 @router.patch("/leave/{rid}/decide")
-async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
+async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("admin", "manager"))):
     db = get_db()
     try:
         oid = ObjectId(rid)
@@ -290,6 +297,7 @@ async def create_shift_change(body: ShiftChangeCreate, user=Depends(get_current_
 @router.get("/shift-change")
 async def list_shift_change(
     department_id: str | None = Query(None),
+    scope: str | None = Query(None, description="mine (default) or department — managers only"),
     user=Depends(get_current_user),
 ):
     db = get_db()
@@ -297,7 +305,7 @@ async def list_shift_change(
     if role == "employee":
         cur = db.shift_change_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
     elif role == "manager":
-        cur = db.shift_change_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
+        cur = db.shift_change_requests.find(_manager_request_filter(user, scope)).sort("created_at", -1)
     else:
         qfilter = {}
         if department_id:
@@ -314,7 +322,7 @@ async def list_shift_change(
 
 
 @router.patch("/shift-change/{rid}/decide")
-async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
+async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_roles("admin", "manager"))):
     db = get_db()
     try:
         oid = ObjectId(rid)
@@ -365,3 +373,131 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
         )
 
     return {"ok": True, "status": new_status}
+
+
+def _count_codes(shift_by_user: dict[ObjectId, str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for code in shift_by_user.values():
+        if code:
+            counts[code] = counts.get(code, 0) + 1
+    return counts
+
+
+def _weekday_name(day_iso: str) -> str:
+    try:
+        return datetime.strptime(day_iso[:10], "%Y-%m-%d").strftime("%A")
+    except Exception:
+        return day_iso
+
+
+async def _coverage_days(
+    db,
+    *,
+    dept_id: ObjectId,
+    requester_id: ObjectId,
+    days: list[str],
+    to_code: str,
+) -> dict:
+    users = await db.users.find(
+        {"department_id": dept_id},
+        {"employee_id": 1, "full_name": 1},
+    ).to_list(length=None)
+    names = {u["_id"]: u for u in users}
+    day_rows = []
+    warnings: list[str] = []
+    for day_iso in days:
+        current: dict[ObjectId, str] = {}
+        async for s in db.shifts.find({"department_id": dept_id, "date": day_iso}):
+            uid = s.get("user_id")
+            if uid:
+                current[uid] = (s.get("shift_code") or "").strip().upper()
+        after = dict(current)
+        after[requester_id] = to_code
+        before_counts = _count_codes(current)
+        after_counts = _count_codes(after)
+        from_code = current.get(requester_id) or "—"
+        available = []
+        for uid, code in current.items():
+            if uid == requester_id:
+                continue
+            if code == "WO":
+                person = names.get(uid) or {}
+                available.append(
+                    {
+                        "employee_id": person.get("employee_id", "?"),
+                        "full_name": person.get("full_name", "?"),
+                        "shift": code,
+                    }
+                )
+        available.sort(key=lambda p: ((p.get("full_name") or "").lower(), p.get("employee_id") or ""))
+        weekday = _weekday_name(day_iso)
+        for code in sorted(set(before_counts) | set(after_counts) | {from_code, to_code}):
+            if code not in TIMED_SHIFT_CODES:
+                continue
+            before_n = before_counts.get(code, 0)
+            after_n = after_counts.get(code, 0)
+            if after_n < before_n:
+                msg = f"{weekday} {code}-shift drops from {before_n} → {after_n}."
+                if after_n == 0:
+                    msg = f"{weekday} {code}-shift drops from {before_n} → 0 — nobody left on {code}."
+                if available:
+                    names_txt = ", ".join(f"{p['full_name']} ({p['employee_id']})" for p in available[:6])
+                    msg += f" Who can cover: {names_txt}."
+                else:
+                    msg += " No one on WO that day to cover."
+                warnings.append(msg)
+        day_rows.append(
+            {
+                "date": day_iso,
+                "weekday": weekday,
+                "from_code": from_code,
+                "to_code": to_code,
+                "before": before_counts,
+                "after": after_counts,
+                "available": available,
+            }
+        )
+    return {"days": day_rows, "warnings": warnings, "ok": True}
+
+
+@router.get("/coverage-preview")
+async def coverage_preview(
+    kind: str = Query(..., pattern="^(leave|shift)$"),
+    id: str = Query(..., min_length=1),
+    user=Depends(require_roles("admin", "manager")),
+):
+    db = get_db()
+    try:
+        oid = ObjectId(id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id")
+    collection = db.leave_requests if kind == "leave" else db.shift_change_requests
+    req = await collection.find_one({"_id": oid})
+    if not req:
+        raise HTTPException(status_code=404, detail="Not found")
+    if user["role"] == "manager" and str(req.get("department_id")) != user.get("department_id"):
+        raise HTTPException(status_code=403, detail="Wrong department")
+
+    if kind == "leave":
+        start_day = _parse_iso_day(req["start_date"])
+        end_day = _parse_iso_day(req["end_date"])
+        days = []
+        day = start_day
+        while day <= end_day:
+            days.append(day.isoformat())
+            day += timedelta(days=1)
+        to_code = "L"
+    else:
+        days = [req["date"][:10]]
+        to_code = (req.get("to_shift") or "").upper()
+
+    preview = await _coverage_days(
+        db,
+        dept_id=req["department_id"],
+        requester_id=req["user_id"],
+        days=days,
+        to_code=to_code,
+    )
+    preview["kind"] = kind
+    preview["request_id"] = str(req["_id"])
+    return preview

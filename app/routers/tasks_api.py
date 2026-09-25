@@ -152,7 +152,7 @@ async def list_tasks(
 
 @router.post("")
 @router.post("/")
-async def create_task(body: TaskCreate, user=Depends(require_roles("admin"))):
+async def create_task(body: TaskCreate, user=Depends(require_roles("admin", "manager"))):
     db = get_db()
     if user["role"] == "admin":
         if not body.department_id:
@@ -212,7 +212,7 @@ async def bulk_delete_tasks(body: TaskBulkDelete, user=Depends(require_roles("ad
 
 
 @router.patch("/{task_id}")
-async def update_task(task_id: str, body: TaskUpdate, user=Depends(require_roles("admin"))):
+async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_user)):
     db = get_db()
     try:
         oid = ObjectId(task_id)
@@ -226,6 +226,9 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(require_roles
     raw = body.model_dump(exclude_unset=True)
     if not raw:
         raise HTTPException(status_code=400, detail="No fields to update")
+    only_column = set(raw.keys()) <= {"column"}
+    if not only_column and user.get("role") not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Only managers and administrators can edit task details")
 
     updates: dict = {"updated_at": datetime.now(timezone.utc)}
     if "title" in raw:

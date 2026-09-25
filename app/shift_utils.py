@@ -16,7 +16,7 @@ def shift_event_window(day: date, code: str) -> tuple[datetime, datetime]:
     eh, em = map(int, info["end"].split(":"))
     start = datetime(day.year, day.month, day.day, sh, sm)
     if info.get("overnight"):
-        # e.g. C: 20:00 day D → 06:30 day D+1
+        # e.g. C: 10:00 day D → 06:30 day D+1
         end = datetime(day.year, day.month, day.day, eh, em) + timedelta(days=1)
     else:
         end = datetime(day.year, day.month, day.day, eh, em)

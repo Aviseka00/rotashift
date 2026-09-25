@@ -292,3 +292,73 @@ def test_local_assistant_answers_authenticated_user(client: TestClient, require_
     data = response.json()
     assert data["intent"] == "tasks"
     assert "task" in data["answer"].lower()
+
+
+def test_employee_can_move_kanban_column(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], auth_headers: dict[str, str]
+):
+    departments = client.get("/api/departments").json()["departments"]
+    department_id = next((d["id"] for d in departments if d.get("name") == "rota"), departments[0]["id"])
+    created = client.post(
+        "/api/tasks",
+        json={"title": "Move me", "department_id": department_id, "column": "todo"},
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["id"]
+    moved = client.patch(
+        f"/api/tasks/{task_id}",
+        json={"column": "in_progress"},
+        headers=auth_headers,
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["column"] == "in_progress"
+    blocked = client.patch(
+        f"/api/tasks/{task_id}",
+        json={"title": "Nope"},
+        headers=auth_headers,
+    )
+    assert blocked.status_code == 403
+
+
+def test_coverage_preview_and_manager_department_scope(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    today = date.today().isoformat()
+    password = "coverage-mgr-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Coverage Manager QA",
+            "department_id": department_id,
+            "role": "manager",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    manager_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    leave = client.post(
+        "/api/requests/leave",
+        json={"start_date": today, "end_date": today, "reason": "Coverage check"},
+        headers=manager_headers,
+    )
+    assert leave.status_code == 200, leave.text
+    preview = client.get(
+        "/api/requests/coverage-preview",
+        params={"kind": "leave", "id": leave.json()["id"]},
+        headers=manager_headers,
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body.get("ok") is True
+    assert body.get("days")
+
+    dept_leave = client.get("/api/requests/leave?scope=department", headers=manager_headers)
+    assert dept_leave.status_code == 200, dept_leave.text
+    assert any(item["id"] == leave.json()["id"] for item in dept_leave.json()["requests"])

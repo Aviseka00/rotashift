@@ -53,7 +53,7 @@ REGISTER_CODE_ADMIN = _registration_code("ROTASHIFT_REGISTER_CODE_ADMIN", "ADMIN
 SHIFT_DEFINITIONS = {
     "A": {"label": "A", "start": "06:00", "end": "14:30"},
     "B": {"label": "B", "start": "14:00", "end": "22:30"},
-    "C": {"label": "C", "start": "20:00", "end": "06:30", "overnight": True},
+    "C": {"label": "C", "start": "10:00", "end": "06:30", "overnight": True},
     "G": {"label": "G", "start": "09:00", "end": "17:30"},
     "L": {"label": "Leave", "description": "Leave"},
     "WO": {"label": "Week off", "description": "Week off"},

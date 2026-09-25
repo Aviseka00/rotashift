@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=49" />
+    <link rel="stylesheet" href="/static/styles.css?v=52" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -33,6 +33,19 @@
       <div class="brand">RotaShift</div>
       <div id="user-slot" class="hint"></div>
       <div class="topbar-actions">
+        <div class="notify-wrap hidden" id="notify-wrap">
+          <button type="button" id="notify-bell-btn" class="notify-bell" aria-label="Kanban activity" aria-expanded="false" aria-controls="notify-panel">
+            <span class="notify-bell-icon" aria-hidden="true">🔔</span>
+            <span id="notify-bell-count" class="notify-bell-badge hidden">0</span>
+          </button>
+          <div id="notify-panel" class="notify-panel hidden" role="menu" aria-label="Kanban updates">
+            <header class="notify-panel-head">
+              <strong>Kanban activity</strong>
+              <button type="button" id="notify-mark-read" class="btn secondary notify-mark-read">Mark read</button>
+            </header>
+            <div id="notify-list" class="notify-list"></div>
+          </div>
+        </div>
         <button type="button" id="meet-call-btn" class="btn hidden">Meet calls</button>
         <button type="button" id="change-password-btn" class="btn secondary hidden">Change password</button>
         <button type="button" id="logout-btn" class="btn secondary hidden">Log out</button>
@@ -73,7 +86,10 @@
             </div>
             <div>
               <label for="login-pass">Password</label>
-              <input id="login-pass" type="password" autocomplete="current-password" placeholder="Enter your password" />
+              <div class="password-input-wrap">
+                <input id="login-pass" type="password" autocomplete="current-password" placeholder="Enter your password" />
+                <button type="button" class="btn secondary password-toggle" aria-label="Show password">Show</button>
+              </div>
             </div>
           </div>
           <button type="button" id="login-btn" class="btn auth-submit">Log in to RotaShift</button>
@@ -110,7 +126,10 @@
             </div>
             <div>
               <label for="reg-pass">Password</label>
-              <input id="reg-pass" type="password" autocomplete="new-password" placeholder="Create a secure password" />
+              <div class="password-input-wrap">
+                <input id="reg-pass" type="password" autocomplete="new-password" placeholder="Create a secure password" />
+                <button type="button" class="btn secondary password-toggle" aria-label="Show password">Show</button>
+              </div>
             </div>
           </div>
           <label for="reg-gmail">Gmail address for free Meet calls (optional)</label>
@@ -151,12 +170,16 @@
         <!-- Employee: Schedule | My requests -->
         <div id="dash-employee" class="dash-shell hidden">
           <nav class="dash-nav" aria-label="Employee dashboard">
-            <button type="button" class="dash-tab active" data-dash="employee" data-tab="schedule">Schedule</button>
+            <button type="button" class="dash-tab active" data-dash="employee" data-tab="today">Today</button>
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="requests">My requests</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="infovalley">Info-valley</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="tasks">My Kanban</button>
           </nav>
-          <div class="dash-pane active" data-dash="employee" data-tab="schedule">
+          <div class="dash-pane active" data-dash="employee" data-tab="today">
+            <div id="emp-today-mount" class="today-mount"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="employee" data-tab="schedule">
             <div class="sched-mount" id="emp-sched-mount"></div>
           </div>
           <div class="dash-pane hidden" data-dash="employee" data-tab="requests">
@@ -228,11 +251,19 @@
         <!-- Manager: Schedule | Manage shifts | Approvals -->
         <div id="dash-manager" class="dash-shell hidden">
           <nav class="dash-nav" aria-label="Manager dashboard">
-            <button type="button" class="dash-tab active" data-dash="manager" data-tab="schedule">Schedule</button>
+            <button type="button" class="dash-tab active" data-dash="manager" data-tab="today">Today</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="requests">My requests</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="records">Approval log</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="infovalley">Info-valley</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="tasks">My Kanban</button>
           </nav>
-          <div class="dash-pane active" data-dash="manager" data-tab="schedule">
+          <div class="dash-pane active" data-dash="manager" data-tab="today">
+            <div id="mgr-today-mount" class="today-mount"></div>
+          </div>
+          <div class="dash-pane hidden" data-dash="manager" data-tab="schedule">
             <div class="sched-mount" id="mgr-sched-mount"></div>
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="shifts">
@@ -278,7 +309,8 @@
         <!-- Admin: Departments → People → Approvals → Activity → Schedule → Shifts -->
         <div id="dash-admin" class="dash-shell hidden">
           <nav class="dash-nav dash-nav-admin" aria-label="Administrator dashboard">
-            <button type="button" class="dash-tab active" data-dash="admin" data-tab="org">Departments</button>
+            <button type="button" class="dash-tab active" data-dash="admin" data-tab="today">Today</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="org">Departments</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="people">People</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="approvals">Approvals</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="records">Activity</button>
@@ -287,6 +319,9 @@
             <button type="button" class="dash-tab" data-dash="admin" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="shifts">Manage shifts</button>
           </nav>
+          <div class="dash-pane active" data-dash="admin" data-tab="today">
+            <div id="adm-today-mount" class="today-mount"></div>
+          </div>
           <div class="dash-pane hidden" data-dash="admin" data-tab="schedule">
             <div class="sched-mount" id="adm-sched-mount"></div>
           </div>
@@ -315,7 +350,10 @@
               <div class="row">
                 <div>
                   <label for="admin-add-pass">Temporary password</label>
-                  <input id="admin-add-pass" type="password" autocomplete="new-password" />
+                  <div class="password-input-wrap">
+                    <input id="admin-add-pass" type="password" autocomplete="new-password" />
+                    <button type="button" class="btn secondary password-toggle" aria-label="Show password">Show</button>
+                  </div>
                 </div>
                 <div>
                   <label for="admin-add-dept">Department</label>
@@ -425,11 +463,12 @@ Amruta Mishra	80100331</pre>
           <div class="dash-pane hidden" data-dash="admin" data-tab="infovalley">
             <div id="adm-infovalley-mount"></div>
           </div>
-          <div class="dash-pane active" data-dash="admin" data-tab="org">
+          <div class="dash-pane hidden" data-dash="admin" data-tab="org">
             <div id="admin-dash-overview" class="card admin-dash-overview hidden">
               <h2 class="admin-overview-title">Quick summary</h2>
               <p class="hint" id="admin-pending-summary">—</p>
               <div class="row admin-dash-shortcuts">
+                <button type="button" class="btn secondary" id="admin-go-today">Today home</button>
                 <button type="button" class="btn secondary" id="admin-go-schedule">Schedule &amp; calendar</button>
                 <button type="button" class="btn secondary" id="admin-go-people">People &amp; roles</button>
                 <button type="button" class="btn secondary" id="admin-go-approvals">Approvals queue</button>
@@ -499,14 +538,13 @@ Amruta Mishra	80100331</pre>
                 <span class="roster-hint-wide"
                   >Main view is a dated grid table (staff in rows, dates in columns). Scroll horizontally for more days.
                   Codes: <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong> (shifts),
-                  <strong>L</strong> (leave), <strong>WO</strong> (week off). Tap a cell to pick from the list — managers
-                  and admins can edit anyone; employees only their own row.</span
+                  <strong>L</strong> (leave), <strong>WO</strong> (week off). Employees: tap your cell to request leave
+                  or a swap. Managers and admins can assign any code directly.</span
                 >
                 <span class="roster-hint-narrow"
-                  >The dated table scrolls sideways; below it, each person also has a compact card list by day. Tap a cell
-                  to choose <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong>,
-                  <strong>L</strong> (leave), or <strong>WO</strong> (week off). Employees: only your own row is
-                  editable.</span
+                  >The dated table scrolls sideways; below it, each person also has a compact card list by day. Tap
+                  your cell to request <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong>,
+                  <strong>L</strong> (leave), or <strong>WO</strong> (week off). Managers and admins edit any row.</span
                 >
               </p>
               <div class="row">
@@ -573,13 +611,14 @@ Amruta Mishra	80100331</pre>
             </div>
           </div>
 
-          <section class="my-kanban-table-section" aria-label="Task table">
-            <h3 class="my-kanban-section-title">Task table</h3>
+          <section class="my-kanban-table-section" aria-label="Department Kanban board">
+            <h3 class="my-kanban-section-title">Department board</h3>
             <p class="hint my-kanban-section-lead">
-              Rows are color-coded by status (gray · orange · green). Priority uses gray → green → orange → red for instant contrast.
+              Your cards appear first. Drag a card to another column — or use the buttons on a phone.
+              Cards assigned to you are outlined.
             </p>
-            <div class="kanban-table-outer">
-              <section id="tasks-kanban" class="my-kanban-board" aria-label="Tasks in table form"></section>
+            <div class="kanban-table-outer kanban-board-outer">
+              <section id="tasks-kanban" class="my-kanban-board" aria-label="Department Kanban board"></section>
             </div>
           </section>
 
@@ -792,6 +831,29 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
         </div>
       </section>
 
+      <div id="roster-request-modal" class="password-modal hidden" role="dialog" aria-modal="true" aria-labelledby="roster-request-title">
+        <div class="password-card roster-request-card">
+          <div class="password-card-head">
+            <div>
+              <span class="eyebrow">One-tap request</span>
+              <h2 id="roster-request-title">Change this day</h2>
+            </div>
+            <button type="button" id="roster-request-close" class="icon-btn" aria-label="Close">×</button>
+          </div>
+          <p class="hint" id="roster-request-lead">Pick leave or a new shift. Your manager reviews it before the roster changes.</p>
+          <p class="roster-request-meta" id="roster-request-meta"></p>
+          <label for="roster-request-to">Request</label>
+          <select id="roster-request-to"></select>
+          <label for="roster-request-reason">Reason (optional)</label>
+          <textarea id="roster-request-reason" placeholder="e.g. covering for a colleague, personal leave…"></textarea>
+          <div id="roster-request-msg" class="hint" role="status" aria-live="polite"></div>
+          <div class="password-actions">
+            <button type="button" id="roster-request-cancel" class="btn secondary">Cancel</button>
+            <button type="button" id="roster-request-submit" class="btn">Submit request</button>
+          </div>
+        </div>
+      </div>
+
       <div id="password-modal" class="password-modal hidden" role="dialog" aria-modal="true" aria-labelledby="password-title">
         <div class="password-card">
           <div class="password-card-head">
@@ -800,11 +862,20 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
           </div>
           <p class="hint">Enter your current password, then choose a new password with at least 8 characters.</p>
           <label for="password-current">Current password</label>
-          <input id="password-current" type="password" autocomplete="current-password" />
+          <div class="password-input-wrap">
+            <input id="password-current" type="password" autocomplete="current-password" />
+            <button type="button" class="btn secondary password-toggle" aria-label="Show password">Show</button>
+          </div>
           <label for="password-new">New password</label>
-          <input id="password-new" type="password" autocomplete="new-password" />
+          <div class="password-input-wrap">
+            <input id="password-new" type="password" autocomplete="new-password" />
+            <button type="button" class="btn secondary password-toggle" aria-label="Show password">Show</button>
+          </div>
           <label for="password-confirm">Confirm new password</label>
-          <input id="password-confirm" type="password" autocomplete="new-password" />
+          <div class="password-input-wrap">
+            <input id="password-confirm" type="password" autocomplete="new-password" />
+            <button type="button" class="btn secondary password-toggle" aria-label="Show password">Show</button>
+          </div>
           <div id="password-message" class="hint" role="status" aria-live="polite"></div>
           <div class="password-actions">
             <button type="button" id="password-cancel" class="btn secondary">Cancel</button>
@@ -883,7 +954,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=51"></script>
+    <script src="/static/app.js?v=52"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
