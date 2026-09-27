@@ -17,6 +17,7 @@ const state = {
   incomingCallId: null,
   incomingCallPoll: null,
   rosterRequest: null,
+  compOffBalance: null,
   taskNotifyPoll: null,
   taskNotifyItems: [],
   taskNotifyOpen: false,
@@ -161,6 +162,7 @@ async function loadMeta() {
   const fillNonTimed = {
     L: { label: "Leave", description: "Leave" },
     WO: { label: "Week off", description: "Week off" },
+    CO: { label: "Comp-off", description: "Compensatory off (paid)" },
   };
   Object.entries(fillNonTimed).forEach(([k, v]) => {
     if (!state.shiftLegend[k]) state.shiftLegend[k] = v;
@@ -397,17 +399,17 @@ function updateDashboardBanner() {
   banner.classList.add(role);
   title.textContent =
     role === "employee"
-      ? "Employee dashboard"
+      ? "Your shifts"
       : role === "manager"
         ? "Manager dashboard"
         : "Administrator dashboard";
   sub.textContent =
     role === "employee"
-      ? "Today is your home: shift, tasks, and one-tap leave or swap. Open Schedule for the full roster."
+      ? "Your roster is below. Use the ⋮ menu to apply leave, swap, or comp-off."
       : role === "manager"
         ? "Today shows coverage, pending approvals, and your work. Approve with a coverage warning before you decide."
         : "Today summarizes pending work. Departments, People, Approvals, and the roster stay one tap away.";
-  show(banner, true);
+  show(banner, role !== "employee");
 }
 
 let calendarAssetsPromise = null;
@@ -672,7 +674,7 @@ async function refreshManpowerSummary() {
 }
 
 function rosterShiftCodeOrder(codes) {
-  const preferred = ["A", "B", "C", "G", "L", "WO"];
+  const preferred = ["A", "B", "C", "G", "L", "WO", "CO"];
   const upper = (codes || []).map((c) => String(c).toUpperCase());
   const seen = new Set(upper);
   const out = [];
@@ -688,7 +690,7 @@ function rosterShiftCodeOrder(codes) {
 
 /** Always include L and WO even if an older server only returned timed bands in shift legend. */
 function matrixShiftCodes() {
-  const canonical = ["A", "B", "C", "G", "L", "WO"];
+  const canonical = ["A", "B", "C", "G", "L", "WO", "CO"];
   const serverKeys = Object.keys(state.shiftLegend || {}).map((c) => String(c).toUpperCase());
   const merged = new Set([...canonical, ...serverKeys]);
   return rosterShiftCodeOrder([...merged]);
@@ -721,8 +723,8 @@ function paintMatrixDataCell(td, code, editable) {
     td.classList.add("matrix-cell-editable");
     td.title =
       state.user?.role === "employee"
-        ? "Tap to request leave or a shift change for this day"
-        : "Tap to choose A, B, C, G, L (leave), or WO (week off)";
+        ? "Tap to request leave, a shift change, or a comp-off"
+        : "Tap to choose A, B, C, G, L (leave), WO (week off), or CO (comp-off)";
   }
 }
 
@@ -763,8 +765,26 @@ function fillRosterRequestSelect(fromCode) {
   const sel = $("roster-request-to");
   if (!sel) return;
   sel.innerHTML = "";
+  const restCodes = new Set(["WO", "L"]);
+  const jointCodes = new Set(["A", "B", "C"]);
+  if (restCodes.has(fromCode) || !fromCode) {
+    const earn = document.createElement("option");
+    earn.value = "__earn";
+    earn.textContent = "Earn comp-off (I worked this rest / holiday day)";
+    sel.appendChild(earn);
+  }
+  if (jointCodes.has(fromCode)) {
+    const earn = document.createElement("option");
+    earn.value = "__earn_joint";
+    earn.textContent = `Earn comp-off (I also did a joint extra with ${fromCode})`;
+    sel.appendChild(earn);
+  }
+  const avail = document.createElement("option");
+  avail.value = "__avail";
+  avail.textContent = "Avail a saved comp-off on this day (CO)";
+  sel.appendChild(avail);
   matrixShiftCodes().forEach((code) => {
-    if (code === fromCode) return;
+    if (code === fromCode || code === "CO") return;
     const o = document.createElement("option");
     o.value = code;
     o.textContent = code === "L" ? "Leave (L)" : shiftOptionLabel(code);
@@ -808,13 +828,42 @@ async function submitRosterCellRequest() {
   }
   if (msg) msg.textContent = "Submitting…";
   try {
-    if (toCode === "L") {
+    let notice = "";
+    if (toCode === "__earn" || toCode === "__earn_joint") {
+      const from = req.fromCode || "";
+      const earnType =
+        toCode === "__earn_joint"
+          ? jointEarnTypeFor(from)
+          : from === "L"
+            ? "worked_leave"
+            : from === "WO"
+              ? "worked_wo"
+              : "worked_holiday";
+      const workedShift = toCode === "__earn_joint" ? jointExtraShift(from) : $("co-earn-shift")?.value || "A";
+      await api("/api/requests/comp-off/earn", {
+        method: "POST",
+        body: JSON.stringify({
+          work_date: req.date,
+          earn_type: earnType,
+          worked_shift: workedShift,
+          reason,
+        }),
+      });
+      notice = `Comp-off earn requested for ${req.date}. After approval, one paid day is added to your bank.`;
+    } else if (toCode === "__avail") {
+      await api("/api/requests/comp-off/avail", {
+        method: "POST",
+        body: JSON.stringify({ start_date: req.date, end_date: req.date, reason }),
+      });
+      notice = `Comp-off avail requested for ${req.date}. After approval the roster shows CO (no loss of pay).`;
+    } else if (toCode === "L") {
       await api("/api/requests/leave", {
         method: "POST",
         body: JSON.stringify({ start_date: req.date, end_date: req.date, reason }),
       });
+      notice = `Leave requested for ${req.date}. Track it under My requests.`;
     } else {
-      const fromShift = req.fromCode && matrixShiftCodes().includes(req.fromCode) ? req.fromCode : "WO";
+      const fromShift = req.fromCode && matrixShiftCodes().includes(req.fromCode) && req.fromCode !== "CO" ? req.fromCode : "WO";
       if (fromShift === toCode) throw new Error("Choose a different shift.");
       await api("/api/requests/shift-change", {
         method: "POST",
@@ -825,20 +874,32 @@ async function submitRosterCellRequest() {
           reason,
         }),
       });
+      notice = `Shift change requested: ${req.fromCode || "—"} → ${toCode} on ${req.date}.`;
     }
     closeRosterRequestModal();
-    showEmployeeRequestNotice(
-      toCode === "L"
-        ? `Leave requested for ${req.date}. Track it under My requests.`
-        : `Shift change requested: ${req.fromCode || "—"} → ${toCode} on ${req.date}.`,
-      "success",
-    );
+    showEmployeeRequestNotice(notice, "success");
     refreshEmployeeRequestLog().catch(() => {});
+    refreshCompOffBalance().catch(() => {});
     refreshTodayHome().catch(() => {});
-    activateDashTab(state.user?.role === "manager" ? "manager" : "employee", "requests");
+    activateDashTab(state.user?.role === "manager" ? "manager" : "employee", state.user?.role === "employee" ? "schedule" : "requests");
+    setEmployeeApplyPanel("status");
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
   }
+}
+
+function jointEarnTypeFor(fromCode) {
+  if (fromCode === "A") return "joint_ab";
+  if (fromCode === "B") return "joint_bc";
+  if (fromCode === "C") return "joint_ca";
+  return "joint_ab";
+}
+
+function jointExtraShift(fromCode) {
+  if (fromCode === "A") return "B";
+  if (fromCode === "B") return "C";
+  if (fromCode === "C") return "A";
+  return "A";
 }
 
 function openMatrixCellEditor(td) {
@@ -939,12 +1000,19 @@ function formatMatrixWeekdayShort(isoDate) {
   }
 }
 
+function rosterRowsForViewer(data) {
+  const rows = data?.rows || [];
+  if (state.user?.role !== "employee") return rows;
+  const mine = String(state.user.employee_id || "").toUpperCase();
+  return rows.filter((row) => String(row.employee_id || "").toUpperCase() === mine);
+}
+
 function buildMatrixMobileCards(data) {
   const root = $("matrix-cards");
   if (!root) return;
   root.innerHTML = "";
   const dates = data.dates || [];
-  const rows = data.rows || [];
+  const rows = rosterRowsForViewer(data);
   if (!dates.length) {
     root.innerHTML = "";
     return;
@@ -1051,9 +1119,12 @@ async function refreshTable() {
       tbl.insertBefore(cap, tbl.firstChild);
     }
     cap.className = "matrix-caption";
-    cap.textContent = data.department_name
-      ? `Shift roster — ${data.department_name} (rows: people · columns: dates)`
-      : "Shift roster (rows: people · columns: dates)";
+    cap.textContent =
+      state.user?.role === "employee"
+        ? "Your shifts for the selected dates"
+        : data.department_name
+          ? `Shift roster — ${data.department_name} (rows: people · columns: dates)`
+          : "Shift roster (rows: people · columns: dates)";
   }
   const hr = document.createElement("tr");
   const h0 = document.createElement("th");
@@ -1075,7 +1146,7 @@ async function refreshTable() {
     hr.appendChild(th);
   });
   thead.appendChild(hr);
-  (data.rows || []).forEach((row) => {
+  rosterRowsForViewer(data).forEach((row) => {
     const tr = document.createElement("tr");
     const td0 = document.createElement("td");
     td0.classList.add("sticky");
@@ -1118,11 +1189,19 @@ function coverageBannerHtml(preview) {
   return `<div class="coverage-ok">Coverage stays healthy if you approve this.</div>`;
 }
 
+function compOffDetail(r) {
+  if (r.kind === "earn") {
+    return `Earn ${r.earn_label || r.earn_type || "comp-off"} on ${r.work_date || "—"} (worked ${r.worked_shift || "—"})`;
+  }
+  return `Avail ${r.days || 1} day(s) ${r.start_date || "—"} → ${r.end_date || "—"}`;
+}
+
 async function refreshManagerQueues() {
   if (!state.user || !["manager", "admin"].includes(state.user.role)) return;
-  const [lv, ch] = await Promise.all([
+  const [lv, ch, co] = await Promise.all([
     api(managerDeptRequestsUrl("leave")),
     api(managerDeptRequestsUrl("shift-change")),
+    api(managerDeptRequestsUrl("comp-off")),
   ]);
 
   if (state.user.role === "admin") {
@@ -1130,10 +1209,11 @@ async function refreshManagerQueues() {
     if (summary) {
       const lp = (lv.requests || []).filter((r) => r.status === "pending").length;
       const sp = (ch.requests || []).filter((r) => r.status === "pending").length;
+      const cp = (co.requests || []).filter((r) => r.status === "pending").length;
       summary.innerHTML =
-        lp + sp === 0
-          ? '<span class="hint">No pending leave or shift-change approvals.</span>'
-          : `<strong>${lp}</strong> leave · <strong>${sp}</strong> shift change awaiting approval — open the <strong>Approvals</strong> tab.`;
+        lp + sp + cp === 0
+          ? '<span class="hint">No pending leave, shift-change, or comp-off approvals.</span>'
+          : `<strong>${lp}</strong> leave · <strong>${sp}</strong> shift change · <strong>${cp}</strong> comp-off awaiting approval — open the <strong>Approvals</strong> tab.`;
     }
   }
 
@@ -1196,6 +1276,40 @@ async function refreshManagerQueues() {
       slot.innerHTML = coverageBannerHtml(preview);
     });
   });
+
+  const cobox = $("mgr-compoff-list");
+  if (cobox) {
+    cobox.innerHTML = "";
+    (co.requests || []).forEach((r) => {
+      if (r.status !== "pending") return;
+      const div = document.createElement("div");
+      div.className = "req-item pending";
+      const deptCo =
+        state.user.role === "admin" && r.department_name
+          ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
+          : "";
+      const coverage =
+        r.kind === "avail"
+          ? `<div class="coverage-slot" data-coverage-kind="compoff" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`
+          : "";
+      div.innerHTML = `<div>${deptCo}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
+        <div>${escapeHtml(compOffDetail(r))}</div><div class="hint">${escapeHtml(r.reason || "")}</div>${coverage}`;
+      const actions = document.createElement("div");
+      actions.className = "req-actions";
+      actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="compoff" data-status="approved">Approve</button>
+        <button type="button" class="btn secondary" data-id="${r.id}" data-kind="compoff" data-status="rejected">Reject</button>`;
+      div.appendChild(actions);
+      cobox.appendChild(div);
+    });
+    cobox.querySelectorAll('button[data-kind="compoff"]').forEach((btn) => {
+      btn.addEventListener("click", () => decideCompOff(btn.dataset.id, btn.dataset.status));
+    });
+    cobox.querySelectorAll("[data-coverage-kind]").forEach((slot) => {
+      fetchCoveragePreview(slot.dataset.coverageKind, slot.dataset.coverageId).then((preview) => {
+        slot.innerHTML = coverageBannerHtml(preview);
+      });
+    });
+  }
 }
 
 function escapeHtml(s) {
@@ -1248,7 +1362,11 @@ async function refreshEmployeeRequestLog() {
   if (!box) return;
   box.innerHTML = loadingSpinnerHTML("Loading your requests…");
   try {
-    const [lv, ch] = await Promise.all([api("/api/requests/leave"), api("/api/requests/shift-change")]);
+    const [lv, ch, co] = await Promise.all([
+      api("/api/requests/leave"),
+      api("/api/requests/shift-change"),
+      api("/api/requests/comp-off"),
+    ]);
     const rows = [];
     (lv.requests || []).forEach((r) => {
       rows.push({
@@ -1272,10 +1390,21 @@ async function refreshEmployeeRequestLog() {
         decided_at: r.decided_at,
       });
     });
+    (co.requests || []).forEach((r) => {
+      rows.push({
+        kind: r.kind === "avail" ? "compoff_avail" : "compoff_earn",
+        sort: r.created_at || "",
+        detail: compOffDetail(r),
+        reason: r.reason || "",
+        status: r.status,
+        created_at: r.created_at,
+        decided_at: r.decided_at,
+      });
+    });
     rows.sort((a, b) => String(b.sort).localeCompare(String(a.sort)));
 
     if (rows.length === 0) {
-      box.innerHTML = '<p class="hint">No requests yet. Submit leave or a shift change above.</p>';
+      box.innerHTML = '<p class="hint">No requests yet. Submit leave, a shift change, or a comp-off above.</p>';
       return;
     }
 
@@ -1288,7 +1417,14 @@ async function refreshEmployeeRequestLog() {
     const tb = document.createElement("tbody");
     rows.forEach((r) => {
       const tr = document.createElement("tr");
-      const typeLabel = r.kind === "leave" ? "Leave" : "Shift change";
+      const typeLabel =
+        r.kind === "leave"
+          ? "Leave"
+          : r.kind === "compoff_earn"
+            ? "Earn comp-off"
+            : r.kind === "compoff_avail"
+              ? "Avail comp-off"
+              : "Shift change";
       const st = (r.status || "pending").toLowerCase();
       const badgeClass =
         st === "approved" ? "status-approved" : st === "rejected" ? "status-rejected" : "status-pending";
@@ -1297,6 +1433,7 @@ async function refreshEmployeeRequestLog() {
     });
     tbl.appendChild(tb);
     wrap.appendChild(tbl);
+    box.innerHTML = "";
     box.appendChild(wrap);
   } catch (e) {
     box.innerHTML = `<p class="error">${escapeHtml(e?.message || String(e))}</p>`;
@@ -1343,6 +1480,45 @@ async function decideChange(id, status) {
     await refreshManagerRequestLog();
     await refreshManagerInlineApprovalsLog();
     $("mgr-approvals-activity-log")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+async function decideCompOff(id, status) {
+  if (!(await confirmCoverageIfNeeded("compoff", id, status))) return;
+  await api(`/api/requests/comp-off/${id}/decide`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  await refreshManagerQueues();
+  if (state.calendar) state.calendar.refetchEvents();
+  await refreshTable();
+  await refreshCompOffBalance().catch(() => {});
+  await refreshTodayHome().catch(() => {});
+  if (state.user.role === "admin") await refreshAdminRequestLog();
+  if (state.user.role === "manager") {
+    await refreshManagerRequestLog();
+    await refreshManagerInlineApprovalsLog();
+    $("mgr-approvals-activity-log")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+async function refreshCompOffBalance() {
+  const hint = $("compoff-balance-hint");
+  const count = $("compoff-balance-count");
+  if (!hint || !count || !state.user) return;
+  try {
+    const data = await api("/api/requests/comp-off/balance");
+    state.compOffBalance = data;
+    const available = data.available || 0;
+    count.textContent = String(available);
+    const bits = [`${available} day(s) ready to use as paid leave.`];
+    if (data.reserved) bits.push(`${data.reserved} reserved on a pending avail.`);
+    if (data.pending_earn) bits.push(`${data.pending_earn} earn request(s) waiting approval.`);
+    if (data.used) bits.push(`${data.used} already used.`);
+    hint.textContent = bits.join(" ");
+  } catch (e) {
+    hint.textContent = e.message || "Could not load your comp-off bank.";
+    count.textContent = "—";
   }
 }
 
@@ -1458,30 +1634,66 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
   }
 }
 
+function renderCompOffActivityTable(co, box, showDeptColumn) {
+  if (!box) return;
+  const deptTh = showDeptColumn ? "<th>Dept</th>" : "";
+  const colGroup = `<colgroup>${showDeptColumn ? '<col class="activity-col-dept">' : ""}<col class="activity-col-person"><col class="activity-col-request"><col class="activity-col-status"><col class="activity-col-timeline"><col class="activity-col-decider"></colgroup>`;
+  const tbl = document.createElement("table");
+  tbl.className = "matrix log-table activity-log-table";
+  tbl.innerHTML = `${colGroup}<thead><tr>${deptTh}<th>Employee</th><th>Comp-off request</th><th>Status</th><th>Submitted / decided</th><th>Decided by</th></tr></thead>`;
+  const tb = document.createElement("tbody");
+  (co.requests || []).forEach((r) => {
+    const tr = document.createElement("tr");
+    const dec = r.decided_by_name
+      ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
+      : "—";
+    const det = compOffDetail(r);
+    const deptCell = showDeptColumn ? `<td data-label="Department">${escapeHtml(r.department_name || "—")}</td>` : "";
+    tr.innerHTML = `${deptCell}<td data-label="Employee"><strong>${escapeHtml(r.full_name)}</strong><br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td data-label="Comp-off request"><strong>${escapeHtml(det)}</strong><br/><span class="hint">${escapeHtml(r.reason || "No reason supplied")}</span></td><td data-label="Status">${requestLogStatusBadge(r.status)}</td><td data-label="Timeline"><span class="activity-time-label">Sent</span> ${escapeHtml(fmtShortDateTime(r.created_at))}<br/><span class="activity-time-label">Done</span> ${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td data-label="Decided by">${dec}</td>`;
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+  box.innerHTML = "";
+  if ((co.requests || []).length === 0) {
+    box.innerHTML = '<p class="hint">No comp-off requests match this filter.</p>';
+  } else {
+    box.appendChild(tbl);
+  }
+}
+
 /** Load department-scoped leave + shift-change history for managers (same API as Approval log tab). */
-async function fetchAndRenderManagerDeptRequestLog(leaveBox, shiftBox, showDeptColumn) {
+async function fetchAndRenderManagerDeptRequestLog(leaveBox, shiftBox, showDeptColumn, compoffBox) {
   if (state.user?.role !== "manager") return;
   if (!leaveBox || !shiftBox) return;
   leaveBox.innerHTML = loadingSpinnerHTML("Loading leave history…");
   shiftBox.innerHTML = loadingSpinnerHTML("Loading shift changes…");
+  if (compoffBox) compoffBox.innerHTML = loadingSpinnerHTML("Loading comp-off history…");
   try {
-    const [lv, ch] = await Promise.all([
+    const [lv, ch, co] = await Promise.all([
       api(managerDeptRequestsUrl("leave")),
       api(managerDeptRequestsUrl("shift-change")),
+      api(managerDeptRequestsUrl("comp-off")),
     ]);
     renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn);
+    renderCompOffActivityTable(co, compoffBox, showDeptColumn);
   } catch (e) {
     leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
     shiftBox.innerHTML = "";
+    if (compoffBox) compoffBox.innerHTML = "";
   }
 }
 
 async function refreshManagerRequestLog() {
-  await fetchAndRenderManagerDeptRequestLog($("mgr-records-leave"), $("mgr-records-shift"), true);
+  await fetchAndRenderManagerDeptRequestLog($("mgr-records-leave"), $("mgr-records-shift"), true, $("mgr-records-compoff"));
 }
 
 async function refreshManagerInlineApprovalsLog() {
-  await fetchAndRenderManagerDeptRequestLog($("mgr-approvals-leave-log"), $("mgr-approvals-shift-log"), true);
+  await fetchAndRenderManagerDeptRequestLog(
+    $("mgr-approvals-leave-log"),
+    $("mgr-approvals-shift-log"),
+    true,
+    $("mgr-approvals-compoff-log"),
+  );
 }
 
 async function refreshAdminRequestLog() {
@@ -1490,18 +1702,23 @@ async function refreshAdminRequestLog() {
   const q = dept ? `?department_id=${encodeURIComponent(dept)}` : "";
   const leaveBox = $("admin-records-leave");
   const shiftBox = $("admin-records-shift");
+  const coBox = $("admin-records-compoff");
   if (!leaveBox || !shiftBox) return;
   leaveBox.innerHTML = loadingSpinnerHTML("Loading leave history…");
   shiftBox.innerHTML = loadingSpinnerHTML("Loading shift changes…");
+  if (coBox) coBox.innerHTML = loadingSpinnerHTML("Loading comp-off history…");
   try {
-    const [lv, ch] = await Promise.all([
+    const [lv, ch, co] = await Promise.all([
       api(`/api/requests/leave${q}`),
       api(`/api/requests/shift-change${q}`),
+      api(`/api/requests/comp-off${q}`),
     ]);
     renderRequestActivityTables(lv, ch, leaveBox, shiftBox, true);
+    renderCompOffActivityTable(co, coBox, true);
   } catch (e) {
     leaveBox.innerHTML = `<p class="error">${escapeHtml(e.message)}</p>`;
     shiftBox.innerHTML = "";
+    if (coBox) coBox.innerHTML = "";
   }
 }
 
@@ -1704,10 +1921,16 @@ function mountScheduleForRole(role) {
 function mountRequestTools(role) {
   const tools = $("employee-tools");
   if (!tools) return;
-  const mount = role === "manager"
-    ? $("mgr-requests-mount")
-    : document.querySelector('[data-dash="employee"][data-tab="requests"]');
+  if (role === "manager") {
+    $("mgr-requests-mount")?.appendChild(tools);
+    show(tools, true);
+    return;
+  }
+  const mount =
+    $("emp-apply-inline") || document.querySelector('.dash-pane[data-dash="employee"][data-tab="requests"]');
   if (mount) mount.appendChild(tools);
+  show(tools, false);
+  show($("emp-schedule-quick"), false);
 }
 
 const TASK_COLUMNS = [
@@ -2401,15 +2624,18 @@ async function refreshTodayHome() {
   }
   const ownReqUrl = (kind) => `/api/requests/${kind}`;
   try {
-    const [table, lvMine, chMine, tasks, lvQueue, chQueue] = await Promise.all([
+    const [table, lvMine, chMine, coMine, tasks, lvQueue, chQueue, coQueue, coBalance] = await Promise.all([
       role === "admin" && !tableParams.get("department_id")
         ? Promise.resolve({ rows: [], dates: [today, tomorrow] })
         : api(`/api/shifts/table?${tableParams}`),
       api(ownReqUrl("leave")).catch(() => ({ requests: [] })),
       api(ownReqUrl("shift-change")).catch(() => ({ requests: [] })),
+      api(ownReqUrl("comp-off")).catch(() => ({ requests: [] })),
       fetchTodayTasks(),
       role === "employee" ? Promise.resolve({ requests: [] }) : api(managerDeptRequestsUrl("leave")).catch(() => ({ requests: [] })),
       role === "employee" ? Promise.resolve({ requests: [] }) : api(managerDeptRequestsUrl("shift-change")).catch(() => ({ requests: [] })),
+      role === "employee" ? Promise.resolve({ requests: [] }) : api(managerDeptRequestsUrl("comp-off")).catch(() => ({ requests: [] })),
+      api("/api/requests/comp-off/balance").catch(() => ({ available: 0 })),
     ]);
     if (table.shift_legend) {
       state.shiftLegend = { ...state.shiftLegend, ...table.shift_legend };
@@ -2419,8 +2645,8 @@ async function refreshTodayHome() {
     const tomorrowCode = cells[tomorrow] || "";
     const myTasks = (tasks || []).filter(taskIsMine);
     const openMine = myTasks.filter((t) => t.column !== "done");
-    const pendingMine = [...(lvMine.requests || []), ...(chMine.requests || [])].filter((r) => r.status === "pending");
-    const pendingQueue = [...(lvQueue.requests || []), ...(chQueue.requests || [])].filter((r) => r.status === "pending");
+    const pendingMine = [...(lvMine.requests || []), ...(chMine.requests || []), ...(coMine.requests || [])].filter((r) => r.status === "pending");
+    const pendingQueue = [...(lvQueue.requests || []), ...(chQueue.requests || []), ...(coQueue.requests || [])].filter((r) => r.status === "pending");
     const firstName = (state.user.full_name || "there").split(" ")[0];
     const taskHtml = openMine.length
       ? openMine
@@ -2435,8 +2661,14 @@ async function refreshTodayHome() {
       ? pendingMine
           .slice(0, 4)
           .map((r) => {
-            const detail = r.start_date ? `${r.start_date} → ${r.end_date}` : `${r.date}: ${r.from_shift} → ${r.to_shift}`;
-            return `<div class="today-req-item"><div><strong>${r.start_date ? "Leave" : "Shift change"}</strong><div class="hint">${escapeHtml(detail)}</div></div><span class="badge status-pending">pending</span></div>`;
+            const isCo = r.kind === "earn" || r.kind === "avail";
+            const detail = isCo
+              ? compOffDetail(r)
+              : r.start_date
+                ? `${r.start_date} → ${r.end_date}`
+                : `${r.date}: ${r.from_shift} → ${r.to_shift}`;
+            const label = isCo ? (r.kind === "avail" ? "Avail comp-off" : "Earn comp-off") : r.start_date ? "Leave" : "Shift change";
+            return `<div class="today-req-item"><div><strong>${escapeHtml(label)}</strong><div class="hint">${escapeHtml(detail)}</div></div><span class="badge status-pending">pending</span></div>`;
           })
           .join("")
       : '<p class="hint">No pending requests.</p>';
@@ -2452,6 +2684,32 @@ async function refreshTodayHome() {
               <button type="button" class="btn" data-today-go="approvals">Review approvals</button>
             </div>
           </section>`;
+    if (role === "employee") {
+      root.innerHTML = `
+        <section class="today-hero emp-today-hero">
+          <span class="eyebrow">Your shifts</span>
+          <h2>${escapeHtml(firstName)}</h2>
+          <p class="hint">${escapeHtml(state.user.department_name || "Your department")} · ${escapeHtml(formatFriendlyDay(today))}</p>
+          <div class="today-shift-row">
+            ${todayCodeCard("Today", today, todayCode)}
+            ${todayCodeCard("Tomorrow", tomorrow, tomorrowCode)}
+          </div>
+        </section>
+        <details class="emp-more-details">
+          <summary>More activity · ${pendingMine.length} pending · ${coBalance.available || 0} comp-off</summary>
+          <div class="today-stat-grid">
+            <div class="today-stat"><span class="hint">Open tasks</span><strong>${openMine.length}</strong></div>
+            <div class="today-stat"><span class="hint">Pending</span><strong>${pendingMine.length}</strong></div>
+            <div class="today-stat"><span class="hint">Comp-off bank</span><strong>${coBalance.available || 0}</strong></div>
+          </div>
+          <div class="today-req-list">${reqHtml}</div>
+          <div class="today-task-list">${taskHtml}</div>
+          <div class="today-actions">
+            <button type="button" class="btn secondary" data-today-go="schedule">My shifts</button>
+            <button type="button" class="btn secondary" data-today-go="tasks">Kanban</button>
+          </div>
+        </details>`;
+    } else {
     root.innerHTML = `
       <section class="today-hero">
         <span class="eyebrow">Good to see you</span>
@@ -2472,6 +2730,7 @@ async function refreshTodayHome() {
         <div class="today-stat-grid">
           <div class="today-stat"><span class="hint">Open tasks</span><strong>${openMine.length}</strong></div>
           <div class="today-stat"><span class="hint">My requests</span><strong>${pendingMine.length}</strong></div>
+          <div class="today-stat"><span class="hint">Comp-off bank</span><strong>${coBalance.available || 0}</strong></div>
         </div>
         <div class="today-task-list">${taskHtml}</div>
       </section>
@@ -2483,6 +2742,7 @@ async function refreshTodayHome() {
         </div>
       </section>
       ${queueCard}`;
+    }
     root.querySelectorAll("[data-today-go]").forEach((btn) => {
       btn.addEventListener("click", () => handleTodayAction(btn.dataset.todayGo, today, todayCode));
     });
@@ -2506,10 +2766,18 @@ function handleTodayAction(action, today, todayCode) {
     return;
   }
   if (action === "requests") {
+    if (dash === "employee") {
+      openEmployeeApply("status");
+      return;
+    }
     activateDashTab(dash === "admin" ? "admin" : dash, dash === "admin" ? "approvals" : "requests");
     return;
   }
-  if (action === "swap") {
+  if (action === "leave" || action === "swap" || action === "compoff" || action === "status") {
+    openEmployeeApply(action);
+    return;
+  }
+  if (action === "swap-modal") {
     if (dash === "employee") {
       const fakeTd = document.createElement("td");
       fakeTd.dataset.date = today;
@@ -2520,6 +2788,118 @@ function handleTodayAction(action, today, todayCode) {
     }
     activateDashTab(dash, dash === "admin" ? "schedule" : "requests");
   }
+}
+
+const EMP_PAGE_LABELS = {
+  schedule: "My shifts",
+  today: "Today",
+  infovalley: "Info-valley",
+  tasks: "Kanban",
+  leave: "Apply leave",
+  swap: "Apply swap",
+  compoff: "Apply comp-off",
+  status: "Request status",
+};
+
+function setEmpMoreMenuOpen(open) {
+  const menu = $("emp-more-menu");
+  const btn = $("emp-more-btn");
+  show(menu, open);
+  btn?.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function updateEmpActionBar(tabId) {
+  const label = $("emp-action-bar-label");
+  if (label) label.textContent = EMP_PAGE_LABELS[tabId] || "My shifts";
+}
+
+function handleEmpMenuAction(action) {
+  setEmpMoreMenuOpen(false);
+  if (action === "leave" || action === "swap" || action === "compoff" || action === "status") {
+    openEmployeeApply(action);
+    return;
+  }
+  if (action === "meet") {
+    setMeetModalOpen(true);
+    return;
+  }
+  if (action === "password") {
+    setPasswordModalOpen(true);
+    return;
+  }
+  if (action === "logout") {
+    logout();
+    return;
+  }
+  setEmployeeApplyPanel(null);
+  activateDashTab("employee", action || "schedule");
+}
+
+function syncEmployeeApplySheet(open) {
+  const tools = $("employee-tools");
+  if (state.user?.role !== "employee") return;
+  show(tools, open);
+  show($("emp-schedule-quick"), open);
+}
+
+function setEmployeeApplyPanel(panel) {
+  const isEmployee = state.user?.role === "employee";
+  const titles = {
+    leave: "Apply leave",
+    swap: "Apply swap",
+    compoff: "Apply comp-off",
+    status: "Request status",
+  };
+
+  if (!panel) {
+    document.querySelectorAll("[data-apply-panel]").forEach((el) => el.classList.add("hidden"));
+    document.querySelectorAll("#employee-tools .emp-apply-btn").forEach((btn) => {
+      btn.classList.remove("active");
+      btn.setAttribute("aria-expanded", "false");
+    });
+    syncEmployeeApplySheet(false);
+    return;
+  }
+
+  const current = document.querySelector("#employee-tools .emp-apply-panel:not(.hidden)");
+  const closing = !isEmployee && current && current.dataset.applyPanel === panel;
+  if (closing) {
+    document.querySelectorAll("[data-apply-panel]").forEach((el) => el.classList.add("hidden"));
+    document.querySelectorAll("#employee-tools .emp-apply-btn").forEach((btn) => {
+      btn.classList.remove("active");
+      btn.setAttribute("aria-expanded", "false");
+    });
+    return;
+  }
+
+  document.querySelectorAll("[data-apply-panel]").forEach((el) => {
+    el.classList.toggle("hidden", el.dataset.applyPanel !== panel);
+  });
+  document.querySelectorAll("#employee-tools .emp-apply-btn").forEach((btn) => {
+    const on = btn.dataset.apply === panel;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-expanded", on ? "true" : "false");
+  });
+  if (isEmployee) {
+    syncEmployeeApplySheet(true);
+    if ($("emp-apply-sheet-title")) $("emp-apply-sheet-title").textContent = titles[panel] || "Apply";
+    updateEmpActionBar(panel);
+  }
+  if (panel === "status") refreshEmployeeRequestLog().catch(() => {});
+  if (panel === "compoff") refreshCompOffBalance().catch(() => {});
+}
+
+function openEmployeeApply(panel) {
+  const dash = state.user?.role === "manager" ? "manager" : "employee";
+  activateDashTab(dash, dash === "employee" ? "schedule" : "requests");
+  requestAnimationFrame(() => {
+    setEmployeeApplyPanel(panel);
+    if (dash === "employee") {
+      window.scrollTo(0, 0);
+      return;
+    }
+    $("employee-tools")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function kanbanSeenKey() {
@@ -2645,6 +3025,7 @@ function activateDashTab(dashId, tabId) {
   }
   if ((dashId === "employee" || dashId === "manager") && tabId === "requests") {
     refreshEmployeeRequestLog();
+    refreshCompOffBalance().catch(() => {});
   }
   if (dashId === "admin" && tabId === "records" && state.user?.role === "admin") {
     refreshAdminRequestLog();
@@ -2678,10 +3059,18 @@ function activateDashTab(dashId, tabId) {
     updateInfoValleyUiForRole();
     refreshInfoValleyBoard().catch(() => {});
   }
+  if (dashId === "employee") {
+    if (tabId !== "schedule") setEmployeeApplyPanel(null);
+    const openApply = document.querySelector("#employee-tools .emp-apply-panel:not(.hidden)");
+    updateEmpActionBar(openApply?.dataset.applyPanel || tabId);
+  }
 }
 
 function applyRoleVisibility() {
   const role = state.user?.role || "employee";
+  document.documentElement.classList.toggle("role-employee", role === "employee");
+  document.documentElement.classList.toggle("role-manager", role === "manager");
+  document.documentElement.classList.toggle("role-admin", role === "admin");
   show($("dash-employee"), role === "employee");
   show($("dash-manager"), role === "manager");
   show($("dash-admin"), role === "admin");
@@ -2691,7 +3080,17 @@ function applyRoleVisibility() {
   show($("admin-table-ctl"), role === "admin");
   show($("bulk-dept-row"), role === "admin");
   show($("mgr-admin-dept-row"), role === "admin");
-  show($("emp-schedule-quick"), role === "employee");
+  show($("emp-schedule-quick"), false);
+  show($("emp-action-bar"), role === "employee");
+  const empNav = document.querySelector(".emp-dash-nav");
+  if (empNav) {
+    empNav.hidden = role === "employee";
+    empNav.setAttribute("aria-hidden", role === "employee" ? "true" : "false");
+  }
+  const empApplyTab = document.querySelector('.dash-tab[data-dash="employee"][data-tab="requests"]');
+  const empApplyPane = document.querySelector('.dash-pane[data-dash="employee"][data-tab="requests"]');
+  show(empApplyTab, false);
+  show(empApplyPane, false);
   updateTasksBoardUiForRole();
   updateInfoValleyUiForRole();
 
@@ -2706,7 +3105,7 @@ function applyRoleVisibility() {
   if (apprHint) {
     apprHint.textContent =
       role === "admin"
-        ? "Pending leave and shift-change requests from every department. Approve or reject here. Full history is under the Activity tab."
+        ? "Pending leave, shift-change, and comp-off requests from every department. Approve or reject here. Full history is under the Activity tab."
         : role === "manager"
           ? "Pending requests from your department only. After each action, the full audit trail updates in the Department activity log on this page and on the Approval log tab."
           : "";
@@ -2722,7 +3121,7 @@ function applyRoleVisibility() {
       apprHist.classList.remove("hidden");
     } else if (role === "admin") {
       apprHist.textContent =
-        "Every decision is saved. Open the Activity tab for organisation-wide leave and shift-change history.";
+        "Every decision is saved. Open the Activity tab for organisation-wide leave, shift-change, and comp-off history.";
       apprHist.classList.remove("hidden");
     } else {
       apprHist.textContent = "";
@@ -2730,7 +3129,7 @@ function applyRoleVisibility() {
     }
   }
   updateDashboardBanner();
-  if (role === "employee") activateDashTab("employee", "today");
+  if (role === "employee") activateDashTab("employee", "schedule");
   if (role === "manager") activateDashTab("manager", "today");
   if (role === "admin") activateDashTab("admin", "today");
 }
@@ -2830,6 +3229,7 @@ async function bootAuthenticated() {
   if (state.user.role !== "admin") {
     await refreshSafe("refreshTable", () => refreshTable());
   }
+  await refreshSafe("refreshCompOffBalance", () => refreshCompOffBalance());
 
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
@@ -3059,7 +3459,9 @@ $("leave-submit").addEventListener("click", async () => {
       showEmployeeRequestNotice("Please choose start and end dates for leave.", "error");
       return;
     }
-    const res = await api("/api/requests/leave", {
+    const useCompOff = Boolean($("leave-use-compoff")?.checked);
+    const path = useCompOff ? "/api/requests/comp-off/avail" : "/api/requests/leave";
+    const res = await api(path, {
       method: "POST",
       body: JSON.stringify({
         start_date: $("leave-start").value,
@@ -3068,13 +3470,48 @@ $("leave-submit").addEventListener("click", async () => {
       }),
     });
     showEmployeeRequestNotice(
-      `Leave request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
+      useCompOff
+        ? `Comp-off avail submitted (${res.days || "those"} day(s)). Reference id: ${res.id}. After approval the roster shows CO — no loss of pay.`
+        : `Leave request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
       "success",
     );
     $("leave-reason").value = "";
+    if ($("leave-use-compoff")) $("leave-use-compoff").checked = false;
     await refreshEmployeeRequestLog();
+    await refreshCompOffBalance();
     await refreshManagerQueues();
     await refreshTodayHome().catch(() => {});
+    setEmployeeApplyPanel("status");
+  } catch (e) {
+    showEmployeeRequestNotice(e.message, "error");
+  }
+});
+
+$("co-earn-submit")?.addEventListener("click", async () => {
+  try {
+    if (!$("co-earn-date")?.value) {
+      showEmployeeRequestNotice("Choose the date you worked extra.", "error");
+      return;
+    }
+    const res = await api("/api/requests/comp-off/earn", {
+      method: "POST",
+      body: JSON.stringify({
+        work_date: $("co-earn-date").value,
+        earn_type: $("co-earn-type").value,
+        worked_shift: $("co-earn-shift").value,
+        reason: $("co-earn-reason")?.value || "",
+      }),
+    });
+    showEmployeeRequestNotice(
+      `Comp-off earn submitted. Reference id: ${res.id}. After approval, one paid day is added to your bank.`,
+      "success",
+    );
+    if ($("co-earn-reason")) $("co-earn-reason").value = "";
+    await refreshEmployeeRequestLog();
+    await refreshCompOffBalance();
+    await refreshManagerQueues();
+    await refreshTodayHome().catch(() => {});
+    setEmployeeApplyPanel("status");
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");
   }
@@ -3103,6 +3540,7 @@ $("chg-submit").addEventListener("click", async () => {
     await refreshEmployeeRequestLog();
     await refreshManagerQueues();
     await refreshTodayHome().catch(() => {});
+    setEmployeeApplyPanel("status");
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");
   }
@@ -3858,18 +4296,36 @@ $("export-btn").addEventListener("click", async () => {
 
 $("admin-records-refresh")?.addEventListener("click", () => refreshAdminRequestLog());
 
-$("emp-go-leave")?.addEventListener("click", () => {
-  activateDashTab("employee", "requests");
-  requestAnimationFrame(() => {
-    $("leave-request-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+document.querySelectorAll("#employee-tools .emp-apply-btn").forEach((btn) => {
+  btn.addEventListener("click", () => setEmployeeApplyPanel(btn.dataset.apply));
 });
-
-$("emp-go-shift-change")?.addEventListener("click", () => {
-  activateDashTab("employee", "requests");
-  requestAnimationFrame(() => {
-    $("shift-change-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
+["emp-go-leave", "emp-go-shift-change", "emp-go-compoff", "emp-go-status"].forEach((id) => {
+  $(id)?.addEventListener("click", () => openEmployeeApply($(id).dataset.apply));
+});
+$("emp-more-btn")?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const menu = $("emp-more-menu");
+  setEmpMoreMenuOpen(Boolean(menu?.classList.contains("hidden")));
+});
+document.querySelectorAll("#emp-more-menu [data-emp-menu]").forEach((btn) => {
+  btn.addEventListener("click", () => handleEmpMenuAction(btn.dataset.empMenu));
+});
+$("emp-apply-close")?.addEventListener("click", () => {
+  setEmployeeApplyPanel(null);
+  updateEmpActionBar("schedule");
+});
+document.addEventListener("click", (event) => {
+  const bar = $("emp-action-bar");
+  if (bar && !bar.contains(event.target)) setEmpMoreMenuOpen(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    setEmpMoreMenuOpen(false);
+    if (state.user?.role === "employee") {
+      setEmployeeApplyPanel(null);
+      updateEmpActionBar(document.querySelector('.dash-pane[data-dash="employee"].active')?.dataset.tab || "schedule");
+    }
+  }
 });
 
 initMatrixTableCellEditor();

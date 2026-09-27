@@ -47,6 +47,7 @@
   --g: #15803d;
   --l: #dc2626;
   --wo: #64748b;
+  --co: #0ea5e9;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
@@ -654,6 +655,163 @@ table.roster-mobile-table td.matrix-data-cell {
   font-weight: 600;
 }
 
+.emp-action-bar {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 16;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.94));
+  box-shadow: 0 10px 22px -18px rgba(2, 6, 23, 0.9);
+}
+
+html.role-employee .emp-action-bar {
+  display: flex;
+}
+
+html.role-employee .emp-dash-nav {
+  display: none !important;
+}
+
+.emp-action-bar-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.emp-action-bar-kicker {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.emp-action-bar-copy strong {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.emp-action-bar-end {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.emp-more-btn {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  color: var(--text);
+  background: linear-gradient(180deg, rgba(51, 65, 85, 0.95), rgba(15, 23, 42, 0.92));
+}
+
+.emp-more-btn[aria-expanded="true"] {
+  border-color: var(--dash-tab-active-border);
+  background: var(--dash-tab-active-bg);
+  color: #fff;
+}
+
+.emp-more-dots,
+.emp-more-dots::before,
+.emp-more-dots::after {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.emp-more-dots {
+  position: relative;
+}
+
+.emp-more-dots::before,
+.emp-more-dots::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.emp-more-dots::before { top: -8px; }
+.emp-more-dots::after { top: 8px; }
+
+.emp-more-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  width: min(18.5rem, calc(100vw - 2rem));
+  padding: 0.4rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.96));
+  box-shadow: 0 18px 40px -20px rgba(2, 6, 23, 1);
+}
+
+.emp-more-menu.hidden { display: none; }
+
+.emp-more-menu button {
+  min-height: 48px;
+  padding: 0.7rem 0.85rem;
+  border: 0;
+  border-radius: 12px;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.emp-more-menu button:hover,
+.emp-more-menu button:focus-visible {
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.emp-more-sep {
+  height: 1px;
+  margin: 0.25rem 0.4rem;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.emp-apply-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.emp-apply-sheet-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.emp-apply-close {
+  display: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.7);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+html.role-employee .emp-apply-close { display: grid; place-items: center; }
+html.role-employee .emp-apply-lead,
+html.role-employee .emp-apply-toggles { display: none; }
+
 .emp-schedule-quick {
   margin-bottom: 1rem;
 }
@@ -676,6 +834,103 @@ table.roster-mobile-table td.matrix-data-cell {
 .emp-schedule-quick-actions .btn {
   flex: 1 1 auto;
   min-width: 140px;
+}
+
+.emp-apply-lead {
+  margin: 0 0 0.75rem;
+}
+
+.emp-apply-toggles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin: 0.75rem 0 0.85rem;
+}
+
+.emp-apply-btn {
+  min-height: 48px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.9));
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.emp-apply-btn-muted {
+  color: var(--muted);
+}
+
+.emp-apply-btn.active {
+  border-color: var(--dash-tab-active-border);
+  background: var(--dash-tab-active-bg);
+  color: #fff;
+  box-shadow: var(--dash-tab-active-shadow);
+}
+
+.emp-apply-panel {
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.emp-apply-panel h3 {
+  margin: 0.35rem 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.emp-apply-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.7rem;
+}
+
+.emp-apply-submit,
+.emp-apply-panel .btn {
+  width: 100%;
+  min-height: 48px;
+}
+
+.emp-apply-panel textarea,
+.emp-apply-panel input,
+.emp-apply-panel select {
+  width: 100%;
+  min-height: 44px;
+}
+
+.emp-more-details {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.62);
+  padding: 0.2rem 0.9rem 0.85rem;
+}
+
+.emp-more-details summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.emp-more-details summary::-webkit-details-marker {
+  display: none;
+}
+
+html.role-employee #schedule-side-col {
+  display: none;
+}
+
+html.role-employee #schedule-block .schedule-card-stretch.schedule-grid {
+  grid-template-columns: 1fr;
+  min-height: auto;
+}
+
+html.role-employee .roster-scroll-hint,
+html.role-employee #roster-view-hint,
+html.role-employee #shift-legend {
+  display: none;
 }
 
 .card {
@@ -953,6 +1208,9 @@ textarea {
 .dot.wo {
   background: var(--wo);
 }
+.dot.co {
+  background: var(--co);
+}
 
 #calendar {
   min-height: 520px;
@@ -1074,7 +1332,7 @@ table.matrix.roster-matrix td.matrix-data-cell {
 table.matrix.roster-matrix
   tbody
   tr:nth-child(even)
-  td:not(.sticky):not(.cell-a):not(.cell-b):not(.cell-c):not(.cell-g):not(.cell-l):not(.cell-wo) {
+  td:not(.sticky):not(.cell-a):not(.cell-b):not(.cell-c):not(.cell-g):not(.cell-l):not(.cell-wo):not(.cell-co) {
   background: rgba(15, 23, 42, 0.72);
 }
 
@@ -1165,6 +1423,12 @@ table.matrix select.matrix-cell-select {
   border: 1px solid #cbd5e1 !important;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 10px rgba(100, 116, 139, 0.3);
 }
+.cell-co {
+  background: #0369a1;
+  color: #ffffff;
+  border: 2px solid #bae6fd !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 0 16px rgba(14, 165, 233, 0.5);
+}
 
 table.matrix.roster-matrix td.matrix-data-cell[class^="cell-"],
 table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
@@ -1216,6 +1480,9 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
 }
 .shift-wo {
   border-left: 3px solid var(--wo) !important;
+}
+.shift-co {
+  border-left: 3px solid var(--co) !important;
 }
 
 .fc .evt-roster-day .fc-event-title {
@@ -1514,6 +1781,36 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
   background: rgba(239, 68, 68, 0.15);
   border-color: #b91c1c;
   color: #fecaca;
+}
+
+.compoff-balance-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1.1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+  background: linear-gradient(180deg, rgba(8, 47, 73, 0.72), rgba(15, 23, 42, 0.8));
+}
+
+.compoff-balance-card strong {
+  font-size: 1.8rem;
+  line-height: 1;
+  color: #7dd3fc;
+}
+
+.check-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.92rem;
+}
+
+.check-inline input {
+  margin-top: 0.2rem;
 }
 
 .emp-request-log {
@@ -3485,7 +3782,18 @@ a { color: var(--tan); }
   .emp-schedule-quick { padding: 0.85rem; }
   .emp-schedule-quick-lead { font-size: 0.76rem; }
   .emp-schedule-quick-actions { display: grid; grid-template-columns: 1fr 1fr; }
-  .emp-schedule-quick-actions .btn { min-width: 0; padding-inline: 0.5rem; font-size: 0.76rem; }
+  .emp-schedule-quick-actions .btn,
+  .emp-apply-btn { min-width: 0; padding-inline: 0.5rem; font-size: 0.9rem; min-height: 48px; }
+  .emp-dash-nav .dash-tab { flex: 1 0 auto; min-width: 5.4rem; }
+  .emp-action-bar {
+    top: 0;
+    padding: 0.45rem 0.6rem;
+    border-radius: 12px;
+  }
+  .emp-more-menu { width: min(20rem, calc(100vw - 1.5rem)); }
+  .emp-apply-card,
+  .emp-today-hero { padding: 0.9rem; }
+  .emp-apply-fields { grid-template-columns: 1fr; }
 
   #schedule-block .roster-schedule-col > h2,
   #schedule-block .schedule-card-stretch > div:first-child > h2 {
@@ -3548,6 +3856,164 @@ a { color: var(--tan); }
   }
 
   .assistant-fab-mark { width: 30px; height: 30px; }
+}
+
+/* Average Android phone (360–412px). Keep every employee view inside the screen. */
+@media (max-width: 430px) {
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100%;
+  }
+
+  .shell {
+    padding: 0.5rem;
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+
+  html.role-employee .topbar {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 52px;
+    padding: max(0.4rem, env(safe-area-inset-top)) 0.6rem 0.4rem;
+  }
+
+  html.role-employee #user-slot {
+    display: none !important;
+  }
+
+  html.role-employee .topbar-actions {
+    width: auto !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 0.35rem;
+  }
+
+  html.role-employee .topbar-actions .btn {
+    display: none !important;
+  }
+
+  html.role-employee .notify-bell {
+    width: 42px;
+    height: 42px;
+  }
+
+  html.role-employee .emp-action-bar {
+    margin-bottom: 0.55rem;
+    padding: 0.4rem 0.55rem;
+  }
+
+  html.role-employee .emp-action-bar-copy strong {
+    font-size: 0.98rem;
+  }
+
+  html.role-employee .emp-more-menu {
+    position: fixed;
+    top: auto;
+    right: 0.5rem;
+    left: 0.5rem;
+    bottom: max(0.55rem, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(72dvh, 32rem);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  html.role-employee .card,
+  html.role-employee .emp-apply-card,
+  html.role-employee .emp-today-hero,
+  html.role-employee .today-hero,
+  html.role-employee .today-card {
+    padding: 0.75rem;
+    border-radius: 14px;
+  }
+
+  html.role-employee .compoff-balance-card {
+    gap: 0.55rem;
+    margin-bottom: 0.75rem;
+    padding: 0.65rem 0.7rem;
+  }
+
+  html.role-employee .compoff-balance-card strong {
+    font-size: 1.45rem;
+  }
+
+  html.role-employee .check-inline {
+    font-size: 0.86rem;
+  }
+
+  html.role-employee .emp-apply-submit,
+  html.role-employee .emp-apply-panel .btn {
+    margin-bottom: 0.35rem;
+  }
+
+  html.role-employee:has(#employee-tools:not(.hidden)) .assistant-fab {
+    display: none;
+  }
+
+  html.role-employee #schedule-block .roster-schedule-col > h2 {
+    font-size: 1.12rem;
+  }
+
+  html.role-employee #schedule-block .roster-schedule-col > .row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+  }
+
+  html.role-employee input,
+  html.role-employee select,
+  html.role-employee textarea,
+  html.role-employee .emp-apply-panel input,
+  html.role-employee .emp-apply-panel select,
+  html.role-employee .emp-apply-panel textarea {
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  .today-shift-row,
+  .today-stat-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+  }
+
+  .today-shift-pill,
+  .today-stat {
+    min-width: 0;
+    padding: 0.6rem 0.65rem;
+  }
+
+  .today-shift-code { font-size: 1.28rem; }
+
+  .today-task-item,
+  .today-req-item {
+    gap: 0.4rem;
+    align-items: flex-start;
+  }
+
+  html.role-employee .my-kanban-shell {
+    padding: 0;
+  }
+
+  html.role-employee .my-kanban-hero,
+  html.role-employee .my-kanban-toolbar,
+  html.role-employee .my-kanban-compose {
+    padding-inline: 0;
+  }
+
+  html.role-employee .password-modal {
+    padding: 0.5rem;
+    align-items: end;
+  }
+
+  html.role-employee .password-modal .card,
+  html.role-employee #password-modal .card {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 /* Roster navigation anchors: dates stay at the top and staff stay on the left

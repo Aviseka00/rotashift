@@ -6,6 +6,17 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.comp_off import (
+    EARN_TYPES,
+    REST_EARN_TYPES,
+    consume_reserved_credits,
+    credit_counts,
+    existing_open_earn,
+    inclusive_days,
+    release_reserved_credits,
+    reserve_oldest_credits,
+    validate_earn,
+)
 from app.config import SWAP_SHIFT_CODES, TIMED_SHIFT_CODES
 from app.database import get_db
 from app.deps import get_current_user, require_roles
@@ -128,6 +139,19 @@ def _request_row(x: dict, kind: str, users: dict, departments: dict) -> dict:
     }
     if kind == "leave":
         row.update({"start_date": x["start_date"], "end_date": x["end_date"]})
+    elif kind == "compoff":
+        row.update(
+            {
+                "kind": x.get("kind"),
+                "work_date": x.get("work_date"),
+                "earn_type": x.get("earn_type"),
+                "earn_label": EARN_TYPES.get(x.get("earn_type") or "", x.get("earn_type")),
+                "worked_shift": x.get("worked_shift"),
+                "start_date": x.get("start_date"),
+                "end_date": x.get("end_date"),
+                "days": x.get("days"),
+            }
+        )
     else:
         row.update({"date": x["date"], "from_shift": x["from_shift"], "to_shift": x["to_shift"]})
     return row
@@ -148,6 +172,19 @@ class ShiftChangeCreate(BaseModel):
 
 class DecideBody(BaseModel):
     status: str = Field(..., pattern="^(approved|rejected)$")
+
+
+class CompOffEarnCreate(BaseModel):
+    work_date: str
+    earn_type: str
+    worked_shift: str
+    reason: str = Field("", max_length=2000)
+
+
+class CompOffAvailCreate(BaseModel):
+    start_date: str
+    end_date: str
+    reason: str = Field("", max_length=2000)
 
 
 def _require_manager_department(user) -> ObjectId:
@@ -375,6 +412,204 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
     return {"ok": True, "status": new_status}
 
 
+async def _upsert_roster_code(db, *, dept_id, user_id, day_iso: str, code: str, actor: ObjectId, extra: dict | None = None):
+    payload = {
+        "department_id": dept_id,
+        "user_id": user_id,
+        "date": day_iso,
+        "shift_code": code,
+        "assigned_by": actor,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if extra:
+        payload.update(extra)
+    await db.shifts.update_one(
+        {"department_id": dept_id, "user_id": user_id, "date": day_iso},
+        {"$set": payload},
+        upsert=True,
+    )
+
+
+@router.get("/comp-off/balance")
+async def comp_off_balance(user=Depends(get_current_user)):
+    db = get_db()
+    counts = await credit_counts(db, ObjectId(user["_id"]))
+    recent = (
+        await db.comp_off_credits.find({"user_id": ObjectId(user["_id"])})
+        .sort("created_at", -1)
+        .to_list(length=40)
+    )
+    counts["credits"] = [
+        {
+            "id": str(c["_id"]),
+            "work_date": c.get("work_date"),
+            "earn_type": c.get("earn_type"),
+            "earn_label": EARN_TYPES.get(c.get("earn_type") or "", c.get("earn_type")),
+            "worked_shift": c.get("worked_shift"),
+            "status": c.get("status"),
+        }
+        for c in recent
+    ]
+    return counts
+
+
+@router.post("/comp-off/earn")
+async def create_comp_off_earn(body: CompOffEarnCreate, user=Depends(get_current_user)):
+    db = get_db()
+    if not user.get("department_id"):
+        raise HTTPException(status_code=400, detail="User must belong to a department")
+    work_day = _parse_iso_day(body.work_date)
+    earn_type, worked_shift = validate_earn(body.earn_type, body.worked_shift)
+    work_date = work_day.isoformat()
+    uid = ObjectId(user["_id"])
+    if await existing_open_earn(db, uid, work_date, earn_type):
+        raise HTTPException(
+            status_code=400,
+            detail="A pending or approved comp-off already exists for this day and reason",
+        )
+    doc = {
+        "kind": "earn",
+        "user_id": uid,
+        "department_id": ObjectId(user["department_id"]),
+        "work_date": work_date,
+        "earn_type": earn_type,
+        "worked_shift": worked_shift,
+        "reason": body.reason.strip(),
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc),
+    }
+    res = await db.comp_off_requests.insert_one(doc)
+    return {"id": str(res.inserted_id), "status": "pending", "kind": "earn"}
+
+
+@router.post("/comp-off/avail")
+async def create_comp_off_avail(body: CompOffAvailCreate, user=Depends(get_current_user)):
+    db = get_db()
+    if not user.get("department_id"):
+        raise HTTPException(status_code=400, detail="User must belong to a department")
+    days = inclusive_days(_parse_iso_day(body.start_date), _parse_iso_day(body.end_date))
+    uid = ObjectId(user["_id"])
+    doc = {
+        "kind": "avail",
+        "user_id": uid,
+        "department_id": ObjectId(user["department_id"]),
+        "start_date": days[0],
+        "end_date": days[-1],
+        "days": len(days),
+        "reason": body.reason.strip(),
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc),
+    }
+    res = await db.comp_off_requests.insert_one(doc)
+    try:
+        credit_ids = await reserve_oldest_credits(db, uid, len(days), res.inserted_id)
+    except HTTPException:
+        await db.comp_off_requests.delete_one({"_id": res.inserted_id})
+        raise
+    await db.comp_off_requests.update_one({"_id": res.inserted_id}, {"$set": {"credit_ids": credit_ids}})
+    return {"id": str(res.inserted_id), "status": "pending", "kind": "avail", "days": len(days)}
+
+
+@router.get("/comp-off")
+async def list_comp_off(
+    department_id: str | None = Query(None),
+    scope: str | None = Query(None, description="mine (default) or department — managers only"),
+    user=Depends(get_current_user),
+):
+    db = get_db()
+    role = user.get("role")
+    if role == "employee":
+        cur = db.comp_off_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
+    elif role == "manager":
+        cur = db.comp_off_requests.find(_manager_request_filter(user, scope)).sort("created_at", -1)
+    else:
+        qfilter = {}
+        if department_id:
+            try:
+                qfilter["department_id"] = ObjectId(department_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid department_id")
+        cur = db.comp_off_requests.find(qfilter).sort("created_at", -1)
+
+    docs = await cur.to_list(length=None)
+    users, departments = await _request_lookups(db, docs)
+    items = [_request_row(x, "compoff", users, departments) for x in docs]
+    return {"requests": items}
+
+
+@router.patch("/comp-off/{rid}/decide")
+async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles("admin", "manager"))):
+    db = get_db()
+    try:
+        oid = ObjectId(rid)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id")
+    req = await db.comp_off_requests.find_one({"_id": oid})
+    if not req:
+        raise HTTPException(status_code=404, detail="Not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="This request was already decided")
+    if user["role"] == "manager":
+        if str(req["department_id"]) != user.get("department_id"):
+            raise HTTPException(status_code=403, detail="Wrong department")
+
+    actor = ObjectId(user["_id"])
+    now = datetime.now(timezone.utc)
+    await db.comp_off_requests.update_one(
+        {"_id": oid},
+        {"$set": {"status": body.status, "decided_at": now, "decided_by": actor}},
+    )
+
+    if req.get("kind") == "earn":
+        if body.status == "approved":
+            credit = {
+                "user_id": req["user_id"],
+                "department_id": req["department_id"],
+                "work_date": req["work_date"],
+                "earn_type": req["earn_type"],
+                "worked_shift": req.get("worked_shift"),
+                "status": "available",
+                "earn_request_id": oid,
+                "created_at": now,
+                "updated_at": now,
+            }
+            try:
+                await db.comp_off_credits.insert_one(credit)
+            except Exception as exc:
+                await db.comp_off_requests.update_one(
+                    {"_id": oid},
+                    {"$set": {"status": "pending"}, "$unset": {"decided_at": "", "decided_by": ""}},
+                )
+                raise HTTPException(status_code=400, detail="A credit for this day and reason already exists") from exc
+            if req.get("earn_type") in REST_EARN_TYPES and req.get("worked_shift"):
+                await _upsert_roster_code(
+                    db,
+                    dept_id=req["department_id"],
+                    user_id=req["user_id"],
+                    day_iso=req["work_date"],
+                    code=req["worked_shift"],
+                    actor=actor,
+                    extra={"comp_off_earn_request_id": oid},
+                )
+        return {"ok": True, "status": body.status, "kind": "earn"}
+
+    if body.status == "approved":
+        await consume_reserved_credits(db, oid)
+        for day_iso in inclusive_days(_parse_iso_day(req["start_date"]), _parse_iso_day(req["end_date"])):
+            await _upsert_roster_code(
+                db,
+                dept_id=req["department_id"],
+                user_id=req["user_id"],
+                day_iso=day_iso,
+                code="CO",
+                actor=actor,
+                extra={"comp_off_avail_request_id": oid},
+            )
+    else:
+        await release_reserved_credits(db, oid)
+    return {"ok": True, "status": body.status, "kind": "avail"}
+
+
 def _count_codes(shift_by_user: dict[ObjectId, str]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for code in shift_by_user.values():
@@ -462,7 +697,7 @@ async def _coverage_days(
 
 @router.get("/coverage-preview")
 async def coverage_preview(
-    kind: str = Query(..., pattern="^(leave|shift)$"),
+    kind: str = Query(..., pattern="^(leave|shift|compoff)$"),
     id: str = Query(..., min_length=1),
     user=Depends(require_roles("admin", "manager")),
 ):
@@ -471,7 +706,12 @@ async def coverage_preview(
         oid = ObjectId(id)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid id")
-    collection = db.leave_requests if kind == "leave" else db.shift_change_requests
+    if kind == "leave":
+        collection = db.leave_requests
+    elif kind == "compoff":
+        collection = db.comp_off_requests
+    else:
+        collection = db.shift_change_requests
     req = await collection.find_one({"_id": oid})
     if not req:
         raise HTTPException(status_code=404, detail="Not found")
@@ -479,14 +719,15 @@ async def coverage_preview(
         raise HTTPException(status_code=403, detail="Wrong department")
 
     if kind == "leave":
-        start_day = _parse_iso_day(req["start_date"])
-        end_day = _parse_iso_day(req["end_date"])
-        days = []
-        day = start_day
-        while day <= end_day:
-            days.append(day.isoformat())
-            day += timedelta(days=1)
+        days = inclusive_days(_parse_iso_day(req["start_date"]), _parse_iso_day(req["end_date"]))
         to_code = "L"
+    elif kind == "compoff":
+        if req.get("kind") == "avail":
+            days = inclusive_days(_parse_iso_day(req["start_date"]), _parse_iso_day(req["end_date"]))
+            to_code = "CO"
+        else:
+            days = [req["work_date"][:10]]
+            to_code = (req.get("worked_shift") or "").upper() or "A"
     else:
         days = [req["date"][:10]]
         to_code = (req.get("to_shift") or "").upper()

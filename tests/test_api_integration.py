@@ -362,3 +362,80 @@ def test_coverage_preview_and_manager_department_scope(
     dept_leave = client.get("/api/requests/leave?scope=department", headers=manager_headers)
     assert dept_leave.status_code == 200, dept_leave.text
     assert any(item["id"] == leave.json()["id"] for item in dept_leave.json()["requests"])
+
+
+def test_comp_off_earn_avail_and_reject_g(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "compoff-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Comp Off QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    work_day = date.today().isoformat()
+    later = (date.today() + timedelta(days=3)).isoformat()
+
+    blocked = client.post(
+        "/api/requests/comp-off/earn",
+        json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "G"},
+        headers=headers,
+    )
+    assert blocked.status_code == 400
+
+    earn = client.post(
+        "/api/requests/comp-off/earn",
+        json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "A", "reason": "Came in on WO"},
+        headers=headers,
+    )
+    assert earn.status_code == 200, earn.text
+    again = client.post(
+        "/api/requests/comp-off/earn",
+        json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "B"},
+        headers=headers,
+    )
+    assert again.status_code == 400
+
+    empty_avail = client.post(
+        "/api/requests/comp-off/avail",
+        json={"start_date": later, "end_date": later},
+        headers=headers,
+    )
+    assert empty_avail.status_code == 400
+
+    approved = client.patch(
+        f"/api/requests/comp-off/{earn.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    balance = client.get("/api/requests/comp-off/balance", headers=headers)
+    assert balance.status_code == 200
+    assert balance.json()["available"] == 1
+
+    avail = client.post(
+        "/api/requests/comp-off/avail",
+        json={"start_date": later, "end_date": later, "reason": "Paid day off"},
+        headers=headers,
+    )
+    assert avail.status_code == 200, avail.text
+    used = client.patch(
+        f"/api/requests/comp-off/{avail.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert used.status_code == 200, used.text
+    after = client.get("/api/requests/comp-off/balance", headers=headers).json()
+    assert after["available"] == 0
+    assert after["used"] == 1

@@ -17,6 +17,9 @@ def test_meta_shifts_no_db(client: TestClient):
     assert data["shifts"]["C"]["start"] == "10:00"
     assert data["shifts"]["C"]["end"] == "06:30"
     assert data["shifts"]["C"].get("overnight") is True
+    assert "CO" in data["shifts"]
+    assert "roster_codes" in data
+    assert "CO" in data["roster_codes"]
 
 
 def test_meta_seed_departments(client: TestClient):

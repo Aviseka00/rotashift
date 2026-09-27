@@ -42,6 +42,16 @@ async def ensure_indexes_and_seed():
         db.leave_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
         db.shift_change_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         db.shift_change_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+        db.comp_off_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
+        db.comp_off_requests.create_index([("user_id", ASCENDING), ("kind", ASCENDING), ("created_at", DESCENDING)]),
+        db.comp_off_credits.create_index([("user_id", ASCENDING), ("status", ASCENDING), ("created_at", ASCENDING)]),
+        db.comp_off_credits.create_index("earn_request_id"),
+        db.comp_off_credits.create_index("avail_request_id"),
+        db.comp_off_credits.create_index(
+            [("user_id", ASCENDING), ("work_date", ASCENDING), ("earn_type", ASCENDING)],
+            unique=True,
+            name="uniq_credit_user_day_type",
+        ),
         db.tasks.create_index([("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING)]),
         db.tasks.create_index(
             [("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING), ("updated_at", DESCENDING)]

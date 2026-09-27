@@ -64,11 +64,35 @@ async def export_all(user=Depends(require_roles("admin"))):
             x["created_by"] = str(x["created_by"])
         task_rows.append(x)
 
+    def _serialize_comp_off(x: dict) -> dict:
+        x["id"] = str(x.pop("_id"))
+        x["user_id"] = str(x["user_id"])
+        x["department_id"] = str(x["department_id"])
+        if x.get("decided_by"):
+            x["decided_by"] = str(x["decided_by"])
+        if x.get("earn_request_id"):
+            x["earn_request_id"] = str(x["earn_request_id"])
+        if x.get("avail_request_id"):
+            x["avail_request_id"] = str(x["avail_request_id"])
+        if x.get("credit_ids"):
+            x["credit_ids"] = [str(i) for i in x["credit_ids"]]
+        return x
+
+    comp_off_requests = []
+    async for x in db.comp_off_requests.find():
+        comp_off_requests.append(_serialize_comp_off(x))
+
+    comp_off_credits = []
+    async for x in db.comp_off_credits.find():
+        comp_off_credits.append(_serialize_comp_off(x))
+
     return {
         "departments": departments,
         "users": users,
         "shifts": shifts,
         "leave_requests": leaves,
         "shift_change_requests": changes,
+        "comp_off_requests": comp_off_requests,
+        "comp_off_credits": comp_off_credits,
         "tasks": task_rows,
     }

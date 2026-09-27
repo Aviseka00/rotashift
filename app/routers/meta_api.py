@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter
 
+from app.comp_off import EARN_TYPES, WORKED_SHIFT_CODES
 from app.config import (
     DB_NAME,
     MONGO_URI,
@@ -38,7 +39,13 @@ def seed_department_names():
 @router.get("/features")
 def app_features():
     """Hints for the SPA (which optional APIs exist on this server build)."""
-    return {"kanban_tasks": True, "kanban_health": "/api/tasks/health"}
+    return {
+        "kanban_tasks": True,
+        "kanban_health": "/api/tasks/health",
+        "comp_off": True,
+        "comp_off_earn_types": EARN_TYPES,
+        "comp_off_worked_shifts": sorted(WORKED_SHIFT_CODES),
+    }
 
 
 @router.get("/registration")

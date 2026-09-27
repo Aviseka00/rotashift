@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=52" />
+    <link rel="stylesheet" href="/static/styles.css?v=60" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -167,77 +167,162 @@
           <p id="dashboard-sub" class="hint"></p>
         </div>
 
-        <!-- Employee: Schedule | My requests -->
+        <!-- Employee: one dash (own roster). Actions live in the ⋮ menu. -->
         <div id="dash-employee" class="dash-shell hidden">
-          <nav class="dash-nav" aria-label="Employee dashboard">
-            <button type="button" class="dash-tab active" data-dash="employee" data-tab="today">Today</button>
-            <button type="button" class="dash-tab" data-dash="employee" data-tab="schedule">Schedule</button>
-            <button type="button" class="dash-tab" data-dash="employee" data-tab="requests">My requests</button>
+          <div class="emp-action-bar" id="emp-action-bar">
+            <div class="emp-action-bar-copy">
+              <span class="emp-action-bar-kicker">Your dash</span>
+              <strong id="emp-action-bar-label">My shifts</strong>
+            </div>
+            <div class="emp-action-bar-end">
+              <button
+                type="button"
+                id="emp-more-btn"
+                class="emp-more-btn"
+                aria-label="Open actions"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="emp-more-menu"
+              >
+                <span class="emp-more-dots" aria-hidden="true"></span>
+              </button>
+              <div id="emp-more-menu" class="emp-more-menu hidden" role="menu" aria-label="Employee actions">
+                <button type="button" role="menuitem" data-emp-menu="leave">Apply leave</button>
+                <button type="button" role="menuitem" data-emp-menu="swap">Apply swap</button>
+                <button type="button" role="menuitem" data-emp-menu="compoff">Apply comp-off</button>
+                <button type="button" role="menuitem" data-emp-menu="status">Request status</button>
+                <div class="emp-more-sep" role="separator"></div>
+                <button type="button" role="menuitem" data-emp-menu="schedule">My shifts</button>
+                <button type="button" role="menuitem" data-emp-menu="today">Today</button>
+                <button type="button" role="menuitem" data-emp-menu="infovalley">Info-valley</button>
+                <button type="button" role="menuitem" data-emp-menu="tasks">Kanban</button>
+                <div class="emp-more-sep" role="separator"></div>
+                <button type="button" role="menuitem" data-emp-menu="meet">Meet calls</button>
+                <button type="button" role="menuitem" data-emp-menu="password">Change password</button>
+                <button type="button" role="menuitem" data-emp-menu="logout">Log out</button>
+              </div>
+            </div>
+          </div>
+          <nav class="dash-nav emp-dash-nav" hidden aria-hidden="true">
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="today">Today</button>
+            <button type="button" class="dash-tab active" data-dash="employee" data-tab="schedule">My shifts</button>
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="requests">Apply</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="infovalley">Info-valley</button>
-            <button type="button" class="dash-tab" data-dash="employee" data-tab="tasks">My Kanban</button>
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="tasks">Kanban</button>
           </nav>
-          <div class="dash-pane active" data-dash="employee" data-tab="today">
+          <div class="dash-pane hidden" data-dash="employee" data-tab="today">
             <div id="emp-today-mount" class="today-mount"></div>
           </div>
-          <div class="dash-pane hidden" data-dash="employee" data-tab="schedule">
+          <div class="dash-pane active" data-dash="employee" data-tab="schedule">
             <div class="sched-mount" id="emp-sched-mount"></div>
           </div>
           <div class="dash-pane hidden" data-dash="employee" data-tab="requests">
-            <div id="employee-tools" class="card">
-              <h2>Your requests</h2>
+            <div id="employee-tools" class="card emp-apply-card hidden">
+              <header class="emp-apply-sheet-head">
+                <h2 id="emp-apply-sheet-title">Apply</h2>
+                <button type="button" id="emp-apply-close" class="emp-apply-close" aria-label="Close form">×</button>
+              </header>
+              <p class="hint emp-apply-lead">Tap a button to open that form. Tap again to close it.</p>
               <div id="emp-request-notice" class="notice-banner hidden" role="status" aria-live="polite"></div>
-
-              <h3 id="leave-request-section" style="font-size: 1rem">Request leave</h3>
-              <p class="hint">
-                Same approval flow as a shift change: an administrator reviews it, then it appears on the team schedule when
-                approved. Full history is listed below.
-              </p>
-              <div class="row">
+              <div id="compoff-balance-card" class="compoff-balance-card">
                 <div>
-                  <label for="leave-start">Start date</label>
-                  <input type="date" id="leave-start" />
+                  <span class="eyebrow">Comp-off bank</span>
+                  <p class="hint" id="compoff-balance-hint">Loading your available paid days…</p>
                 </div>
-                <div>
-                  <label for="leave-end">End date</label>
-                  <input type="date" id="leave-end" />
-                </div>
+                <strong id="compoff-balance-count">—</strong>
               </div>
-              <label for="leave-reason">Reason (optional)</label>
-              <textarea id="leave-reason" placeholder="e.g. annual leave, training day…"></textarea>
-              <button type="button" id="leave-submit" class="btn">Submit leave request</button>
-
-              <h3 id="shift-change-section" style="margin-top: 1rem; font-size: 1rem">Request shift change</h3>
-              <p class="hint">
-                You can swap from or to any roster code, including <strong>WO</strong> (week off) and
-                <strong>L</strong> (leave), as well as A, B, C, and G.
-              </p>
-              <div class="row">
-                <div>
-                  <label for="chg-date">Date</label>
-                  <input type="date" id="chg-date" />
-                </div>
-                <div>
-                  <label for="chg-from">From</label>
-                  <select id="chg-from"></select>
-                </div>
-                <div>
-                  <label for="chg-to">To</label>
-                  <select id="chg-to"></select>
-                </div>
+              <div class="emp-apply-toggles" role="tablist" aria-label="Apply actions">
+                <button type="button" class="emp-apply-btn" data-apply="leave" aria-expanded="false">Leave</button>
+                <button type="button" class="emp-apply-btn" data-apply="swap" aria-expanded="false">Swap</button>
+                <button type="button" class="emp-apply-btn" data-apply="compoff" aria-expanded="false">Comp-off</button>
+                <button type="button" class="emp-apply-btn emp-apply-btn-muted" data-apply="status" aria-expanded="false">Status</button>
               </div>
-              <label for="chg-reason">Reason</label>
-              <textarea id="chg-reason"></textarea>
-              <button type="button" id="chg-submit" class="btn">Submit shift change request</button>
 
-              <hr class="mgr-section-rule" />
+              <section class="emp-apply-panel hidden" data-apply-panel="leave" id="leave-request-section">
+                <h3>Request leave</h3>
+                <p class="hint">Your manager reviews it. Tick comp-off to take paid days from your bank.</p>
+                <div class="row emp-apply-fields">
+                  <div>
+                    <label for="leave-start">Start date</label>
+                    <input type="date" id="leave-start" />
+                  </div>
+                  <div>
+                    <label for="leave-end">End date</label>
+                    <input type="date" id="leave-end" />
+                  </div>
+                </div>
+                <label for="leave-reason">Reason (optional)</label>
+                <textarea id="leave-reason" placeholder="e.g. annual leave, training day…"></textarea>
+                <label class="check-inline" for="leave-use-compoff">
+                  <input type="checkbox" id="leave-use-compoff" />
+                  Use available comp-off days (roster shows CO — no loss of pay)
+                </label>
+                <button type="button" id="leave-submit" class="btn emp-apply-submit">Submit leave</button>
+              </section>
 
-              <h3 style="margin-top: 1rem; font-size: 1rem">Request log &amp; status</h3>
-              <p class="hint">
-                Every leave and shift-change request is listed here with its current status (pending, approved, or
-                rejected). Updated when an administrator acts on it.
-              </p>
-              <button type="button" id="emp-log-refresh" class="btn secondary">Refresh status</button>
-              <div id="emp-request-log" class="emp-request-log"></div>
+              <section class="emp-apply-panel hidden" data-apply-panel="swap" id="shift-change-section">
+                <h3>Request swap</h3>
+                <p class="hint">Swap to A, B, C, G, WO, or L. Your manager approves it first.</p>
+                <div class="row emp-apply-fields">
+                  <div>
+                    <label for="chg-date">Date</label>
+                    <input type="date" id="chg-date" />
+                  </div>
+                  <div>
+                    <label for="chg-from">From</label>
+                    <select id="chg-from"></select>
+                  </div>
+                  <div>
+                    <label for="chg-to">To</label>
+                    <select id="chg-to"></select>
+                  </div>
+                </div>
+                <label for="chg-reason">Reason</label>
+                <textarea id="chg-reason"></textarea>
+                <button type="button" id="chg-submit" class="btn emp-apply-submit">Submit swap</button>
+              </section>
+
+              <section class="emp-apply-panel hidden" data-apply-panel="compoff" id="compoff-earn-section">
+                <h3>Earn a comp-off</h3>
+                <p class="hint">
+                  Worked on WO, leave, or a holiday — or did A+B, B+C, or C+A (not G). After approval, one paid day is banked.
+                </p>
+                <div class="row emp-apply-fields">
+                  <div>
+                    <label for="co-earn-date">Duty date</label>
+                    <input type="date" id="co-earn-date" />
+                  </div>
+                  <div>
+                    <label for="co-earn-type">Why this credit is due</label>
+                    <select id="co-earn-type">
+                      <option value="worked_wo">I worked on my week off</option>
+                      <option value="worked_leave">I worked on my leave day</option>
+                      <option value="worked_holiday">I worked on a holiday</option>
+                      <option value="joint_ab">Extra joint shift A + B</option>
+                      <option value="joint_bc">Extra joint shift B + C</option>
+                      <option value="joint_ca">Extra joint shift C + A</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label for="co-earn-shift">Shift I actually worked</label>
+                    <select id="co-earn-shift">
+                      <option value="A">A</option>
+                      <option value="B">B</option>
+                      <option value="C">C</option>
+                    </select>
+                  </div>
+                </div>
+                <label for="co-earn-reason">Note (optional)</label>
+                <textarea id="co-earn-reason" placeholder="e.g. covered cholera ward on my WO…"></textarea>
+                <button type="button" id="co-earn-submit" class="btn emp-apply-submit">Submit earn request</button>
+              </section>
+
+              <section class="emp-apply-panel hidden" data-apply-panel="status">
+                <h3>Request status</h3>
+                <p class="hint">Pending, approved, and rejected leave, swap, and comp-off.</p>
+                <button type="button" id="emp-log-refresh" class="btn secondary emp-apply-submit">Refresh status</button>
+                <div id="emp-request-log" class="emp-request-log"></div>
+              </section>
             </div>
           </div>
           <div class="dash-pane hidden" data-dash="employee" data-tab="tasks">
@@ -279,7 +364,7 @@
             <div id="mgr-records-slot" class="card">
               <h2>Approval log — your department</h2>
               <p class="hint">
-                Every leave and shift-change request for <strong>your department only</strong>: pending, approved, and
+                Every leave, shift-change, and comp-off request for <strong>your department only</strong>: pending, approved, and
                 rejected, with who decided and when. This list updates when you act on the Approvals tab (use Refresh if
                 needed).
               </p>
@@ -295,6 +380,10 @@
               <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
               <div class="table-scroll admin-records-wrap">
                 <div id="mgr-records-shift"></div>
+              </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Comp-off requests</h3>
+              <div class="table-scroll admin-records-wrap">
+                <div id="mgr-records-compoff"></div>
               </div>
             </div>
           </div>
@@ -430,7 +519,7 @@ Amruta Mishra	80100331</pre>
           </div>
           <div class="dash-pane hidden" data-dash="admin" data-tab="records">
             <div class="card">
-              <h2>Activity — all leave &amp; shift requests</h2>
+              <h2>Activity — all leave, shift, and comp-off requests</h2>
               <p class="hint">
                 Every department: pending, approved, and rejected, with who decided and when. Filter by department or use
                 “All departments”.
@@ -451,6 +540,10 @@ Amruta Mishra	80100331</pre>
               <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
               <div class="table-scroll admin-records-wrap">
                 <div id="admin-records-shift"></div>
+              </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Comp-off requests</h3>
+              <div class="table-scroll admin-records-wrap">
+                <div id="admin-records-compoff"></div>
               </div>
             </div>
           </div>
@@ -504,18 +597,11 @@ Amruta Mishra	80100331</pre>
 
         <!-- Moved between dashboards: calendar + table -->
         <div id="schedule-block">
-          <div id="emp-schedule-quick" class="card emp-schedule-quick hidden" aria-label="Quick requests">
-            <h2 class="emp-schedule-quick-title">Need time off or a different shift?</h2>
-            <p class="hint emp-schedule-quick-lead">
-              Submit a request for your manager to approve. You can track status under <strong>My requests</strong>.
-            </p>
-            <div class="emp-schedule-quick-actions">
-              <button type="button" class="btn" id="emp-go-leave">Request leave</button>
-              <button type="button" class="btn secondary" id="emp-go-shift-change">Request shift change</button>
-            </div>
+          <div id="emp-schedule-quick" class="emp-schedule-quick hidden" aria-label="Quick requests">
+            <div id="emp-apply-inline"></div>
           </div>
           <div class="card grid schedule-grid schedule-card-stretch landscape-compact">
-            <div>
+            <div id="schedule-side-col">
               <h2>Day-wise manpower summary</h2>
               <p class="hint">Department-wise shift distribution from the selected range: A, B, C, G, L, WO and total.</p>
               <div id="manpower-summary"></div>
@@ -810,11 +896,13 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             <div id="mgr-leave-list" class="list-requests"></div>
             <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
             <div id="mgr-change-list" class="list-requests"></div>
+            <h3 style="margin-top: 1rem; font-size: 1rem">Comp-off requests</h3>
+            <div id="mgr-compoff-list" class="list-requests"></div>
             <div id="mgr-approvals-activity-log" class="mgr-approvals-activity-log hidden">
               <hr class="mgr-section-rule" />
               <h3 style="font-size: 1rem; margin-top: 0.25rem">Department activity log</h3>
               <p class="hint" id="mgr-activity-log-hint">
-                Your department only — every leave and shift-change request (pending, approved, rejected), with
+                Your department only — every leave, shift-change, and comp-off request (pending, approved, rejected), with
                 decision time and who approved or rejected. Updates when you use the buttons above.
               </p>
               <h4 class="mgr-activity-subhead">Leave requests</h4>
@@ -824,6 +912,10 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
               <h4 class="mgr-activity-subhead">Shift change requests</h4>
               <div class="table-scroll admin-records-wrap mgr-activity-table-wrap">
                 <div id="mgr-approvals-shift-log"></div>
+              </div>
+              <h4 class="mgr-activity-subhead">Comp-off requests</h4>
+              <div class="table-scroll admin-records-wrap mgr-activity-table-wrap">
+                <div id="mgr-approvals-compoff-log"></div>
               </div>
             </div>
           </div>
@@ -840,7 +932,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             </div>
             <button type="button" id="roster-request-close" class="icon-btn" aria-label="Close">×</button>
           </div>
-          <p class="hint" id="roster-request-lead">Pick leave or a new shift. Your manager reviews it before the roster changes.</p>
+          <p class="hint" id="roster-request-lead">Pick leave, a shift swap, or a comp-off action. Your manager reviews it before the roster or bank changes.</p>
           <p class="roster-request-meta" id="roster-request-meta"></p>
           <label for="roster-request-to">Request</label>
           <select id="roster-request-to"></select>
@@ -954,7 +1046,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=52"></script>
+    <script src="/static/app.js?v=60"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
