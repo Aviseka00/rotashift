@@ -698,9 +698,22 @@ html.role-employee .emp-dash-nav {
   line-height: 1.2;
 }
 
+.emp-co-chip {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  background: rgba(8, 47, 73, 0.7);
+  color: #7dd3fc;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .emp-action-bar-end {
   position: relative;
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .emp-more-btn {
@@ -1799,6 +1812,35 @@ table.matrix.roster-matrix td.matrix-data-cell[class*=" cell-"] {
   font-size: 1.8rem;
   line-height: 1;
   color: #7dd3fc;
+}
+
+.compoff-ledger {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0 0 0.85rem;
+}
+
+.compoff-ledger-row {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.4);
+  font-size: 0.82rem;
+}
+
+.compoff-ledger-row span {
+  color: var(--muted);
+}
+
+tr.is-me td.sticky,
+.roster-person-card.is-me {
+  box-shadow: inset 3px 0 0 #7dd3fc;
+}
+
+.roster-person-card.is-me {
+  border-color: rgba(125, 211, 252, 0.45);
 }
 
 .check-inline {

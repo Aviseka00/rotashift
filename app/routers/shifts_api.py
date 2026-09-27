@@ -5,6 +5,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from app.comp_off import EARN_TYPES
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import get_current_user, require_roles
@@ -251,12 +252,23 @@ async def table_matrix(
 
     shifts_q = {"department_id": dept_oid, "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}}
     shifts_by_user: Dict[ObjectId, Dict[str, str]] = {}
+    traces_by_user: Dict[ObjectId, Dict[str, dict]] = {}
     async for s in db.shifts.find(shifts_q):
         uid = s.get("user_id")
         day = s.get("date")
         if not uid or not day:
             continue
-        shifts_by_user.setdefault(uid, {})[day] = s.get("shift_code", "")
+        code = s.get("shift_code", "")
+        shifts_by_user.setdefault(uid, {})[day] = code
+        if str(code or "").strip().upper() == "CO":
+            earn_type = s.get("comp_off_earn_type")
+            traces_by_user.setdefault(uid, {})[day] = {
+                "used_on": day,
+                "earned_on": s.get("comp_off_earned_on"),
+                "earn_type": earn_type,
+                "earn_label": EARN_TYPES.get(earn_type or "", earn_type),
+                "worked_shift": s.get("comp_off_worked_shift"),
+            }
 
     rows = []
     for u in users_list:
@@ -268,6 +280,7 @@ async def table_matrix(
                 "full_name": u["full_name"],
                 "role": u["role"],
                 "cells": cells,
+                "traces": traces_by_user.get(uid, {}),
             }
         )
 

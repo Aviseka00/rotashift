@@ -71,6 +71,26 @@ async def existing_open_earn(db, user_id: ObjectId, work_date: str, earn_type: s
     )
 
 
+async def require_leave_days(db, user_id: ObjectId, department_id: ObjectId, days: list[str]) -> None:
+    """Comp-off can only be applied to days already marked leave on the roster."""
+    not_leave: list[str] = []
+    for day in days:
+        shift = await db.shifts.find_one({"user_id": user_id, "department_id": department_id, "date": day})
+        code = str((shift or {}).get("shift_code") or "").strip().upper()
+        if code != "L":
+            not_leave.append(day)
+    if not_leave:
+        shown = ", ".join(not_leave[:6])
+        extra = f" (+{len(not_leave) - 6} more)" if len(not_leave) > 6 else ""
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Comp-off can only be used against leave you have already taken. "
+                f"These dates are not leave (L): {shown}{extra}"
+            ),
+        )
+
+
 async def credit_counts(db, user_id: ObjectId) -> dict[str, int]:
     pipeline = [
         {"$match": {"user_id": user_id}},
@@ -87,10 +107,14 @@ async def credit_counts(db, user_id: ObjectId) -> dict[str, int]:
         {"days": 1},
     ):
         pending_avail_days += int(req.get("days") or 0)
+    available = int(counts.get("available") or 0)
+    reserved = int(counts.get("reserved") or 0)
+    used = int(counts.get("used") or 0)
     return {
-        "available": int(counts.get("available") or 0),
-        "reserved": int(counts.get("reserved") or 0),
-        "used": int(counts.get("used") or 0),
+        "available": available,
+        "reserved": reserved,
+        "used": used,
+        "earned": available + reserved + used,
         "pending_earn": int(pending_earn),
         "pending_avail_days": int(pending_avail_days),
     }
@@ -133,8 +157,32 @@ async def release_reserved_credits(db, avail_request_id: ObjectId) -> None:
     )
 
 
-async def consume_reserved_credits(db, avail_request_id: ObjectId) -> None:
-    await db.comp_off_credits.update_many(
-        {"avail_request_id": avail_request_id, "status": "reserved"},
-        {"$set": {"status": "used", "updated_at": datetime.now(timezone.utc)}},
+async def consume_reserved_credits(db, avail_request_id: ObjectId, days: list[str] | None = None) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    credits = (
+        await db.comp_off_credits.find({"avail_request_id": avail_request_id, "status": "reserved"})
+        .sort("created_at", 1)
+        .to_list(length=None)
     )
+    if days and len(credits) != len(days):
+        raise HTTPException(
+            status_code=409,
+            detail="Reserved credits no longer match this request. Ask the employee to apply again.",
+        )
+    traces: list[dict] = []
+    for index, credit in enumerate(credits):
+        used_on = days[index] if days else credit.get("used_on")
+        await db.comp_off_credits.update_one(
+            {"_id": credit["_id"]},
+            {"$set": {"status": "used", "used_on": used_on, "updated_at": now}},
+        )
+        traces.append(
+            {
+                "day": used_on,
+                "credit_id": credit["_id"],
+                "work_date": credit.get("work_date"),
+                "earn_type": credit.get("earn_type"),
+                "worked_shift": credit.get("worked_shift"),
+            }
+        )
+    return traces

@@ -423,6 +423,28 @@ def test_comp_off_earn_avail_and_reject_g(
     balance = client.get("/api/requests/comp-off/balance", headers=headers)
     assert balance.status_code == 200
     assert balance.json()["available"] == 1
+    assert balance.json()["earned"] == 1
+
+    not_leave = client.post(
+        "/api/requests/comp-off/avail",
+        json={"start_date": later, "end_date": later, "reason": "No leave yet"},
+        headers=headers,
+    )
+    assert not_leave.status_code == 400
+    assert "leave" in not_leave.json()["detail"].lower()
+
+    leave = client.post(
+        "/api/requests/leave",
+        json={"start_date": later, "end_date": later, "reason": "Planned leave"},
+        headers=headers,
+    )
+    assert leave.status_code == 200, leave.text
+    leave_ok = client.patch(
+        f"/api/requests/leave/{leave.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert leave_ok.status_code == 200, leave_ok.text
 
     avail = client.post(
         "/api/requests/comp-off/avail",
@@ -439,3 +461,19 @@ def test_comp_off_earn_avail_and_reject_g(
     after = client.get("/api/requests/comp-off/balance", headers=headers).json()
     assert after["available"] == 0
     assert after["used"] == 1
+    assert after["earned"] == 1
+    used_credit = next((c for c in after["credits"] if c.get("status") == "used"), None)
+    assert used_credit
+    assert used_credit["used_on"] == later
+    assert used_credit["work_date"] == work_day
+
+    table = client.get(
+        f"/api/shifts/table?start={later}&end={later}",
+        headers=headers,
+    )
+    assert table.status_code == 200, table.text
+    my_row = next(r for r in table.json()["rows"] if r["employee_id"] == unique_employee_id)
+    assert my_row["cells"][later] == "CO"
+    assert my_row["traces"][later]["earned_on"] == work_day
+    assert my_row["traces"][later]["worked_shift"] == "A"
+    assert len(table.json()["rows"]) >= 1

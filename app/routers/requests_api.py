@@ -14,6 +14,7 @@ from app.comp_off import (
     existing_open_earn,
     inclusive_days,
     release_reserved_credits,
+    require_leave_days,
     reserve_oldest_credits,
     validate_earn,
 )
@@ -443,6 +444,7 @@ async def comp_off_balance(user=Depends(get_current_user)):
         {
             "id": str(c["_id"]),
             "work_date": c.get("work_date"),
+            "used_on": c.get("used_on"),
             "earn_type": c.get("earn_type"),
             "earn_label": EARN_TYPES.get(c.get("earn_type") or "", c.get("earn_type")),
             "worked_shift": c.get("worked_shift"),
@@ -489,6 +491,7 @@ async def create_comp_off_avail(body: CompOffAvailCreate, user=Depends(get_curre
         raise HTTPException(status_code=400, detail="User must belong to a department")
     days = inclusive_days(_parse_iso_day(body.start_date), _parse_iso_day(body.end_date))
     uid = ObjectId(user["_id"])
+    await require_leave_days(db, uid, ObjectId(user["department_id"]), days)
     doc = {
         "kind": "avail",
         "user_id": uid,
@@ -594,8 +597,10 @@ async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles
         return {"ok": True, "status": body.status, "kind": "earn"}
 
     if body.status == "approved":
-        await consume_reserved_credits(db, oid)
-        for day_iso in inclusive_days(_parse_iso_day(req["start_date"]), _parse_iso_day(req["end_date"])):
+        days = inclusive_days(_parse_iso_day(req["start_date"]), _parse_iso_day(req["end_date"]))
+        traces = await consume_reserved_credits(db, oid, days)
+        for trace in traces:
+            day_iso = trace["day"]
             await _upsert_roster_code(
                 db,
                 dept_id=req["department_id"],
@@ -603,7 +608,13 @@ async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles
                 day_iso=day_iso,
                 code="CO",
                 actor=actor,
-                extra={"comp_off_avail_request_id": oid},
+                extra={
+                    "comp_off_avail_request_id": oid,
+                    "comp_off_credit_id": trace["credit_id"],
+                    "comp_off_earned_on": trace.get("work_date"),
+                    "comp_off_earn_type": trace.get("earn_type"),
+                    "comp_off_worked_shift": trace.get("worked_shift"),
+                },
             )
     else:
         await release_reserved_credits(db, oid)
