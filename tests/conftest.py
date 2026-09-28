@@ -14,6 +14,8 @@ os.environ.setdefault("MONGO_URI", "mongodb://127.0.0.1:27017")
 os.environ.setdefault("ROTASHIFT_SECRET_KEY", "test-secret-key-for-pytest-only-not-production")
 os.environ.setdefault("ROTASHIFT_ADMIN_EMPLOYEE_ID", "PYTEST-ADMIN")
 os.environ.setdefault("ROTASHIFT_ADMIN_PASSWORD", "pytest-admin-pass-9x")
+os.environ["GROQ_API_KEY"] = ""
+os.environ["GEMINI_API_KEY"] = ""
 
 
 @pytest.fixture(scope="module")

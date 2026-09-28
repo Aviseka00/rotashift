@@ -1,4 +1,4 @@
-"""Local, role-scoped RotaShift assistant. No prompts or roster data leave the server."""
+"""Role-scoped Ask Rota. Roster lookups stay local; unmatched questions may use Groq then Gemini."""
 from __future__ import annotations
 
 import re
@@ -9,6 +9,8 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from app.assistant_llm import cloud_answer, cloud_providers
+from app.comp_off import credit_counts
 from app.database import get_db
 from app.deps import get_current_user
 
@@ -31,6 +33,7 @@ class AssistantAnswer(BaseModel):
     answer: str
     items: list[AssistantItem] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    source: Literal["local", "groq", "gemini"] = "local"
 
 
 def _date_window(message: str) -> tuple[date, date]:
@@ -160,16 +163,112 @@ async def _tasks_answer(db, body: AssistantQuery, user: dict, dept_id: Optional[
     return AssistantAnswer(intent="tasks", answer=answer, items=items, suggestions=["Show my schedule", "Who is on shift A today?"])
 
 
+async def _comp_off_answer(db, user: dict) -> AssistantAnswer:
+    counts = await credit_counts(db, ObjectId(user["_id"]))
+    earned = counts.get("earned") or 0
+    ready = counts.get("available") or 0
+    used = counts.get("used") or 0
+    pending = counts.get("pending_earn") or 0
+    bits = [
+        f"{earned} earned",
+        f"{ready} ready to use against leave",
+        f"{used} already shown as CO on the roster",
+    ]
+    if pending:
+        bits.append(f"{pending} earn request(s) waiting approval")
+    return AssistantAnswer(
+        intent="help",
+        answer=f"Your comp-off bank: {'; '.join(bits)}. Apply CO only against approved leave (roster L).",
+        suggestions=["Show my schedule", "Show my tasks", "Who is on G shift tomorrow?"],
+        source="local",
+    )
+
+
+async def _live_snapshot(db, user: dict, dept_id: Optional[ObjectId]) -> str:
+    today = date.today().isoformat()
+    uid = ObjectId(user["_id"])
+    shift = await db.shifts.find_one({"user_id": uid, "date": today}, {"shift_code": 1, "date": 1})
+    counts = await credit_counts(db, uid)
+    pending_leave = await db.leave_requests.count_documents({"user_id": uid, "status": "pending"})
+    pending_swap = await db.shift_change_requests.count_documents({"user_id": uid, "status": "pending"})
+    pending_co = await db.comp_off_requests.count_documents({"user_id": uid, "status": "pending"})
+    lines = [
+        f"role={user.get('role')}",
+        f"name={user.get('full_name')}",
+        f"employee_id={user.get('employee_id')}",
+        f"today={today}",
+        f"today_shift={(shift or {}).get('shift_code') or 'unassigned'}",
+        f"comp_off_earned={counts.get('earned') or 0}",
+        f"comp_off_ready={counts.get('available') or 0}",
+        f"comp_off_used={counts.get('used') or 0}",
+        f"pending_leave={pending_leave}",
+        f"pending_swap={pending_swap}",
+        f"pending_comp_off={pending_co}",
+        "facts_are_limited_to_this_user",
+    ]
+    if user.get("role") == "employee":
+        lines.append("employee_can_only_see_own_and_department_roster_codes")
+    lines.append(
+        "APP_HOWTO: Apply leave, swap, or comp-off from the employee ⋮ menu. "
+        "Comp-off can only be used against already-approved leave (roster L); after approval the day shows CO. "
+        "Earn a credit by working on WO, leave, or a holiday, or a joint extra A+B / B+C / C+A (not G), then get it approved. "
+        "Tap CO on the roster to see which extra-duty day paid it. Tap +CO to see a generated credit."
+    )
+    return "\n".join(lines)
+
+
+def _facts_from_lookup(local: AssistantAnswer, snapshot: str) -> str:
+    lines = [snapshot, f"lookup_intent={local.intent}", f"lookup_summary={local.answer}"]
+    for index, item in enumerate(local.items[:20], 1):
+        meta = f" ({item.meta})" if item.meta else ""
+        lines.append(f"row{index}: {item.title} — {item.detail}{meta}")
+    return "\n".join(lines)
+
+
+async def _with_cloud(local: AssistantAnswer, question: str, snapshot: str) -> AssistantAnswer:
+    if not cloud_providers():
+        return local
+    cloud = await cloud_answer(question, _facts_from_lookup(local, snapshot))
+    if not cloud:
+        return local
+    items = local.items
+    if not items:
+        items = [AssistantItem(**row) for row in cloud.get("items") or []]
+    return AssistantAnswer(
+        intent=local.intent,
+        answer=cloud["answer"],
+        items=items,
+        suggestions=cloud.get("suggestions") or local.suggestions,
+        source=cloud.get("source") or "local",
+    )
+
+
 @router.post("/query", response_model=AssistantAnswer)
 async def ask_assistant(body: AssistantQuery, user=Depends(get_current_user)):
     db = get_db()
     message = body.message.strip()
     lower = message.lower()
     dept_id = await _scope_department(user, body.department_id)
+    snapshot = await _live_snapshot(db, user, dept_id)
     if any(word in lower for word in ("task", "assigned", "assignment", "work item", "kanban")):
-        return await _tasks_answer(db, body, user, dept_id)
+        local = await _tasks_answer(db, body, user, dept_id)
+        return await _with_cloud(local, message, snapshot)
     if any(word in lower for word in ("who is on", "who's on", "coverage", "working shift", "on shift")):
-        return await _coverage_answer(db, body, dept_id)
+        local = await _coverage_answer(db, body, dept_id)
+        return await _with_cloud(local, message, snapshot)
+    if any(word in lower for word in ("comp-off", "compoff", "compensatory", "comp off")):
+        local = await _comp_off_answer(db, user)
+        return await _with_cloud(local, message, snapshot)
     if any(word in lower for word in ("schedule", "shift", "roster", "duty")):
-        return await _schedule_answer(db, body, user, dept_id)
-    return AssistantAnswer(intent="help", answer="I can answer questions about schedules, shift coverage, and assigned tasks using live RotaShift data.", suggestions=["Show my schedule", "Show my tasks", "Who is on G shift tomorrow?"])
+        local = await _schedule_answer(db, body, user, dept_id)
+        return await _with_cloud(local, message, snapshot)
+    if cloud_providers():
+        cloud = await cloud_answer(message, snapshot)
+        if cloud:
+            return AssistantAnswer(**cloud)
+    return AssistantAnswer(
+        intent="help",
+        answer="I can answer questions about schedules, shift coverage, comp-off, and assigned tasks using live RotaShift data.",
+        suggestions=["Show my schedule", "Show my tasks", "Who is on G shift tomorrow?"],
+        source="local",
+    )

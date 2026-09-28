@@ -40,6 +40,13 @@ ROTASHIFT_ENV = os.getenv("ROTASHIFT_ENV", "development").strip().lower()
 # Comma-separated origins for browser API access (e.g. https://app.example.com). Empty = same-origin only.
 CORS_ORIGINS_RAW = os.getenv("CORS_ORIGINS", "").strip()
 
+# Optional Ask Rota cloud models (used only when the local roster lookup cannot answer).
+GROQ_API_KEY = (os.getenv("GROQ_API_KEY") or "").strip()
+GROQ_MODEL = (os.getenv("GROQ_MODEL") or "openai/gpt-oss-20b").strip()
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
+ASSISTANT_LLM_TIMEOUT_S = float(os.getenv("ASSISTANT_LLM_TIMEOUT_S") or "8")
+
 # MongoDB driver tuning (scale connection pool with app replicas × expected concurrency)
 _default_mongo_max = 18 if ROTASHIFT_ENV == "production" else 50
 MONGO_MAX_POOL_SIZE = int(os.getenv("MONGO_MAX_POOL_SIZE", str(_default_mongo_max)))

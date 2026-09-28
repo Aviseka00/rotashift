@@ -3215,26 +3215,22 @@ function markKanbanActivitySeen() {
 }
 
 async function pollKanbanActivity() {
-  if (!state.user) return;
+  if (!state.user || document.hidden) return;
   const role = state.user.role;
-  let path = "/api/tasks?include_members=true";
+  const params = new URLSearchParams();
   if (role === "admin") {
     const did = $("tasks-admin-dept")?.value || state.departments[0]?.id;
     if (!did) return;
-    path = `/api/tasks?department_id=${encodeURIComponent(did)}&include_members=true`;
+    params.set("department_id", did);
   }
+  const seen = readKanbanSeenAt();
+  if (seen) params.set("since", seen);
+  const qs = params.toString();
   try {
-    const data = await fetchTaskBoardJson(path);
-    const tasks = data.tasks || [];
-    const seen = readKanbanSeenAt();
-    const fresh = tasks
-      .filter((t) => {
-        const stamp = t.updated_at || t.created_at || "";
-        return stamp && (!seen || stamp > seen);
-      })
-      .sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
-    state.taskNotifyItems = fresh.slice(0, 8);
-    updateNotifyBadge(fresh.length);
+    const ping = await api(`/api/tasks/activity${qs ? `?${qs}` : ""}`);
+    const items = ping.items || [];
+    state.taskNotifyItems = items.slice(0, 8);
+    updateNotifyBadge(items.length);
     if (state.taskNotifyOpen) renderNotifyPanel();
   } catch {
     /* keep last badge */
@@ -3246,7 +3242,7 @@ function startKanbanActivityPolling() {
   if (!readKanbanSeenAt()) writeKanbanSeenAt(new Date().toISOString());
   pollKanbanActivity();
   if (state.taskNotifyPoll) clearInterval(state.taskNotifyPoll);
-  state.taskNotifyPoll = setInterval(pollKanbanActivity, 40000);
+  state.taskNotifyPoll = setInterval(pollKanbanActivity, 60000);
 }
 
 function stopKanbanActivityPolling() {
@@ -4847,7 +4843,9 @@ async function checkIncomingCall() {
 function startIncomingCallPolling() {
   if (state.incomingCallPoll) clearInterval(state.incomingCallPoll);
   checkIncomingCall();
-  state.incomingCallPoll = setInterval(checkIncomingCall, 3000);
+  state.incomingCallPoll = setInterval(() => {
+    if (!document.hidden) checkIncomingCall();
+  }, 12000);
 }
 
 async function answerIncomingCall(decision) {
@@ -4953,6 +4951,11 @@ $("assistant-suggestions")?.addEventListener("click", (event) => {
 });
 
 tryRestoreSession();
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || !state.user) return;
+  pollKanbanActivity().catch(() => {});
+  checkIncomingCall().catch(() => {});
+});
 if (!state.token) {
   loadDepartments().catch(() => {});
   loadRegistrationMeta().catch(() => {});

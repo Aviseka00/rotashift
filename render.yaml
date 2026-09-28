@@ -38,5 +38,10 @@ services:
       #   sync: false
       # - key: ROTASHIFT_ADMIN_PASSWORD
       #   sync: false
-      # - key: CORS_ORIGINS
-      #   value: https://rotashift.onrender.com
+      # - key: GOOGLE_REDIRECT_URI
+      #   sync: false
+      # Optional Ask Rota (Groq first, Gemini fallback). Leave unset to keep all answers local.
+      # - key: GROQ_API_KEY
+      #   sync: false
+      # - key: GEMINI_API_KEY
+      #   sync: false

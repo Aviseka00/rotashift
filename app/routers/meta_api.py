@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter
 
+from app.assistant_llm import cloud_providers
 from app.comp_off import EARN_TYPES, WORKED_SHIFT_CODES
 from app.config import (
     DB_NAME,
@@ -45,6 +46,7 @@ def app_features():
         "comp_off": True,
         "comp_off_earn_types": EARN_TYPES,
         "comp_off_worked_shifts": sorted(WORKED_SHIFT_CODES),
+        "assistant_cloud": cloud_providers(),
     }
 
 

@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from app.assistant_llm import _parse_llm_json
 from app.routers.assistant_api import _date_window
 
 
@@ -14,3 +15,12 @@ def test_assistant_tomorrow_is_one_day():
     start, end = _date_window("who is on G shift tomorrow?")
     assert start == date.today() + timedelta(days=1)
     assert end == start
+
+
+def test_parse_llm_json_fenced_payload():
+    parsed = _parse_llm_json(
+        '```json\n{"intent":"help","answer":"Apply leave from the ⋮ menu.","suggestions":["Show my schedule"]}\n```'
+    )
+    assert parsed["answer"].startswith("Apply leave")
+    assert parsed["intent"] == "help"
+    assert parsed["suggestions"] == ["Show my schedule"]

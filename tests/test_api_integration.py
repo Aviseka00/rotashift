@@ -292,6 +292,28 @@ def test_local_assistant_answers_authenticated_user(client: TestClient, require_
     data = response.json()
     assert data["intent"] == "tasks"
     assert "task" in data["answer"].lower()
+    assert data.get("source") == "local"
+
+
+def test_assistant_comp_off_stays_local(client: TestClient, require_mongo, auth_headers: dict[str, str]):
+    response = client.post(
+        "/api/assistant/query",
+        json={"message": "How many comp-off days do I have?"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["source"] == "local"
+    assert "comp-off" in data["answer"].lower()
+
+
+def test_tasks_activity_is_light(client: TestClient, require_mongo, auth_headers: dict[str, str]):
+    response = client.get("/api/tasks/activity", headers=auth_headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert "changed" in body
+    assert "items" in body
+    assert isinstance(body["items"], list)
 
 
 def test_employee_can_move_kanban_column(

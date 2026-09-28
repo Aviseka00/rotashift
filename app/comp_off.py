@@ -73,12 +73,15 @@ async def existing_open_earn(db, user_id: ObjectId, work_date: str, earn_type: s
 
 async def require_leave_days(db, user_id: ObjectId, department_id: ObjectId, days: list[str]) -> None:
     """Comp-off can only be applied to days already marked leave on the roster."""
-    not_leave: list[str] = []
-    for day in days:
-        shift = await db.shifts.find_one({"user_id": user_id, "department_id": department_id, "date": day})
-        code = str((shift or {}).get("shift_code") or "").strip().upper()
-        if code != "L":
-            not_leave.append(day)
+    if not days:
+        return
+    found: dict[str, str] = {}
+    async for shift in db.shifts.find(
+        {"user_id": user_id, "department_id": department_id, "date": {"$in": days}},
+        {"date": 1, "shift_code": 1},
+    ):
+        found[str(shift.get("date") or "")] = str((shift or {}).get("shift_code") or "").strip().upper()
+    not_leave = [day for day in days if found.get(day) != "L"]
     if not_leave:
         shown = ", ".join(not_leave[:6])
         extra = f" (+{len(not_leave) - 6} more)" if len(not_leave) > 6 else ""

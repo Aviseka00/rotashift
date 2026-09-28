@@ -1,9 +1,9 @@
-const CACHE = "rotashift-v63";
+const CACHE = "rotashift-v65";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) =>
-      cache.addAll(["/app", "/static/index.html", "/static/styles.css?v=63", "/static/app.js?v=63", "/manifest.json"]),
+      cache.addAll(["/app", "/static/index.html", "/static/styles.css?v=65", "/static/app.js?v=65", "/manifest.json"]),
     ),
   );
   self.skipWaiting();
@@ -16,17 +16,38 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Network-first for app code/pages so new deploys load immediately; cache is only a
-// fallback when offline. (Previously cache-first, which pinned users to stale app.js.)
 self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/api/")) {
+  if (url.pathname.startsWith("/api/")) return;
+
+  const isShell =
+    url.pathname === "/" ||
+    url.pathname === "/app" ||
+    url.pathname === "/sw.js" ||
+    url.pathname === "/static/index.html";
+
+  if (!isShell && url.pathname.startsWith("/static/")) {
+    event.respondWith(
+      caches.match(event.request).then(
+        (cached) =>
+          cached ||
+          fetch(event.request).then((resp) => {
+            if (resp && resp.ok) {
+              const copy = resp.clone();
+              caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+            }
+            return resp;
+          }),
+      ),
+    );
     return;
   }
+
   event.respondWith(
     fetch(event.request)
       .then((resp) => {
-        if (resp && resp.ok && event.request.method === "GET") {
+        if (resp && resp.ok) {
           const copy = resp.clone();
           caches.open(CACHE).then((cache) => cache.put(event.request, copy));
         }

@@ -52,6 +52,19 @@ async def ensure_indexes_and_seed():
             unique=True,
             name="uniq_credit_user_day_type",
         ),
+        db.comp_off_credits.create_index(
+            [("department_id", ASCENDING), ("used_on", ASCENDING), ("status", ASCENDING)],
+            name="co_credits_dept_used",
+        ),
+        db.comp_off_credits.create_index(
+            [("department_id", ASCENDING), ("work_date", ASCENDING)],
+            name="co_credits_dept_work",
+        ),
+        db.comp_off_requests.create_index(
+            [("department_id", ASCENDING), ("kind", ASCENDING), ("status", ASCENDING), ("work_date", ASCENDING)],
+            name="co_req_dept_kind_work",
+        ),
+        db.tasks.create_index([("department_id", ASCENDING), ("updated_at", DESCENDING)], name="tasks_dept_updated"),
         db.tasks.create_index([("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING)]),
         db.tasks.create_index(
             [("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING), ("updated_at", DESCENDING)]

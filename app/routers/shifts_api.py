@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
+import asyncio
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -246,15 +247,35 @@ async def table_matrix(
         dates.append(cur.isoformat())
         cur += timedelta(days=1)
 
-    users_list = []
-    async for u in db.users.find({"department_id": dept_oid}).sort("employee_id", 1):
-        users_list.append(u)
+    d0_iso, d1_iso = d0.isoformat(), d1.isoformat()
+    shifts_q = {"department_id": dept_oid, "date": {"$gte": d0_iso, "$lte": d1_iso}}
+    credit_q = {
+        "department_id": dept_oid,
+        "$or": [
+            {"used_on": {"$gte": d0_iso, "$lte": d1_iso}, "status": {"$in": ["used", "reserved"]}},
+            {"work_date": {"$gte": d0_iso, "$lte": d1_iso}},
+        ],
+    }
+    pending_earn_q = {
+        "department_id": dept_oid,
+        "kind": "earn",
+        "status": "pending",
+        "work_date": {"$gte": d0_iso, "$lte": d1_iso},
+    }
+    users_list, shifts_docs, credit_docs, pending_earn_docs, dept = await asyncio.gather(
+        db.users.find({"department_id": dept_oid}, {"employee_id": 1, "full_name": 1, "role": 1})
+        .sort("employee_id", 1)
+        .to_list(length=500),
+        db.shifts.find(shifts_q).to_list(length=8000),
+        db.comp_off_credits.find(credit_q).to_list(length=4000),
+        db.comp_off_requests.find(pending_earn_q).to_list(length=500),
+        db.departments.find_one({"_id": dept_oid}, {"name": 1}),
+    )
 
-    shifts_q = {"department_id": dept_oid, "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}}
     shifts_by_user: Dict[ObjectId, Dict[str, str]] = {}
     traces_by_user: Dict[ObjectId, Dict[str, dict]] = {}
     earns_by_user: Dict[ObjectId, Dict[str, dict]] = {}
-    async for s in db.shifts.find(shifts_q):
+    for s in shifts_docs:
         uid = s.get("user_id")
         day = s.get("date")
         if not uid or not day:
@@ -274,43 +295,21 @@ async def table_matrix(
                 "status": "used",
             }
 
-    credit_q = {
-        "department_id": dept_oid,
-        "used_on": {"$gte": d0.isoformat(), "$lte": d1.isoformat()},
-        "status": {"$in": ["used", "reserved"]},
-    }
-    async for credit in db.comp_off_credits.find(credit_q):
+    for credit in credit_docs:
         uid = credit.get("user_id")
-        day = credit.get("used_on")
-        if not uid or not day:
-            continue
-        existing = traces_by_user.setdefault(uid, {}).get(day)
-        if existing and not existing.get("pending") and existing.get("earned_on"):
-            continue
-        traces_by_user[uid][day] = _credit_trace(credit, pending=credit.get("status") == "reserved")
-        traces_by_user[uid][day]["used_on"] = day
+        used_on = credit.get("used_on")
+        work_date = credit.get("work_date")
+        if uid and used_on and d0_iso <= str(used_on) <= d1_iso and credit.get("status") in ("used", "reserved"):
+            existing = traces_by_user.setdefault(uid, {}).get(used_on)
+            if not (existing and not existing.get("pending") and existing.get("earned_on")):
+                traces_by_user[uid][used_on] = _credit_trace(credit, pending=credit.get("status") == "reserved")
+                traces_by_user[uid][used_on]["used_on"] = used_on
+        if uid and work_date and d0_iso <= str(work_date) <= d1_iso:
+            existing = earns_by_user.setdefault(uid, {}).get(work_date)
+            if not (existing and not existing.get("pending")):
+                earns_by_user[uid][work_date] = _earn_trace(credit, pending=False)
 
-    earn_credit_q = {
-        "department_id": dept_oid,
-        "work_date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()},
-    }
-    async for credit in db.comp_off_credits.find(earn_credit_q):
-        uid = credit.get("user_id")
-        day = credit.get("work_date")
-        if not uid or not day:
-            continue
-        existing = earns_by_user.setdefault(uid, {}).get(day)
-        if existing and not existing.get("pending"):
-            continue
-        earns_by_user[uid][day] = _earn_trace(credit, pending=False)
-
-    pending_earn_q = {
-        "department_id": dept_oid,
-        "kind": "earn",
-        "status": "pending",
-        "work_date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()},
-    }
-    async for req in db.comp_off_requests.find(pending_earn_q):
+    for req in pending_earn_docs:
         uid = req.get("user_id")
         day = req.get("work_date")
         if not uid or not day:
@@ -334,7 +333,6 @@ async def table_matrix(
             }
         )
 
-    dept = await db.departments.find_one({"_id": dept_oid})
     return {
         "department_name": dept["name"] if dept else "",
         "dates": dates,

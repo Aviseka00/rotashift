@@ -113,6 +113,45 @@ async def tasks_kanban_health():
     return {"ok": True, "kanban": True}
 
 
+@router.get("/activity")
+async def tasks_activity(
+    department_id: Optional[str] = Query(None),
+    since: Optional[str] = Query(None),
+    user=Depends(get_current_user),
+):
+    """Light poll for Kanban notifications — no member join, at most 8 recent rows."""
+    db = get_db()
+    dept_oid = _require_dept_for_list(user, department_id)
+    q: dict = {"department_id": dept_oid}
+    since_dt = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            since_dt = None
+    match = dict(q)
+    if since_dt:
+        match["updated_at"] = {"$gt": since_dt}
+    docs = (
+        await db.tasks.find(match, {"title": 1, "column": 1, "updated_at": 1, "created_at": 1})
+        .sort("updated_at", -1)
+        .to_list(length=8)
+    )
+    items = [
+        {
+            "id": str(doc["_id"]),
+            "title": doc.get("title") or "Untitled task",
+            "column": doc.get("column") or "todo",
+            "updated_at": _iso(doc.get("updated_at") or doc.get("created_at")),
+        }
+        for doc in docs
+    ]
+    latest = items[0]["updated_at"] if items else None
+    return {"latest_at": latest, "changed": len(items), "items": items}
+
+
 @router.get("")
 @router.get("/")
 async def list_tasks(

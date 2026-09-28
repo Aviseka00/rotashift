@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=63" />
+    <link rel="stylesheet" href="/static/styles.css?v=65" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -1081,7 +1081,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
     </button>
     <aside id="assistant-drawer" class="assistant-drawer hidden" aria-label="RotaShift assistant">
       <header class="assistant-head">
-        <div><span class="assistant-kicker">LOCAL ASSISTANT</span><h2>Ask Rota</h2><p>Schedules, shifts and tasks—answered from live RotaShift data.</p></div>
+        <div><span class="assistant-kicker">ASK ROTA</span><h2>Ask Rota</h2><p>Live roster, coverage, tasks, and comp-off — Groq first, then Gemini, for a clearer answer.</p></div>
         <button type="button" id="assistant-close" class="assistant-close" aria-label="Close assistant">×</button>
       </header>
       <div id="assistant-messages" class="assistant-messages" aria-live="polite">
@@ -1097,10 +1097,10 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
         <textarea id="assistant-input" rows="1" maxlength="600" placeholder="Ask: Show schedule for 80100173…"></textarea>
         <button type="submit" id="assistant-send" class="assistant-send" aria-label="Send question">➜</button>
       </form>
-      <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
+      <p class="assistant-privacy">Schedule and task lookups stay on this server. Broader questions can use Groq or Gemini with a small live snapshot of your own account.</p>
     </aside>
 
-    <script src="/static/app.js?v=63"></script>
+    <script src="/static/app.js?v=65"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
