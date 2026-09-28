@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import uuid
 
 from fastapi.testclient import TestClient
 
@@ -305,6 +306,63 @@ def test_assistant_comp_off_stays_local(client: TestClient, require_mongo, auth_
     data = response.json()
     assert data["source"] == "local"
     assert "comp-off" in data["answer"].lower()
+
+
+def test_assistant_answers_colleague_shift_by_first_name(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    departments = client.get("/api/departments").json()["departments"]
+    department_id = next((d["id"] for d in departments if d.get("name") == "rota"), departments[0]["id"])
+    colleague_id = f"S{uuid.uuid4().hex[:10].upper()}"
+    asker_id = unique_employee_id
+    today = date.today().isoformat()
+    created_colleague = client.post(
+        "/api/users",
+        json={
+            "employee_id": colleague_id,
+            "password": "pytest-pass-9x",
+            "full_name": "Smruti Askrota",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created_colleague.status_code == 200, created_colleague.text
+    created_asker = client.post(
+        "/api/users",
+        json={
+            "employee_id": asker_id,
+            "password": "pytest-pass-9x",
+            "full_name": "Asker Colleague",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created_asker.status_code == 200, created_asker.text
+    assigned = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [{"employee_id": colleague_id, "date": today, "shift_code": "A"}],
+        },
+        headers=admin_headers,
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert assigned.json().get("upserted") == 1, assigned.text
+    login = client.post("/api/auth/login", json={"employee_id": asker_id, "password": "pytest-pass-9x"})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    response = client.post(
+        "/api/assistant/query",
+        json={"message": "what is smruti askrota's shift today"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["intent"] == "schedule"
+    assert "smruti" in data["answer"].lower()
+    assert any("A" in (item.get("detail") or "") for item in data.get("items") or []), data
 
 
 def test_tasks_activity_is_light(client: TestClient, require_mongo, auth_headers: dict[str, str]):
