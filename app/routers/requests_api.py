@@ -435,13 +435,27 @@ async def _upsert_roster_code(db, *, dept_id, user_id, day_iso: str, code: str, 
 @router.get("/comp-off/balance")
 async def comp_off_balance(user=Depends(get_current_user)):
     db = get_db()
-    counts = await credit_counts(db, ObjectId(user["_id"]))
-    recent = (
-        await db.comp_off_credits.find({"user_id": ObjectId(user["_id"])})
+    uid = ObjectId(user["_id"])
+    counts = await credit_counts(db, uid)
+    pending_earns = (
+        await db.comp_off_requests.find({"user_id": uid, "kind": "earn", "status": "pending"})
         .sort("created_at", -1)
-        .to_list(length=40)
+        .to_list(length=20)
     )
-    counts["credits"] = [
+    recent = await db.comp_off_credits.find({"user_id": uid}).sort("created_at", -1).to_list(length=40)
+    credits = [
+        {
+            "id": str(r["_id"]),
+            "work_date": r.get("work_date"),
+            "used_on": None,
+            "earn_type": r.get("earn_type"),
+            "earn_label": EARN_TYPES.get(r.get("earn_type") or "", r.get("earn_type")),
+            "worked_shift": r.get("worked_shift"),
+            "status": "pending",
+        }
+        for r in pending_earns
+    ]
+    credits.extend(
         {
             "id": str(c["_id"]),
             "work_date": c.get("work_date"),
@@ -452,7 +466,8 @@ async def comp_off_balance(user=Depends(get_current_user)):
             "status": c.get("status"),
         }
         for c in recent
-    ]
+    )
+    counts["credits"] = credits
     return counts
 
 

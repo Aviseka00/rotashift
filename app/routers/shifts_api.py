@@ -5,7 +5,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.comp_off import EARN_TYPES, _credit_trace
+from app.comp_off import EARN_TYPES, _credit_trace, _earn_trace
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import get_current_user, require_roles
@@ -253,6 +253,7 @@ async def table_matrix(
     shifts_q = {"department_id": dept_oid, "date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()}}
     shifts_by_user: Dict[ObjectId, Dict[str, str]] = {}
     traces_by_user: Dict[ObjectId, Dict[str, dict]] = {}
+    earns_by_user: Dict[ObjectId, Dict[str, dict]] = {}
     async for s in db.shifts.find(shifts_q):
         uid = s.get("user_id")
         day = s.get("date")
@@ -263,12 +264,14 @@ async def table_matrix(
         if str(code or "").strip().upper() == "CO":
             earn_type = s.get("comp_off_earn_type")
             traces_by_user.setdefault(uid, {})[day] = {
+                "kind": "avail",
                 "pending": False,
                 "used_on": day,
                 "earned_on": s.get("comp_off_earned_on"),
                 "earn_type": earn_type,
                 "earn_label": EARN_TYPES.get(earn_type or "", earn_type),
                 "worked_shift": s.get("comp_off_worked_shift"),
+                "status": "used",
             }
 
     credit_q = {
@@ -287,6 +290,35 @@ async def table_matrix(
         traces_by_user[uid][day] = _credit_trace(credit, pending=credit.get("status") == "reserved")
         traces_by_user[uid][day]["used_on"] = day
 
+    earn_credit_q = {
+        "department_id": dept_oid,
+        "work_date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()},
+    }
+    async for credit in db.comp_off_credits.find(earn_credit_q):
+        uid = credit.get("user_id")
+        day = credit.get("work_date")
+        if not uid or not day:
+            continue
+        existing = earns_by_user.setdefault(uid, {}).get(day)
+        if existing and not existing.get("pending"):
+            continue
+        earns_by_user[uid][day] = _earn_trace(credit, pending=False)
+
+    pending_earn_q = {
+        "department_id": dept_oid,
+        "kind": "earn",
+        "status": "pending",
+        "work_date": {"$gte": d0.isoformat(), "$lte": d1.isoformat()},
+    }
+    async for req in db.comp_off_requests.find(pending_earn_q):
+        uid = req.get("user_id")
+        day = req.get("work_date")
+        if not uid or not day:
+            continue
+        if earns_by_user.setdefault(uid, {}).get(day):
+            continue
+        earns_by_user[uid][day] = _earn_trace(req, pending=True)
+
     rows = []
     for u in users_list:
         uid = u["_id"]
@@ -298,6 +330,7 @@ async def table_matrix(
                 "role": u["role"],
                 "cells": cells,
                 "traces": traces_by_user.get(uid, {}),
+                "earns": earns_by_user.get(uid, {}),
             }
         )
 

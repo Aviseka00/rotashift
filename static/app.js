@@ -709,7 +709,7 @@ function canEditMatrixCell(employeeId) {
   return false;
 }
 
-function paintMatrixDataCell(td, code, editable, trace) {
+function paintMatrixDataCell(td, code, editable, trace, earn) {
   td.replaceChildren();
   td.className = "";
   td.classList.add("matrix-data-cell");
@@ -718,18 +718,24 @@ function paintMatrixDataCell(td, code, editable, trace) {
   const showCo = c === "CO" || pending;
   td.dataset.shiftCode = c;
   td.dataset.coPending = pending ? "1" : "";
-  if (trace) {
-    td.dataset.coEarnedOn = trace.earned_on || "";
-    td.dataset.coEarnType = trace.earn_type || "";
-    td.dataset.coEarnLabel = trace.earn_label || "";
-    td.dataset.coWorkedShift = trace.worked_shift || "";
-    td.dataset.coUsedOn = trace.used_on || td.dataset.date || "";
+  td.dataset.coKind = showCo ? "avail" : earn ? "earn" : "";
+  td.dataset.coEarnedMark = !showCo && earn ? "1" : "";
+  td.dataset.coEarnPending = !showCo && earn?.pending ? "1" : "";
+  const source = showCo ? trace : earn;
+  if (source) {
+    td.dataset.coEarnedOn = source.earned_on || "";
+    td.dataset.coEarnType = source.earn_type || "";
+    td.dataset.coEarnLabel = source.earn_label || "";
+    td.dataset.coWorkedShift = source.worked_shift || "";
+    td.dataset.coUsedOn = source.used_on || (showCo ? td.dataset.date || "" : "");
+    td.dataset.coStatus = source.status || "";
   } else {
     delete td.dataset.coEarnedOn;
     delete td.dataset.coEarnType;
     delete td.dataset.coEarnLabel;
     delete td.dataset.coWorkedShift;
     delete td.dataset.coUsedOn;
+    delete td.dataset.coStatus;
   }
   if (showCo) {
     td.textContent = "CO";
@@ -747,14 +753,30 @@ function paintMatrixDataCell(td, code, editable, trace) {
   } else {
     td.textContent = "—";
   }
+  if (!showCo && earn) {
+    const mark = document.createElement("button");
+    mark.type = "button";
+    mark.className = "co-earn-mark";
+    mark.textContent = "+CO";
+    mark.setAttribute("aria-label", earn.pending ? "Pending generated comp-off" : "Generated comp-off on this day");
+    td.appendChild(mark);
+    td.classList.add("cell-co-earned");
+    td.title = earn.pending
+      ? `Pending earned CO from extra duty (${earn.earn_label || earn.earn_type || "extra"}). Tap +CO for the trail.`
+      : earn.used_on
+        ? `Generated a CO this day. Already used on ${earn.used_on}. Tap +CO for the trail.`
+        : `Generated a CO this day (${earn.earn_label || earn.earn_type || "extra duty"}). Ready to use against leave.`;
+  }
   if (!showCo && editable) {
     td.classList.add("matrix-cell-editable");
-    td.title =
-      state.user?.role === "employee"
-        ? c === "L"
-          ? "Tap to apply an earned comp-off against this leave"
-          : "Tap to request leave, a shift change, or a comp-off"
-        : "Tap to choose A, B, C, G, L (leave), WO (week off), or CO (comp-off)";
+    if (!earn) {
+      td.title =
+        state.user?.role === "employee"
+          ? c === "L"
+            ? "Tap to apply an earned comp-off against this leave"
+            : "Tap to request leave, a shift change, or a comp-off"
+          : "Tap to choose A, B, C, G, L (leave), WO (week off), or CO (comp-off)";
+    }
   }
 }
 
@@ -762,7 +784,36 @@ function restoreOpenMatrixCellEditor() {
   const sel = document.querySelector("#matrix-body select.matrix-cell-select, #matrix-cards select.matrix-cell-select");
   if (!sel) return;
   const td = sel.closest("td");
-  if (td) paintMatrixDataCell(td, td.dataset.shiftCode, true);
+  if (td) paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td));
+}
+
+function traceFromCell(td) {
+  if (!td) return null;
+  if ((td.dataset.shiftCode || "").toUpperCase() !== "CO" && td.dataset.coPending !== "1" && td.dataset.coKind !== "avail") {
+    return null;
+  }
+  return {
+    pending: td.dataset.coPending === "1",
+    earned_on: td.dataset.coEarnedOn || "",
+    earn_type: td.dataset.coEarnType || "",
+    earn_label: td.dataset.coEarnLabel || "",
+    worked_shift: td.dataset.coWorkedShift || "",
+    used_on: td.dataset.coUsedOn || td.dataset.date || "",
+    status: td.dataset.coStatus || "",
+  };
+}
+
+function earnFromCell(td) {
+  if (!td || (td.dataset.coKind !== "earn" && td.dataset.coEarnedMark !== "1")) return null;
+  return {
+    pending: td.dataset.coEarnPending === "1",
+    earned_on: td.dataset.coEarnedOn || td.dataset.date || "",
+    earn_type: td.dataset.coEarnType || "",
+    earn_label: td.dataset.coEarnLabel || "",
+    worked_shift: td.dataset.coWorkedShift || "",
+    used_on: td.dataset.coUsedOn || "",
+    status: td.dataset.coStatus || "",
+  };
 }
 
 async function saveMatrixCellShift(td, shiftCode) {
@@ -830,21 +881,35 @@ function closeCompOffTrace() {
 }
 
 function openCompOffTrace(td) {
+  const kind = td.dataset.coKind || ((td.dataset.shiftCode || "").toUpperCase() === "CO" || td.dataset.coPending === "1" ? "avail" : "earn");
   const usedOn = td.dataset.coUsedOn || td.dataset.date || "";
-  const earnedOn = td.dataset.coEarnedOn || "";
+  const earnedOn = td.dataset.coEarnedOn || (kind === "earn" ? td.dataset.date || "" : "");
   const earnLabel = td.dataset.coEarnLabel || td.dataset.coEarnType || "extra duty";
   const worked = td.dataset.coWorkedShift || "";
   const who = td.dataset.employeeName || td.dataset.employeeId || "";
-  const pending = td.dataset.coPending === "1";
+  const pending = td.dataset.coPending === "1" || td.dataset.coEarnPending === "1";
+  const title = $("co-trace-title");
+  if (title) title.textContent = kind === "earn" ? "Comp-off you generated" : "How this CO was paid";
   const body = $("co-trace-body");
-  if (body) {
+  if (body && kind === "earn") {
+    const usedLine = td.dataset.coUsedOn
+      ? `It already paid leave on <strong>${escapeHtml(formatFriendlyDay(td.dataset.coUsedOn))}</strong> — that roster day shows CO.`
+      : pending
+        ? "Waiting for approval. After it is approved it is banked and ready to use against leave."
+        : "It is in your bank. Apply it against an approved leave day; the roster then shows CO.";
+    body.innerHTML = `
+      <p><strong>${escapeHtml(who)}</strong> generated this CO on <strong>${escapeHtml(formatFriendlyDay(earnedOn))}</strong> by working <strong>${escapeHtml(worked || "A/B/C")}</strong> (${escapeHtml(earnLabel)})${pending ? " <span class=\"badge status-pending\">pending approval</span>" : ""}.</p>
+      <p>${usedLine}</p>
+      <p class="hint">Generated credits stay on the extra-duty day as +CO. Used credits also update the leave day to CO so you and your department can see them.</p>
+    `;
+  } else if (body) {
     const earnLine = earnedOn
       ? `That leave is paid by extra duty on <strong>${escapeHtml(formatFriendlyDay(earnedOn))}</strong> — worked <strong>${escapeHtml(worked || "A/B/C")}</strong> (${escapeHtml(earnLabel)}).`
       : "The extra-duty day for this CO is not stored on this older roster cell.";
     body.innerHTML = `
       <p><strong>${escapeHtml(who)}</strong> took this CO on <strong>${escapeHtml(formatFriendlyDay(usedOn))}</strong>${pending ? " <span class=\"badge status-pending\">pending approval</span>" : ""}.</p>
       <p>${earnLine}</p>
-      <p class="hint">One earned extra-duty day pays one leave day. The roster shows CO so admin and the department can see it.</p>
+      <p class="hint">One earned extra-duty day pays one leave day. The roster shows CO so you, admin, and the department can see it.</p>
     `;
   }
   show($("co-trace-modal"), true);
@@ -999,13 +1064,13 @@ function openMatrixCellEditor(td) {
       await saveMatrixCellShift(td, code);
     } catch (e) {
       alert(e.message || String(e));
-      paintMatrixDataCell(td, td.dataset.shiftCode, true);
+      paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td));
     }
   });
   sel.addEventListener("blur", () => {
     setTimeout(() => {
       if (committed) return;
-      if (td.querySelector("select.matrix-cell-select")) paintMatrixDataCell(td, td.dataset.shiftCode, true);
+      if (td.querySelector("select.matrix-cell-select")) paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td));
     }, 0);
   });
 }
@@ -1019,7 +1084,11 @@ function handleMatrixDataCellClick(ev) {
   if (td.classList.contains("sticky")) return;
   if (td.querySelector("select.matrix-cell-select")) return;
   if (ev.target.closest("select")) return;
-  if ((td.dataset.shiftCode || "").toUpperCase() === "CO" || td.dataset.coPending === "1") {
+  if (ev.target.closest(".co-earn-mark")) {
+    openCompOffTrace(td);
+    return;
+  }
+  if ((td.dataset.shiftCode || "").toUpperCase() === "CO" || td.dataset.coPending === "1" || td.dataset.coKind === "avail") {
     openCompOffTrace(td);
     return;
   }
@@ -1120,7 +1189,7 @@ function buildMatrixMobileCards(data) {
       tdS.dataset.date = d;
       tdS.dataset.employeeId = row.employee_id;
       tdS.dataset.employeeName = row.full_name || "";
-      paintMatrixDataCell(tdS, row.cells[d] || "", canEditMatrix, row.traces?.[d]);
+      paintMatrixDataCell(tdS, row.cells[d] || "", canEditMatrix, row.traces?.[d], row.earns?.[d]);
       tr.appendChild(tdD);
       tr.appendChild(tdS);
       tb.appendChild(tr);
@@ -1232,7 +1301,7 @@ async function refreshTable() {
       td.dataset.employeeId = row.employee_id;
       td.dataset.employeeName = row.full_name || "";
       const code = row.cells[d];
-      paintMatrixDataCell(td, code || "", canEditMatrix, row.traces?.[d]);
+      paintMatrixDataCell(td, code || "", canEditMatrix, row.traces?.[d], row.earns?.[d]);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -1578,42 +1647,54 @@ async function decideCompOff(id, status) {
 async function refreshCompOffBalance() {
   const hint = $("compoff-balance-hint");
   const count = $("compoff-balance-count");
-  if (!hint || !count || !state.user) return;
+  const own = $("emp-co-own");
+  const ownHint = $("emp-co-own-hint");
+  const ownCount = $("emp-co-own-count");
+  const ownList = $("emp-co-own-list");
+  const role = state.user?.role;
+  if (own) show(own, role === "employee" || role === "manager");
+  if (!state.user) return;
   try {
     const data = await api("/api/requests/comp-off/balance");
     state.compOffBalance = data;
     const available = data.available || 0;
     const earned = data.earned || available + (data.used || 0) + (data.reserved || 0);
-    count.textContent = String(available);
+    const credits = data.credits || [];
     const bits = [
       `${earned} earned`,
       `${available} ready to use against leave`,
     ];
     if (data.reserved) bits.push(`${data.reserved} reserved on a pending apply.`);
     if (data.pending_earn) bits.push(`${data.pending_earn} earn request(s) waiting approval.`);
-    if (data.used) bits.push(`${data.used} already used.`);
-    hint.textContent = bits.join(" · ");
+    if (data.used) bits.push(`${data.used} already used as CO on the roster.`);
+    if (count) count.textContent = String(available);
+    if (hint) hint.textContent = bits.join(" · ");
     const chip = $("emp-co-chip");
     if (chip) {
-      chip.textContent = `${available} CO`;
-      show(chip, true);
+      chip.textContent = earned ? `${earned} earned` : `${available} CO`;
+      if (available && earned !== available) chip.textContent = `${earned} earned · ${available} ready`;
+      chip.title = bits.join(" · ");
+      show(chip, role === "employee");
     }
     const ledger = $("compoff-ledger");
-    if (ledger) {
-      const credits = data.credits || [];
-      ledger.innerHTML = credits.length
-        ? credits
-            .map((c) => {
-              const status = c.status || "—";
-              const used = c.used_on ? ` · used on ${c.used_on}` : "";
-              return `<div class="compoff-ledger-row"><strong>${escapeHtml(c.work_date || "—")}</strong><span>${escapeHtml(c.earn_label || c.earn_type || "earn")} · ${escapeHtml(c.worked_shift || "—")} · ${escapeHtml(status)}${escapeHtml(used)}</span></div>`;
-            })
-            .join("")
-        : '<p class="hint">No earned credits yet. Work a leave, week off, holiday, or a joint extra shift, then get it approved.</p>';
-    }
+    const rowsHtml = credits.length
+      ? credits
+          .map((c) => {
+            const status = c.status || "—";
+            const used = c.used_on ? ` · roster CO on ${c.used_on}` : "";
+            return `<div class="compoff-ledger-row"><strong>${escapeHtml(c.work_date || "—")}</strong><span>${escapeHtml(c.earn_label || c.earn_type || "earn")} · ${escapeHtml(c.worked_shift || "—")} · ${escapeHtml(status)}${escapeHtml(used)}</span></div>`;
+          })
+          .join("")
+      : '<p class="hint">No generated credits yet. Work a leave, week off, holiday, or a joint extra shift, then get it approved.</p>';
+    if (ledger) ledger.innerHTML = rowsHtml;
+    if (ownCount) ownCount.textContent = String(earned);
+    if (ownHint) ownHint.textContent = bits.join(" · ");
+    if (ownList) ownList.innerHTML = rowsHtml;
   } catch (e) {
-    hint.textContent = e.message || "Could not load your comp-off bank.";
-    count.textContent = "—";
+    if (hint) hint.textContent = e.message || "Could not load your comp-off bank.";
+    if (count) count.textContent = "—";
+    if (ownHint) ownHint.textContent = e.message || "Could not load your generated comp-off.";
+    if (ownCount) ownCount.textContent = "—";
   }
 }
 
@@ -2771,6 +2852,12 @@ async function fetchTodayTasks() {
   }
 }
 
+function ownCompOffSummary(coBalance) {
+  const available = coBalance?.available || 0;
+  const earned = coBalance?.earned || available + (coBalance?.used || 0) + (coBalance?.reserved || 0);
+  return { available, earned };
+}
+
 async function refreshTodayHome() {
   const root = todayMountEl();
   if (!root || !state.user) return;
@@ -2845,6 +2932,7 @@ async function refreshTodayHome() {
               <button type="button" class="btn" data-today-go="approvals">Review approvals</button>
             </div>
           </section>`;
+    const coSummary = ownCompOffSummary(coBalance);
     if (role === "employee") {
       root.innerHTML = `
         <section class="today-hero emp-today-hero">
@@ -2857,11 +2945,11 @@ async function refreshTodayHome() {
           </div>
         </section>
         <details class="emp-more-details">
-          <summary>More activity · ${pendingMine.length} pending · ${coBalance.available || 0} comp-off</summary>
+          <summary>More activity · ${pendingMine.length} pending · ${coSummary.earned} earned CO</summary>
           <div class="today-stat-grid">
             <div class="today-stat"><span class="hint">Open tasks</span><strong>${openMine.length}</strong></div>
             <div class="today-stat"><span class="hint">Pending</span><strong>${pendingMine.length}</strong></div>
-            <div class="today-stat"><span class="hint">Comp-off bank</span><strong>${coBalance.available || 0}</strong></div>
+            <div class="today-stat"><span class="hint">CO earned / ready</span><strong>${coSummary.earned} / ${coSummary.available}</strong></div>
           </div>
           <div class="today-req-list">${reqHtml}</div>
           <div class="today-task-list">${taskHtml}</div>
@@ -2891,7 +2979,7 @@ async function refreshTodayHome() {
         <div class="today-stat-grid">
           <div class="today-stat"><span class="hint">Open tasks</span><strong>${openMine.length}</strong></div>
           <div class="today-stat"><span class="hint">My requests</span><strong>${pendingMine.length}</strong></div>
-          <div class="today-stat"><span class="hint">Comp-off bank</span><strong>${coBalance.available || 0}</strong></div>
+          <div class="today-stat"><span class="hint">CO earned / ready</span><strong>${ownCompOffSummary(coBalance).earned} / ${ownCompOffSummary(coBalance).available}</strong></div>
         </div>
         <div class="today-task-list">${taskHtml}</div>
       </section>
@@ -3179,6 +3267,7 @@ function activateDashTab(dashId, tabId) {
   }
   if (tabId === "schedule") {
     if ($("table-start")?.value && $("table-end")?.value) refreshTable().catch(() => {});
+    refreshCompOffBalance().catch(() => {});
     if (state.user?.role === "admin") {
       if (!state.calendar) initCalendar().catch(() => {});
       else requestAnimationFrame(() => requestAnimationFrame(() => state.calendar.updateSize()));
@@ -3247,6 +3336,7 @@ function applyRoleVisibility() {
   show($("mgr-admin-dept-row"), role === "admin");
   show($("emp-schedule-quick"), false);
   show($("emp-action-bar"), role === "employee");
+  show($("emp-co-own"), role === "employee" || role === "manager");
   const empNav = document.querySelector(".emp-dash-nav");
   if (empNav) {
     empNav.hidden = role === "employee";
@@ -4479,6 +4569,14 @@ document.querySelectorAll("#employee-tools .emp-apply-btn").forEach((btn) => {
 });
 ["emp-go-leave", "emp-go-shift-change", "emp-go-compoff", "emp-go-status"].forEach((id) => {
   $(id)?.addEventListener("click", () => openEmployeeApply($(id).dataset.apply));
+});
+$("emp-co-chip")?.addEventListener("click", () => {
+  setEmpMoreMenuOpen(false);
+  setEmployeeApplyPanel(null);
+  activateDashTab("employee", "schedule");
+  requestAnimationFrame(() => {
+    $("emp-co-own")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 });
 $("emp-more-btn")?.addEventListener("click", (event) => {
   event.stopPropagation();

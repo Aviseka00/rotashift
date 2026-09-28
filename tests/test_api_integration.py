@@ -400,6 +400,19 @@ def test_comp_off_earn_avail_and_reject_g(
         headers=headers,
     )
     assert earn.status_code == 200, earn.text
+    pending_earn_table = client.get(
+        f"/api/shifts/table?start={work_day}&end={work_day}",
+        headers=headers,
+    )
+    assert pending_earn_table.status_code == 200, pending_earn_table.text
+    pending_earn_row = next(
+        r for r in pending_earn_table.json()["rows"] if r["employee_id"] == unique_employee_id
+    )
+    assert pending_earn_row["earns"][work_day]["pending"] is True
+    assert pending_earn_row["earns"][work_day]["earned_on"] == work_day
+    pending_balance = client.get("/api/requests/comp-off/balance", headers=headers).json()
+    assert pending_balance["pending_earn"] == 1
+    assert any(c.get("status") == "pending" and c.get("work_date") == work_day for c in pending_balance["credits"])
     again = client.post(
         "/api/requests/comp-off/earn",
         json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "B"},
@@ -420,6 +433,15 @@ def test_comp_off_earn_avail_and_reject_g(
         headers=admin_headers,
     )
     assert approved.status_code == 200, approved.text
+    earned_table = client.get(
+        f"/api/shifts/table?start={work_day}&end={work_day}",
+        headers=headers,
+    )
+    assert earned_table.status_code == 200, earned_table.text
+    earned_row = next(r for r in earned_table.json()["rows"] if r["employee_id"] == unique_employee_id)
+    assert earned_row["earns"][work_day]["pending"] is False
+    assert earned_row["earns"][work_day]["status"] == "available"
+    assert earned_row["earns"][work_day]["earned_on"] == work_day
     balance = client.get("/api/requests/comp-off/balance", headers=headers)
     assert balance.status_code == 200
     assert balance.json()["available"] == 1
@@ -498,3 +520,10 @@ def test_comp_off_earn_avail_and_reject_g(
     assert my_row["traces"][later]["earned_on"] == work_day
     assert my_row["traces"][later]["worked_shift"] == "A"
     assert len(table.json()["rows"]) >= 1
+    generated = client.get(
+        f"/api/shifts/table?start={work_day}&end={work_day}",
+        headers=headers,
+    ).json()
+    generated_row = next(r for r in generated["rows"] if r["employee_id"] == unique_employee_id)
+    assert generated_row["earns"][work_day]["status"] == "used"
+    assert generated_row["earns"][work_day]["used_on"] == later

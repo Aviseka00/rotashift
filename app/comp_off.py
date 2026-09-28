@@ -197,12 +197,28 @@ async def consume_reserved_credits(db, avail_request_id: ObjectId, days: list[st
 def _credit_trace(credit: dict, *, pending: bool) -> dict:
     earn_type = credit.get("earn_type")
     return {
+        "kind": "avail",
         "pending": pending,
         "used_on": credit.get("used_on"),
         "earned_on": credit.get("work_date"),
         "earn_type": earn_type,
         "earn_label": EARN_TYPES.get(earn_type or "", earn_type),
         "worked_shift": credit.get("worked_shift"),
+        "status": "pending" if pending else credit.get("status") or "used",
+    }
+
+
+def _earn_trace(doc: dict, *, pending: bool) -> dict:
+    earn_type = doc.get("earn_type")
+    return {
+        "kind": "earn",
+        "pending": pending,
+        "earned_on": doc.get("work_date"),
+        "used_on": doc.get("used_on"),
+        "earn_type": earn_type,
+        "earn_label": EARN_TYPES.get(earn_type or "", earn_type),
+        "worked_shift": doc.get("worked_shift"),
+        "status": "pending" if pending else (doc.get("status") or "available"),
     }
 
 

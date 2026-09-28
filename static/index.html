@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=62" />
+    <link rel="stylesheet" href="/static/styles.css?v=63" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -174,7 +174,7 @@
               <span class="emp-action-bar-kicker">Your dash</span>
               <strong id="emp-action-bar-label">Roster</strong>
             </div>
-            <span id="emp-co-chip" class="emp-co-chip hidden" title="Earned comp-off days ready to use">0 CO</span>
+            <button type="button" id="emp-co-chip" class="emp-co-chip hidden" title="Your earned and applied comp-off">0 CO</button>
             <div class="emp-action-bar-end">
               <button
                 type="button"
@@ -645,18 +645,30 @@ Amruta Mishra	80100331</pre>
               </div>
             </div>
             <div class="roster-schedule-col">
+              <aside id="emp-co-own" class="emp-co-own hidden" aria-label="Your generated comp-off">
+                <header class="emp-co-own-head">
+                  <div>
+                    <span class="eyebrow">Your generated comp-off</span>
+                    <p class="hint" id="emp-co-own-hint">Extra-duty days you earned. Applied CO also shows on the roster as CO.</p>
+                  </div>
+                  <strong id="emp-co-own-count">0</strong>
+                </header>
+                <div id="emp-co-own-list" class="emp-co-own-list"></div>
+              </aside>
               <h2>Shift roster</h2>
               <p class="hint" id="roster-view-hint">
                 <span class="roster-hint-wide"
                   >Main view is a dated grid table (staff in rows, dates in columns). Scroll horizontally for more days.
                   Codes: <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong> (shifts),
-                  <strong>L</strong> (leave), <strong>WO</strong> (week off). Employees: tap your cell to request leave
-                  or a swap. Managers and admins can assign any code directly.</span
+                  <strong>L</strong> (leave), <strong>WO</strong> (week off), <strong>CO</strong> (paid comp-off).
+                  A <strong>+CO</strong> mark is a day that generated a credit. Employees: tap your cell to request leave
+                  or a swap. Managers and admins can assign any code directly.</span>
                 >
                 <span class="roster-hint-narrow"
                   >The dated table scrolls sideways; below it, each person also has a compact card list by day. Tap
                   your cell to request <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong>,
-                  <strong>L</strong> (leave), or <strong>WO</strong> (week off). Managers and admins edit any row.</span
+                  <strong>L</strong> (leave), <strong>WO</strong> (week off), or <strong>CO</strong>. A <strong>+CO</strong>
+                  mark is a generated credit. Managers and admins edit any row.</span>
                 >
               </p>
               <div class="row">
@@ -1088,7 +1100,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=62"></script>
+    <script src="/static/app.js?v=63"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

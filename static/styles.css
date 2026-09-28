@@ -708,6 +708,9 @@ html.role-employee .emp-dash-nav {
   color: #7dd3fc;
   font-size: 0.78rem;
   font-weight: 800;
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
 }
 
 .emp-action-bar-end {
@@ -1446,6 +1449,54 @@ table.matrix select.matrix-cell-select {
   background: #0f766e;
   border-style: dashed !important;
   border-color: #99f6e4 !important;
+}
+.cell-co-earned {
+  position: relative;
+}
+.co-earn-mark {
+  display: inline-block;
+  margin-left: 0.2rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  border: 1px solid #7dd3fc;
+  background: #0c4a6e;
+  color: #e0f2fe;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.co-earn-mark:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 1px;
+}
+
+.emp-co-own {
+  margin: 0 0 0.9rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(14, 165, 233, 0.35);
+  background: linear-gradient(180deg, rgba(8, 47, 73, 0.65), rgba(15, 23, 42, 0.78));
+}
+.emp-co-own-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.emp-co-own-head strong {
+  font-size: 1.55rem;
+  line-height: 1;
+  color: #7dd3fc;
+}
+.emp-co-own-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 10rem;
+  overflow: auto;
 }
 
 table.matrix.roster-matrix td.matrix-data-cell[class^="cell-"],
@@ -3992,6 +4043,15 @@ a { color: var(--tan); }
     gap: 0.55rem;
     margin-bottom: 0.75rem;
     padding: 0.65rem 0.7rem;
+  }
+
+  html.role-employee .emp-co-own {
+    padding: 0.65rem 0.7rem;
+    margin-bottom: 0.7rem;
+  }
+
+  html.role-employee .emp-co-own-head strong {
+    font-size: 1.35rem;
   }
 
   html.role-employee .compoff-balance-card strong {
