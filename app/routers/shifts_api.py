@@ -5,7 +5,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.comp_off import EARN_TYPES
+from app.comp_off import EARN_TYPES, _credit_trace
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import get_current_user, require_roles
@@ -263,12 +263,29 @@ async def table_matrix(
         if str(code or "").strip().upper() == "CO":
             earn_type = s.get("comp_off_earn_type")
             traces_by_user.setdefault(uid, {})[day] = {
+                "pending": False,
                 "used_on": day,
                 "earned_on": s.get("comp_off_earned_on"),
                 "earn_type": earn_type,
                 "earn_label": EARN_TYPES.get(earn_type or "", earn_type),
                 "worked_shift": s.get("comp_off_worked_shift"),
             }
+
+    credit_q = {
+        "department_id": dept_oid,
+        "used_on": {"$gte": d0.isoformat(), "$lte": d1.isoformat()},
+        "status": {"$in": ["used", "reserved"]},
+    }
+    async for credit in db.comp_off_credits.find(credit_q):
+        uid = credit.get("user_id")
+        day = credit.get("used_on")
+        if not uid or not day:
+            continue
+        existing = traces_by_user.setdefault(uid, {}).get(day)
+        if existing and not existing.get("pending") and existing.get("earned_on"):
+            continue
+        traces_by_user[uid][day] = _credit_trace(credit, pending=credit.get("status") == "reserved")
+        traces_by_user[uid][day]["used_on"] = day
 
     rows = []
     for u in users_list:

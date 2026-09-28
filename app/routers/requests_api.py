@@ -13,6 +13,7 @@ from app.comp_off import (
     credit_counts,
     existing_open_earn,
     inclusive_days,
+    ledger_rows,
     release_reserved_credits,
     require_leave_days,
     reserve_oldest_credits,
@@ -484,6 +485,26 @@ async def create_comp_off_earn(body: CompOffEarnCreate, user=Depends(get_current
     return {"id": str(res.inserted_id), "status": "pending", "kind": "earn"}
 
 
+@router.get("/comp-off/ledger")
+async def comp_off_ledger(
+    department_id: str | None = Query(None),
+    user=Depends(require_roles("admin", "manager")),
+):
+    db = get_db()
+    dept_oid = None
+    if user.get("role") == "manager":
+        if not user.get("department_id"):
+            return {"users": []}
+        dept_oid = ObjectId(user["department_id"])
+    elif department_id:
+        try:
+            dept_oid = ObjectId(department_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid department_id")
+    rows = await ledger_rows(db, dept_oid)
+    return {"users": rows}
+
+
 @router.post("/comp-off/avail")
 async def create_comp_off_avail(body: CompOffAvailCreate, user=Depends(get_current_user)):
     db = get_db()
@@ -505,7 +526,7 @@ async def create_comp_off_avail(body: CompOffAvailCreate, user=Depends(get_curre
     }
     res = await db.comp_off_requests.insert_one(doc)
     try:
-        credit_ids = await reserve_oldest_credits(db, uid, len(days), res.inserted_id)
+        credit_ids = await reserve_oldest_credits(db, uid, len(days), res.inserted_id, days)
     except HTTPException:
         await db.comp_off_requests.delete_one({"_id": res.inserted_id})
         raise

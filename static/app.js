@@ -242,6 +242,7 @@ async function loadDepartments() {
     "admin-bulk-add-dept",
     "admin-user-dept-filter",
     "admin-records-dept",
+    "admin-co-dept",
     "tasks-admin-dept",
     "infovalley-admin-dept",
     "infovally-admin-dept",
@@ -256,7 +257,7 @@ async function loadDepartments() {
     empty.textContent =
       id === "reg-dept"
         ? "Select department…"
-        : id === "admin-user-dept-filter" || id === "admin-records-dept"
+        : id === "admin-user-dept-filter" || id === "admin-records-dept" || id === "admin-co-dept"
           ? "All departments"
           : "—";
     sel.appendChild(empty);
@@ -713,7 +714,10 @@ function paintMatrixDataCell(td, code, editable, trace) {
   td.className = "";
   td.classList.add("matrix-data-cell");
   const c = (code || "").trim().toUpperCase();
+  const pending = Boolean(trace?.pending);
+  const showCo = c === "CO" || pending;
   td.dataset.shiftCode = c;
+  td.dataset.coPending = pending ? "1" : "";
   if (trace) {
     td.dataset.coEarnedOn = trace.earned_on || "";
     td.dataset.coEarnType = trace.earn_type || "";
@@ -727,18 +731,23 @@ function paintMatrixDataCell(td, code, editable, trace) {
     delete td.dataset.coWorkedShift;
     delete td.dataset.coUsedOn;
   }
-  if (c) {
+  if (showCo) {
+    td.textContent = "CO";
+    td.classList.add("cell-co");
+    if (pending) td.classList.add("cell-co-pending");
+    td.classList.add("matrix-cell-trace");
+    td.title = pending
+      ? "Pending paid CO. Tap to see which extra-duty day this leave will use."
+      : trace?.earned_on
+        ? `Paid CO. Taken on this day. Earned by working ${trace.worked_shift || "extra"} on ${trace.earned_on}. Tap for the trail.`
+        : "Paid comp-off. Tap to see which extra-duty day paid this leave.";
+  } else if (c) {
     td.textContent = c;
     td.classList.add(`cell-${c.toLowerCase()}`);
   } else {
     td.textContent = "—";
   }
-  if (c === "CO") {
-    td.classList.add("matrix-cell-trace");
-    td.title = trace?.earned_on
-      ? `Paid CO. Earned by working ${trace.worked_shift || "extra"} on ${trace.earned_on}. Tap for the trail.`
-      : "Paid comp-off. Tap to see which extra-duty day paid this leave.";
-  } else if (editable) {
+  if (!showCo && editable) {
     td.classList.add("matrix-cell-editable");
     td.title =
       state.user?.role === "employee"
@@ -825,16 +834,17 @@ function openCompOffTrace(td) {
   const earnedOn = td.dataset.coEarnedOn || "";
   const earnLabel = td.dataset.coEarnLabel || td.dataset.coEarnType || "extra duty";
   const worked = td.dataset.coWorkedShift || "";
-  const who = td.dataset.employeeId || "";
+  const who = td.dataset.employeeName || td.dataset.employeeId || "";
+  const pending = td.dataset.coPending === "1";
   const body = $("co-trace-body");
   if (body) {
     const earnLine = earnedOn
-      ? `This paid CO was earned by working <strong>${escapeHtml(worked || "A/B/C")}</strong> on <strong>${escapeHtml(formatFriendlyDay(earnedOn))}</strong> (${escapeHtml(earnLabel)}).`
-      : "This day is marked CO, but the earn-day trail was not stored on this older roster cell.";
+      ? `That leave is paid by extra duty on <strong>${escapeHtml(formatFriendlyDay(earnedOn))}</strong> — worked <strong>${escapeHtml(worked || "A/B/C")}</strong> (${escapeHtml(earnLabel)}).`
+      : "The extra-duty day for this CO is not stored on this older roster cell.";
     body.innerHTML = `
-      <p class="hint">${escapeHtml(who)} · used on <strong>${escapeHtml(formatFriendlyDay(usedOn))}</strong></p>
+      <p><strong>${escapeHtml(who)}</strong> took this CO on <strong>${escapeHtml(formatFriendlyDay(usedOn))}</strong>${pending ? " <span class=\"badge status-pending\">pending approval</span>" : ""}.</p>
       <p>${earnLine}</p>
-      <p class="hint">One earned extra-duty day pays one leave day. The roster shows CO so there is no loss of pay.</p>
+      <p class="hint">One earned extra-duty day pays one leave day. The roster shows CO so admin and the department can see it.</p>
     `;
   }
   show($("co-trace-modal"), true);
@@ -928,6 +938,7 @@ async function submitRosterCellRequest() {
     refreshEmployeeRequestLog().catch(() => {});
     refreshCompOffBalance().catch(() => {});
     refreshTodayHome().catch(() => {});
+    refreshTable().catch(() => {});
     activateDashTab(state.user?.role === "manager" ? "manager" : "employee", state.user?.role === "employee" ? "schedule" : "requests");
     setEmployeeApplyPanel("status");
   } catch (e) {
@@ -1008,7 +1019,7 @@ function handleMatrixDataCellClick(ev) {
   if (td.classList.contains("sticky")) return;
   if (td.querySelector("select.matrix-cell-select")) return;
   if (ev.target.closest("select")) return;
-  if ((td.dataset.shiftCode || "").toUpperCase() === "CO") {
+  if ((td.dataset.shiftCode || "").toUpperCase() === "CO" || td.dataset.coPending === "1") {
     openCompOffTrace(td);
     return;
   }
@@ -1108,6 +1119,7 @@ function buildMatrixMobileCards(data) {
       const tdS = document.createElement("td");
       tdS.dataset.date = d;
       tdS.dataset.employeeId = row.employee_id;
+      tdS.dataset.employeeName = row.full_name || "";
       paintMatrixDataCell(tdS, row.cells[d] || "", canEditMatrix, row.traces?.[d]);
       tr.appendChild(tdD);
       tr.appendChild(tdS);
@@ -1218,6 +1230,7 @@ async function refreshTable() {
       const td = document.createElement("td");
       td.dataset.date = d;
       td.dataset.employeeId = row.employee_id;
+      td.dataset.employeeName = row.full_name || "";
       const code = row.cells[d];
       paintMatrixDataCell(td, code || "", canEditMatrix, row.traces?.[d]);
       tr.appendChild(td);
@@ -1601,6 +1614,72 @@ async function refreshCompOffBalance() {
   } catch (e) {
     hint.textContent = e.message || "Could not load your comp-off bank.";
     count.textContent = "—";
+  }
+}
+
+function renderCompOffLedgerTable(root, users, showDept) {
+  if (!root) return;
+  const rows = users || [];
+  if (!rows.length) {
+    root.innerHTML = '<p class="hint">No people in this scope yet.</p>';
+    return;
+  }
+  const head = `<tr>
+      <th>Name</th>
+      ${showDept ? "<th>Dept</th>" : ""}
+      <th>Earned</th>
+      <th>Ready</th>
+      <th>Pending</th>
+      <th>Used</th>
+      <th>Status</th>
+    </tr>`;
+  const body = rows
+    .map((u) => {
+      const pending = (u.pending_earn || 0) + (u.pending_avail_days || 0);
+      const statusLabel =
+        u.status === "pending" ? "Pending" : u.status === "banked" ? "Banked" : u.status === "used" ? "Used" : "None";
+      const trail = (u.credits || [])
+        .filter((c) => c.used_on)
+        .slice(0, 4)
+        .map((c) => `${c.used_on} ← ${c.work_date || "?"}`)
+        .join("; ");
+      return `<tr>
+        <td><strong>${escapeHtml(u.full_name || "—")}</strong><div class="hint">${escapeHtml(u.employee_id || "")}${trail ? ` · ${escapeHtml(trail)}` : ""}</div></td>
+        ${showDept ? `<td>${escapeHtml(u.department_name || "—")}</td>` : ""}
+        <td>${u.earned || 0}</td>
+        <td>${u.available || 0}</td>
+        <td>${pending}</td>
+        <td>${u.used || 0}</td>
+        <td><span class="badge ${u.status === "pending" ? "status-pending" : ""}">${escapeHtml(statusLabel)}</span></td>
+      </tr>`;
+    })
+    .join("");
+  root.innerHTML = `<table class="admin-records-table co-ledger-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+async function refreshCompOffLedger() {
+  const role = state.user?.role;
+  const adminRoot = $("admin-co-ledger");
+  const mgrRoot = $("mgr-co-ledger");
+  if (role === "admin" && adminRoot) {
+    adminRoot.innerHTML = loadingSpinnerHTML("Loading comp-off bank…");
+    try {
+      const dept = $("admin-co-dept")?.value || "";
+      const qs = dept ? `?department_id=${encodeURIComponent(dept)}` : "";
+      const data = await api(`/api/requests/comp-off/ledger${qs}`);
+      renderCompOffLedgerTable(adminRoot, data.users, !dept);
+    } catch (e) {
+      adminRoot.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+    }
+  }
+  if (role === "manager" && mgrRoot) {
+    mgrRoot.innerHTML = loadingSpinnerHTML("Loading department comp-off bank…");
+    try {
+      const data = await api("/api/requests/comp-off/ledger");
+      renderCompOffLedgerTable(mgrRoot, data.users, false);
+    } catch (e) {
+      mgrRoot.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
+    }
   }
 }
 
@@ -3119,8 +3198,12 @@ function activateDashTab(dashId, tabId) {
     refreshManagerQueues();
     refreshManagerInlineApprovalsLog().catch(() => {});
   }
+  if (dashId === "admin" && tabId === "compoff" && state.user?.role === "admin") {
+    refreshCompOffLedger().catch(() => {});
+  }
   if (dashId === "manager" && tabId === "records" && state.user?.role === "manager") {
     refreshManagerRequestLog();
+    refreshCompOffLedger().catch(() => {});
   }
   if (dashId === "admin" && tabId === "org" && state.user?.role === "admin") {
     refreshAdminDeptList();
@@ -3316,18 +3399,25 @@ async function bootAuthenticated() {
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
 
-  $("mgr-records-refresh")?.addEventListener("click", () => refreshManagerRequestLog());
+  $("mgr-records-refresh")?.addEventListener("click", () => {
+    refreshManagerRequestLog();
+    refreshCompOffLedger().catch(() => {});
+  });
 
   const auf = $("admin-user-dept-filter");
   if (auf) auf.onchange = () => refreshAdminUsers();
   const ard = $("admin-records-dept");
   if (ard) ard.onchange = () => refreshAdminRequestLog();
+  const acd = $("admin-co-dept");
+  if (acd) acd.onchange = () => refreshCompOffLedger();
+  $("admin-co-refresh")?.addEventListener("click", () => refreshCompOffLedger());
 
   if (!state.adminShortcutsWired && state.user.role === "admin") {
     state.adminShortcutsWired = true;
     $("admin-go-schedule")?.addEventListener("click", () => activateDashTab("admin", "schedule"));
     $("admin-go-people")?.addEventListener("click", () => activateDashTab("admin", "people"));
     $("admin-go-approvals")?.addEventListener("click", () => activateDashTab("admin", "approvals"));
+    $("admin-go-compoff")?.addEventListener("click", () => activateDashTab("admin", "compoff"));
     $("admin-go-records")?.addEventListener("click", () => activateDashTab("admin", "records"));
     $("admin-go-shifts")?.addEventListener("click", () => activateDashTab("admin", "shifts"));
     $("admin-go-today")?.addEventListener("click", () => activateDashTab("admin", "today"));
@@ -3558,7 +3648,7 @@ $("leave-submit").addEventListener("click", async () => {
     });
     showEmployeeRequestNotice(
       useCompOff
-        ? `Comp-off avail submitted (${res.days || "those"} day(s)). Reference id: ${res.id}. After approval the roster shows CO — no loss of pay.`
+        ? `Comp-off applied (${res.days || "those"} day(s)). The roster shows CO now so your department can see it. After approval it stays paid CO.`
         : `Leave request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
       "success",
     );
@@ -3568,6 +3658,7 @@ $("leave-submit").addEventListener("click", async () => {
     await refreshCompOffBalance();
     await refreshManagerQueues();
     await refreshTodayHome().catch(() => {});
+    await refreshTable().catch(() => {});
     setEmployeeApplyPanel("status");
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");

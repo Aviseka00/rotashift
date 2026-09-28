@@ -1,4 +1,4 @@
-const CACHE = "rotashift-v61";
+const CACHE = "rotashift-v62";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

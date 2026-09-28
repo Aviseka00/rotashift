@@ -452,6 +452,27 @@ def test_comp_off_earn_avail_and_reject_g(
         headers=headers,
     )
     assert avail.status_code == 200, avail.text
+
+    forbidden = client.get("/api/requests/comp-off/ledger", headers=headers)
+    assert forbidden.status_code == 403
+
+    pending_table = client.get(
+        f"/api/shifts/table?start={later}&end={later}",
+        headers=headers,
+    )
+    assert pending_table.status_code == 200, pending_table.text
+    pending_row = next(r for r in pending_table.json()["rows"] if r["employee_id"] == unique_employee_id)
+    assert pending_row["traces"][later]["pending"] is True
+    assert pending_row["traces"][later]["earned_on"] == work_day
+    assert pending_row["traces"][later]["used_on"] == later
+
+    ledger = client.get("/api/requests/comp-off/ledger", headers=admin_headers)
+    assert ledger.status_code == 200, ledger.text
+    person = next(u for u in ledger.json()["users"] if u["employee_id"] == unique_employee_id)
+    assert person["earned"] == 1
+    assert person["reserved"] == 1
+    assert person["status"] == "pending"
+
     used = client.patch(
         f"/api/requests/comp-off/{avail.json()['id']}/decide",
         json={"status": "approved"},

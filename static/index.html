@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=61" />
+    <link rel="stylesheet" href="/static/styles.css?v=62" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -387,6 +387,9 @@
               <div class="table-scroll admin-records-wrap">
                 <div id="mgr-records-compoff"></div>
               </div>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Department comp-off bank</h3>
+              <p class="hint">Earned, ready, pending, and used credits for everyone in your department.</p>
+              <div id="mgr-co-ledger" class="table-scroll admin-records-wrap"></div>
             </div>
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="tasks">
@@ -404,6 +407,7 @@
             <button type="button" class="dash-tab" data-dash="admin" data-tab="org">Departments</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="people">People</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="approvals">Approvals</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="compoff">Comp-off</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="records">Activity</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="infovalley">Info-valley</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="tasks">My Kanban</button>
@@ -519,6 +523,25 @@ Amruta Mishra	80100331</pre>
           <div class="dash-pane hidden" data-dash="admin" data-tab="approvals">
             <div id="adm-approval-tab-slot"></div>
           </div>
+          <div class="dash-pane hidden" data-dash="admin" data-tab="compoff">
+            <div class="card">
+              <h2>Comp-off bank — every user</h2>
+              <p class="hint">
+                Who earned how many paid days, what is still in the bank, and what is already used. Open the roster and tap
+                a <strong>CO</strong> cell to see which extra-duty day paid that leave.
+              </p>
+              <div class="row">
+                <div>
+                  <label for="admin-co-dept">Department</label>
+                  <select id="admin-co-dept"></select>
+                </div>
+                <div style="flex: 0 0 auto; align-self: flex-end">
+                  <button type="button" id="admin-co-refresh" class="btn secondary">Refresh</button>
+                </div>
+              </div>
+              <div id="admin-co-ledger" class="table-scroll admin-records-wrap"></div>
+            </div>
+          </div>
           <div class="dash-pane hidden" data-dash="admin" data-tab="records">
             <div class="card">
               <h2>Activity — all leave, shift, and comp-off requests</h2>
@@ -567,6 +590,7 @@ Amruta Mishra	80100331</pre>
                 <button type="button" class="btn secondary" id="admin-go-schedule">Schedule &amp; calendar</button>
                 <button type="button" class="btn secondary" id="admin-go-people">People &amp; roles</button>
                 <button type="button" class="btn secondary" id="admin-go-approvals">Approvals queue</button>
+                <button type="button" class="btn secondary" id="admin-go-compoff">Comp-off bank</button>
                 <button type="button" class="btn secondary" id="admin-go-records">All activity</button>
                 <button type="button" class="btn secondary" id="admin-go-shifts">Manage shifts</button>
               </div>
@@ -1064,7 +1088,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Private and local · Answers respect your account permissions</p>
     </aside>
 
-    <script src="/static/app.js?v=61"></script>
+    <script src="/static/app.js?v=62"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

@@ -120,7 +120,7 @@ async def credit_counts(db, user_id: ObjectId) -> dict[str, int]:
     }
 
 
-async def reserve_oldest_credits(db, user_id: ObjectId, n: int, avail_request_id: ObjectId) -> list[ObjectId]:
+async def reserve_oldest_credits(db, user_id: ObjectId, n: int, avail_request_id: ObjectId, days: list[str] | None = None) -> list[ObjectId]:
     now = datetime.now(timezone.utc)
     credits = (
         await db.comp_off_credits.find({"user_id": user_id, "status": "available"})
@@ -133,17 +133,23 @@ async def reserve_oldest_credits(db, user_id: ObjectId, n: int, avail_request_id
             status_code=400,
             detail=f"You have {have} available comp-off day(s); this request needs {n}. Earn and get extra days approved first.",
         )
+    if days and len(days) != n:
+        raise HTTPException(status_code=400, detail="Comp-off days do not match the number of credits")
     ids = [c["_id"] for c in credits]
-    result = await db.comp_off_credits.update_many(
-        {"_id": {"$in": ids}, "status": "available"},
-        {"$set": {"status": "reserved", "avail_request_id": avail_request_id, "updated_at": now}},
-    )
-    if result.modified_count != n:
-        await db.comp_off_credits.update_many(
-            {"avail_request_id": avail_request_id, "status": "reserved"},
-            {"$set": {"status": "available"}, "$unset": {"avail_request_id": ""}},
+    for index, credit_id in enumerate(ids):
+        payload = {"status": "reserved", "avail_request_id": avail_request_id, "updated_at": now}
+        if days:
+            payload["used_on"] = days[index]
+        result = await db.comp_off_credits.update_one(
+            {"_id": credit_id, "status": "available"},
+            {"$set": payload},
         )
-        raise HTTPException(status_code=409, detail="Those credits were just used. Refresh and try again.")
+        if result.modified_count != 1:
+            await db.comp_off_credits.update_many(
+                {"avail_request_id": avail_request_id, "status": "reserved"},
+                {"$set": {"status": "available"}, "$unset": {"avail_request_id": "", "used_on": ""}},
+            )
+            raise HTTPException(status_code=409, detail="Those credits were just used. Refresh and try again.")
     return ids
 
 
@@ -152,7 +158,7 @@ async def release_reserved_credits(db, avail_request_id: ObjectId) -> None:
         {"avail_request_id": avail_request_id, "status": "reserved"},
         {
             "$set": {"status": "available", "updated_at": datetime.now(timezone.utc)},
-            "$unset": {"avail_request_id": ""},
+            "$unset": {"avail_request_id": "", "used_on": ""},
         },
     )
 
@@ -186,3 +192,123 @@ async def consume_reserved_credits(db, avail_request_id: ObjectId, days: list[st
             }
         )
     return traces
+
+
+def _credit_trace(credit: dict, *, pending: bool) -> dict:
+    earn_type = credit.get("earn_type")
+    return {
+        "pending": pending,
+        "used_on": credit.get("used_on"),
+        "earned_on": credit.get("work_date"),
+        "earn_type": earn_type,
+        "earn_label": EARN_TYPES.get(earn_type or "", earn_type),
+        "worked_shift": credit.get("worked_shift"),
+    }
+
+
+async def ledger_rows(db, department_id: ObjectId | None = None) -> list[dict]:
+    ufilter: dict = {}
+    if department_id:
+        ufilter["department_id"] = department_id
+    users_list = await db.users.find(
+        ufilter,
+        {"employee_id": 1, "full_name": 1, "role": 1, "department_id": 1},
+    ).sort([("employee_id", 1)]).to_list(length=None)
+    user_ids = [u["_id"] for u in users_list]
+    dept_ids = {u.get("department_id") for u in users_list if u.get("department_id")}
+    departments = {}
+    if dept_ids:
+        async for d in db.departments.find({"_id": {"$in": list(dept_ids)}}, {"name": 1}):
+            departments[d["_id"]] = d.get("name") or "?"
+
+    counts_by_user: dict[ObjectId, dict[str, int]] = {}
+    if user_ids:
+        grouped = await db.comp_off_credits.aggregate(
+            [
+                {"$match": {"user_id": {"$in": user_ids}}},
+                {"$group": {"_id": {"user_id": "$user_id", "status": "$status"}, "n": {"$sum": 1}}},
+            ]
+        ).to_list(length=None)
+        for row in grouped:
+            uid = row["_id"]["user_id"]
+            status = row["_id"].get("status") or "available"
+            counts_by_user.setdefault(uid, {})[status] = int(row["n"])
+
+        pending_earn_rows = await db.comp_off_requests.aggregate(
+            [
+                {"$match": {"user_id": {"$in": user_ids}, "kind": "earn", "status": "pending"}},
+                {"$group": {"_id": "$user_id", "n": {"$sum": 1}}},
+            ]
+        ).to_list(length=None)
+        pending_avail_rows = await db.comp_off_requests.aggregate(
+            [
+                {"$match": {"user_id": {"$in": user_ids}, "kind": "avail", "status": "pending"}},
+                {"$group": {"_id": "$user_id", "n": {"$sum": "$days"}}},
+            ]
+        ).to_list(length=None)
+        for row in pending_earn_rows:
+            counts_by_user.setdefault(row["_id"], {})["pending_earn"] = int(row["n"])
+        for row in pending_avail_rows:
+            counts_by_user.setdefault(row["_id"], {})["pending_avail_days"] = int(row.get("n") or 0)
+
+        credits = (
+            await db.comp_off_credits.find({"user_id": {"$in": user_ids}})
+            .sort("created_at", -1)
+            .to_list(length=1200)
+        )
+    else:
+        credits = []
+
+    credits_by_user: dict[ObjectId, list[dict]] = {}
+    for c in credits:
+        uid = c.get("user_id")
+        if not uid:
+            continue
+        bucket = credits_by_user.setdefault(uid, [])
+        if len(bucket) >= 12:
+            continue
+        bucket.append(
+            {
+                "work_date": c.get("work_date"),
+                "used_on": c.get("used_on"),
+                "earn_type": c.get("earn_type"),
+                "earn_label": EARN_TYPES.get(c.get("earn_type") or "", c.get("earn_type")),
+                "worked_shift": c.get("worked_shift"),
+                "status": c.get("status"),
+            }
+        )
+
+    rows = []
+    for u in users_list:
+        counts = counts_by_user.get(u["_id"], {})
+        available = int(counts.get("available") or 0)
+        reserved = int(counts.get("reserved") or 0)
+        used = int(counts.get("used") or 0)
+        pending_earn = int(counts.get("pending_earn") or 0)
+        pending_avail = int(counts.get("pending_avail_days") or 0)
+        status = "clear"
+        if pending_earn or pending_avail:
+            status = "pending"
+        elif available:
+            status = "banked"
+        elif used:
+            status = "used"
+        rows.append(
+            {
+                "employee_id": u.get("employee_id"),
+                "full_name": u.get("full_name"),
+                "role": u.get("role"),
+                "department_id": str(u["department_id"]) if u.get("department_id") else None,
+                "department_name": departments.get(u.get("department_id")),
+                "earned": available + reserved + used,
+                "available": available,
+                "reserved": reserved,
+                "used": used,
+                "pending_earn": pending_earn,
+                "pending_avail_days": pending_avail,
+                "status": status,
+                "credits": credits_by_user.get(u["_id"], []),
+            }
+        )
+    rows.sort(key=lambda r: (-int(r["earned"]), -int(r["available"]), (r.get("full_name") or "").lower()))
+    return rows
