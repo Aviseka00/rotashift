@@ -45,7 +45,7 @@ GROQ_API_KEY = (os.getenv("GROQ_API_KEY") or "").strip()
 GROQ_MODEL = (os.getenv("GROQ_MODEL") or "openai/gpt-oss-20b").strip()
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
 GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-3.8-flash").strip()
-ASSISTANT_LLM_TIMEOUT_S = float(os.getenv("ASSISTANT_LLM_TIMEOUT_S") or "20")
+ASSISTANT_LLM_TIMEOUT_S = float(os.getenv("ASSISTANT_LLM_TIMEOUT_S") or "8")
 
 # MongoDB driver tuning (scale connection pool with app replicas × expected concurrency)
 _default_mongo_max = 18 if ROTASHIFT_ENV == "production" else 50

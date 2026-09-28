@@ -1,6 +1,7 @@
-"""Groq then Gemini for Ask Rota. General questions are open; live roster rows stay factual."""
+"""Groq and Gemini for Ask Rota. They race; first good answer wins."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any, Optional
@@ -103,40 +104,29 @@ def _message_text(message: Any) -> str:
     return str(message.get("reasoning") or "")
 
 
-def _messages(question: str, snapshot: str, *, factual: bool = False) -> list[dict[str, str]]:
-    if factual:
-        system = (
-            "You are Ask Rota. Live lookup rows in ROTA_CONTEXT are the source of truth. "
-            "If they name a colleague, answer about THAT person by first name. "
-            "Lead with their shift code and time (for example: “Smruti is on A today, 06:00–14:30.”). "
-            "Never substitute the logged-in user's shift for a colleague. "
-            "Never invent people, dates, or codes. If no_shift_rows=true, say they are unassigned "
-            "for those dates. Write a short, useful answer. Prefer JSON: "
-            '{"intent":"schedule","answer":"...","items":[],"suggestions":[]}'
-        )
-    else:
-        system = (
-            "You are Ask Rota, a capable general assistant used inside RotaShift. "
-            "Answer ANY question the user asks: general knowledge, writing, math, language, "
-            "clinical concepts, how-tos, explanations, brainstorming — not only roster topics.\n"
-            "Never refuse just because the topic is outside RotaShift or missing from context.\n"
-            "Write a complete, useful answer. Prefer JSON with the full reply in answer: "
-            '{"intent":"help","answer":"...","items":[],"suggestions":[]}'
-            " Plain text is also fine."
-        )
+def _messages(question: str, snapshot: str) -> list[dict[str, str]]:
+    system = (
+        "You are Ask Rota, a capable general assistant used inside RotaShift. "
+        "Answer ANY question the user asks: general knowledge, writing, math, language, "
+        "clinical concepts, how-tos, explanations, brainstorming — not only roster topics.\n"
+        "Never refuse just because the topic is outside RotaShift.\n"
+        "Write a complete, useful answer. Prefer JSON with the full reply in answer: "
+        '{"intent":"help","answer":"...","items":[],"suggestions":[]}'
+        " Plain text is also fine."
+    )
     context = (snapshot or "").strip() or GENERAL_CONTEXT
-    user = f"ROTA_CONTEXT:\n{context}\n\nQUESTION:\n{question}"
+    user = f"{context}\n\nQUESTION:\n{question}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
-async def _groq_answer(question: str, snapshot: str, *, factual: bool = False) -> Optional[dict[str, Any]]:
+async def _groq_answer(question: str, snapshot: str) -> Optional[dict[str, Any]]:
     if not GROQ_API_KEY:
         return None
     payload = {
         "model": GROQ_MODEL,
-        "temperature": 0.1 if factual else 0.6,
-        "max_tokens": 2048,
-        "messages": _messages(question, snapshot, factual=factual),
+        "temperature": 0.5,
+        "max_tokens": 900,
+        "messages": _messages(question, snapshot),
     }
     try:
         async with httpx.AsyncClient(timeout=ASSISTANT_LLM_TIMEOUT_S) as client:
@@ -156,16 +146,16 @@ async def _groq_answer(question: str, snapshot: str, *, factual: bool = False) -
         return None
 
 
-async def _gemini_answer(question: str, snapshot: str, *, factual: bool = False) -> Optional[dict[str, Any]]:
+async def _gemini_answer(question: str, snapshot: str) -> Optional[dict[str, Any]]:
     if not GEMINI_API_KEY:
         return None
-    packed = _messages(question, snapshot, factual=factual)
+    packed = _messages(question, snapshot)
     body = {
         "systemInstruction": {"parts": [{"text": packed[0]["content"]}]},
         "contents": [{"role": "user", "parts": [{"text": packed[1]["content"]}]}],
         "generationConfig": {
-            "temperature": 0.1 if factual else 0.6,
-            "maxOutputTokens": 2048,
+            "temperature": 0.5,
+            "maxOutputTokens": 900,
         },
     }
     url = (
@@ -187,9 +177,29 @@ async def _gemini_answer(question: str, snapshot: str, *, factual: bool = False)
         return None
 
 
-async def cloud_answer(question: str, snapshot: str, *, factual: bool = False) -> Optional[dict[str, Any]]:
-    """Try Groq first (fast), then Gemini. Returns None if neither is configured or both fail."""
-    result = await _groq_answer(question, snapshot, factual=factual)
-    if result:
-        return result
-    return await _gemini_answer(question, snapshot, factual=factual)
+async def cloud_answer(question: str, snapshot: str = "") -> Optional[dict[str, Any]]:
+    """Race Groq and Gemini; return the first usable answer."""
+    jobs = []
+    if GROQ_API_KEY:
+        jobs.append(asyncio.create_task(_groq_answer(question, snapshot)))
+    if GEMINI_API_KEY:
+        jobs.append(asyncio.create_task(_gemini_answer(question, snapshot)))
+    if not jobs:
+        return None
+    pending: set[asyncio.Task] = set(jobs)
+    try:
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for finished in done:
+                try:
+                    result = finished.result()
+                except Exception:
+                    result = None
+                if result and str(result.get("answer") or "").strip():
+                    for leftover in pending:
+                        leftover.cancel()
+                    return result
+        return None
+    finally:
+        for leftover in pending:
+            leftover.cancel()

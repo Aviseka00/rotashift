@@ -36,7 +36,8 @@ def test_parse_llm_plain_text_is_kept():
 def test_person_name_hits_first_name_and_possessive():
     assert _person_name_hits("what is smruti's shift today", "Smruti Priya Das")
     assert _person_name_hits("Smruti shift", "SMRUTI DAS")
-    assert _person_name_hits("when is smruti working tomorrow", "Smruti")
+    assert _person_name_hits("show me Amruta's shifts", "Amruta Mishra")
+    assert _person_name_hits("show me amruta mishra shifts", "Amruta Mishra")
     assert not _person_name_hits("what is a dash diet", "Smruti Dash")
     assert not _person_name_hits("show my schedule", "Smruti Das")
     from app.routers.assistant_api import _name_match_score
@@ -45,3 +46,11 @@ def test_person_name_hits_first_name_and_possessive():
         "what is smruti askrota's shift today", "Smruti Patel"
     )
     assert not _person_name_hits("what is photosynthesis", "Smruti Das")
+
+
+def test_show_me_name_is_not_self():
+    from app.routers.assistant_api import _asks_about_self, _asks_about_other_person
+
+    assert _asks_about_other_person("show me Amruta's shifts")
+    assert not _asks_about_self("show me Amruta's shifts")
+    assert _asks_about_self("show my shifts")

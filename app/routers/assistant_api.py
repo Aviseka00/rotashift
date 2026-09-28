@@ -1,7 +1,9 @@
-"""Role-scoped Ask Rota. Colleague names resolve to live roster; Groq/Gemini phrase the answer."""
+"""Ask Rota. Live roster answers stay local and instant; Groq and Gemini race for everything else."""
 from __future__ import annotations
 
+import asyncio
 import re
+import time
 from datetime import date, timedelta
 from typing import Literal, Optional
 
@@ -9,7 +11,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from app.assistant_llm import GENERAL_CONTEXT, cloud_answer, cloud_providers
+from app.assistant_llm import cloud_answer, cloud_providers
 from app.comp_off import credit_counts
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
@@ -33,6 +35,14 @@ _ROSTER_HINTS = (
     "shift", "schedule", "roster", "duty", "working", "timing", "timings", "on leave",
     "week off", "assigned", "duty roster",
 )
+_HOWTO = (
+    "Apply leave, swap, or comp-off from the employee ⋮ menu. "
+    "Comp-off can only be used against already-approved leave (roster L); after approval the day shows CO. "
+    "Earn a credit by working on WO, leave, or a holiday, or a joint extra A+B / B+C / C+A (not G), then get it approved. "
+    "Tap CO on the roster to see which extra-duty day paid it. Tap +CO to see a generated credit."
+)
+_people_cache: tuple[float, list[dict]] = (0.0, [])
+_PEOPLE_TTL_S = 20.0
 
 
 class AssistantQuery(BaseModel):
@@ -55,11 +65,32 @@ class AssistantAnswer(BaseModel):
 
 
 def _normalize_speech(text: str) -> str:
-    t = (text or "").lower().replace("’", "'")
+    t = (text or "").lower()
+    for mark in ("’", "‘", "ʼ", "´", "`"):
+        t = t.replace(mark, "'")
     t = t.replace("what's", "what is").replace("who's", "who is").replace("whos ", "who is ")
+    t = re.sub(r"\bshow me\b", "show", t)
     t = re.sub(r"\b([a-z]{3,})'s\b", r"\1", t)
     t = re.sub(r"[^a-z0-9]+", " ", t)
     return re.sub(r"\s+", " ", t).strip()
+
+
+def _one_edit(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    if abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) == len(right):
+        return sum(a != b for a, b in zip(left, right)) == 1
+    if len(left) > len(right):
+        left, right = right, left
+    skip = 0
+    for index, char in enumerate(left):
+        if char != right[index + skip]:
+            skip += 1
+            if skip > 1 or char != right[index + skip]:
+                return False
+    return True
 
 
 def _person_name_hits(message: str, full_name: str) -> bool:
@@ -84,13 +115,24 @@ def _name_match_score(message: str, full_name: str) -> int:
                 return 100
         if tokens[0] in words and any(tok in words for tok in tokens[1:]):
             return 80
-    if tokens[0] in words and (len(tokens[0]) >= 4 or count == 1):
+    query_tokens = [word for word in hay_words if word not in _NAME_STOP]
+    first = tokens[0]
+    if first in words and (len(first) >= 4 or count == 1):
         return 40
+    for query in query_tokens:
+        if len(query) < 4:
+            continue
+        if first.startswith(query) or (len(first) >= 4 and query.startswith(first)):
+            return 30
+        if len(query) >= 5 and len(first) >= 5 and _one_edit(first, query):
+            return 25
     return 0
 
 
 def _asks_about_other_person(message: str) -> bool:
-    lower = (message or "").lower().replace("’", "'")
+    lower = (message or "").lower()
+    for mark in ("’", "‘", "ʼ", "´"):
+        lower = lower.replace(mark, "'")
     if re.search(r"\b(colleague|coworker|co-worker|teammate)\b", lower):
         return True
     if re.search(r"\b[a-z]{3,}'s\b", lower):
@@ -98,6 +140,12 @@ def _asks_about_other_person(message: str) -> bool:
     if re.search(r"\b(her|his|their|she|he)\s+(shift|roster|schedule|duty)\b", lower):
         return True
     return False
+
+
+def _asks_about_self(message: str) -> bool:
+    if _asks_about_other_person(message):
+        return False
+    return bool(re.search(r"\b(my|mine)\b", _normalize_speech(message)))
 
 
 def _looks_like_roster(message: str) -> bool:
@@ -152,11 +200,17 @@ async def _scope_department(user: dict, requested: Optional[str]) -> Optional[Ob
     return None
 
 
-async def _department_people(db, dept_id: Optional[ObjectId]) -> list[dict]:
-    query = {"department_id": dept_id} if dept_id else {}
-    return await db.users.find(
-        query, {"full_name": 1, "employee_id": 1, "department_id": 1}
-    ).to_list(length=800)
+async def _all_people(db) -> list[dict]:
+    global _people_cache
+    now = time.monotonic()
+    cached_at, rows = _people_cache
+    if rows and now - cached_at < _PEOPLE_TTL_S:
+        return rows
+    rows = await db.users.find(
+        {}, {"full_name": 1, "employee_id": 1, "department_id": 1}
+    ).to_list(length=5000)
+    _people_cache = (now, rows)
+    return rows
 
 
 def _match_named_users(message: str, candidates: list[dict]) -> list[dict]:
@@ -173,8 +227,8 @@ def _match_named_users(message: str, candidates: list[dict]) -> list[dict]:
     return hits
 
 
-async def _target_user(db, message: str, current: dict, dept_id: Optional[ObjectId]) -> tuple[Optional[dict], Optional[str]]:
-    targets, missing = await _resolve_people(db, message, current, dept_id)
+async def _target_user(db, message: str, current: dict, people: list[dict]) -> tuple[Optional[dict], Optional[str]]:
+    targets, missing = await _resolve_people(db, message, current, people)
     if missing:
         return None, missing
     if len(targets) == 1:
@@ -185,27 +239,35 @@ async def _target_user(db, message: str, current: dict, dept_id: Optional[Object
     return None, "Tell me the employee ID or name, for example: “What is Smruti’s shift today?”"
 
 
-async def _resolve_people(db, message: str, current: dict, dept_id: Optional[ObjectId]) -> tuple[list[dict], Optional[str]]:
-    lower = message.lower()
+async def _resolve_people(db, message: str, current: dict, people: list[dict]) -> tuple[list[dict], Optional[str]]:
     tokens = re.findall(r"\b[A-Za-z]*\d[A-Za-z0-9_-]{2,}\b", message)
     for token in tokens:
-        query = {"employee_id": token.upper()}
-        if current.get("role") != "admin" and dept_id:
-            query["department_id"] = dept_id
-        found = await db.users.find_one(query)
+        needle = token.upper()
+        found = next((row for row in people if str(row.get("employee_id") or "").upper() == needle), None)
         if found:
             return [found], None
-    people = await _department_people(db, dept_id)
+        found = await db.users.find_one({"employee_id": needle})
+        if found:
+            return [found], None
     matches = _match_named_users(message, people)
     if matches:
         return matches, None
-    if re.search(r"\b(my|me|mine)\b", lower) and not _asks_about_other_person(message):
+    if _asks_about_self(message):
         return [current], None
     if _asks_about_other_person(message) or _looks_like_roster(message):
-        return [], "I could not find that teammate in your department. Try their first name, full name, or employee ID."
+        hint = ""
+        query_tokens = [tok for tok in _normalize_speech(message).split() if len(tok) >= 4 and tok not in _NAME_STOP]
+        close = []
+        for row in people:
+            first = (row.get("full_name") or "").split()[0]
+            if first and any(first.lower().startswith(tok) or tok.startswith(first.lower()) for tok in query_tokens):
+                close.append(f"{row.get('full_name')} ({row.get('employee_id')})")
+        if close:
+            hint = f" Nearby people: {', '.join(close[:6])}."
+        return [], "I could not find that person in RotaShift. Try their first name, full name, or employee ID." + hint
     if current.get("role") == "employee":
         return [current], None
-    return [], "Tell me the employee ID or name, for example: “What is Smruti’s shift today?”"
+    return [], "Tell me the employee ID or name, for example: “What is Amruta’s shift today?”"
 
 
 async def _person_shift_items(db, target: dict, start: date, end: date) -> list[AssistantItem]:
@@ -225,20 +287,15 @@ async def _person_shift_items(db, target: dict, start: date, end: date) -> list[
     ]
 
 
-async def _schedule_answer(db, body: AssistantQuery, user: dict, dept_id: Optional[ObjectId]) -> AssistantAnswer:
-    targets, missing = await _resolve_people(db, body.message, user, dept_id)
+async def _schedule_answer(db, body: AssistantQuery, user: dict, people: list[dict]) -> AssistantAnswer:
+    targets, missing = await _resolve_people(db, body.message, user, people)
     if missing:
         return AssistantAnswer(intent="schedule", answer=missing, suggestions=["Show my schedule", "Who is on A shift tomorrow?"])
     if not targets:
-        return AssistantAnswer(intent="schedule", answer="I could not find that employee in your accessible team.")
-    if user.get("role") == "manager":
-        targets = [row for row in targets if str(row.get("department_id")) == str(dept_id)]
-        if not targets:
-            return AssistantAnswer(intent="schedule", answer="That employee is outside your department, so I cannot show their roster.")
+        return AssistantAnswer(intent="schedule", answer="I could not find that person in RotaShift.")
     start, end = _date_window(body.message)
-    items: list[AssistantItem] = []
-    for target in targets[:8]:
-        items.extend(await _person_shift_items(db, target, start, end))
+    chunks = await asyncio.gather(*[_person_shift_items(db, target, start, end) for target in targets[:8]])
+    items = [item for chunk in chunks for item in chunk]
     if len(targets) > 1:
         names = ", ".join(f"{row.get('full_name')} ({row.get('employee_id')})" for row in targets[:8])
         answer = (
@@ -266,12 +323,12 @@ async def _schedule_answer(db, body: AssistantQuery, user: dict, dept_id: Option
 
 
 async def _coverage_answer(db, body: AssistantQuery, dept_id: Optional[ObjectId]) -> AssistantAnswer:
-    if not dept_id:
-        return AssistantAnswer(intent="coverage", answer="Choose a department first, then ask who is working a shift.")
     start, _ = _date_window(body.message)
     match = re.search(r"\b(?:shift\s*)?(A|B|C|G|L|WO|CO)\b", body.message, re.IGNORECASE)
     code = match.group(1).upper() if match else None
-    query = {"department_id": dept_id, "date": start.isoformat()}
+    query: dict = {"date": start.isoformat()}
+    if dept_id:
+        query["department_id"] = dept_id
     if code:
         query["shift_code"] = code
     shifts = await db.shifts.find(query, {"user_id": 1, "shift_code": 1}).to_list(length=500)
@@ -294,8 +351,8 @@ async def _coverage_answer(db, body: AssistantQuery, dept_id: Optional[ObjectId]
     return AssistantAnswer(intent="coverage", answer=answer, items=items, suggestions=["Show my schedule next week", "Show my tasks"])
 
 
-async def _tasks_answer(db, body: AssistantQuery, user: dict, dept_id: Optional[ObjectId]) -> AssistantAnswer:
-    target, missing = await _target_user(db, body.message, user, dept_id)
+async def _tasks_answer(db, body: AssistantQuery, user: dict, dept_id: Optional[ObjectId], people: list[dict]) -> AssistantAnswer:
+    target, missing = await _target_user(db, body.message, user, people)
     team_query = bool(re.search(r"\b(team|department|all)\b", body.message, re.IGNORECASE))
     if missing and not team_query:
         return AssistantAnswer(intent="tasks", answer=missing, suggestions=["Show my tasks", "Show all department tasks"])
@@ -337,67 +394,12 @@ async def _comp_off_answer(db, user: dict) -> AssistantAnswer:
     )
 
 
-async def _live_snapshot(db, user: dict, dept_id: Optional[ObjectId]) -> str:
-    today = date.today().isoformat()
-    uid = ObjectId(user["_id"])
-    shift = await db.shifts.find_one({"user_id": uid, "date": today}, {"shift_code": 1, "date": 1})
-    counts = await credit_counts(db, uid)
-    pending_leave = await db.leave_requests.count_documents({"user_id": uid, "status": "pending"})
-    pending_swap = await db.shift_change_requests.count_documents({"user_id": uid, "status": "pending"})
-    pending_co = await db.comp_off_requests.count_documents({"user_id": uid, "status": "pending"})
-    lines = [
-        f"logged_in_user={user.get('full_name')} ({user.get('employee_id')})",
-        f"role={user.get('role')}",
-        f"today={today}",
-        f"logged_in_today_shift={(shift or {}).get('shift_code') or 'unassigned'}",
-        f"comp_off_earned={counts.get('earned') or 0}",
-        f"comp_off_ready={counts.get('available') or 0}",
-        f"comp_off_used={counts.get('used') or 0}",
-        f"pending_leave={pending_leave}",
-        f"pending_swap={pending_swap}",
-        f"pending_comp_off={pending_co}",
-        "If lookup rows name a colleague, answer about THAT person — never substitute the logged-in user's shift.",
-    ]
-    lines.append(
-        "APP_HOWTO: Apply leave, swap, or comp-off from the employee ⋮ menu. "
-        "Comp-off can only be used against already-approved leave (roster L); after approval the day shows CO. "
-        "Earn a credit by working on WO, leave, or a holiday, or a joint extra A+B / B+C / C+A (not G), then get it approved. "
-        "Tap CO on the roster to see which extra-duty day paid it. Tap +CO to see a generated credit."
-    )
-    return "\n".join(lines)
-
-
-def _facts_from_lookup(local: AssistantAnswer, snapshot: str) -> str:
-    lines = [
-        snapshot,
-        "LIVE_LOOKUP=true",
-        f"lookup_intent={local.intent}",
-        f"lookup_summary={local.answer}",
-        "Use these rows. Speak naturally: first name, shift code, and time range. Do not invent extra people or codes.",
-    ]
-    for index, item in enumerate(local.items[:20], 1):
-        meta = f" ({item.meta})" if item.meta else ""
-        lines.append(f"row{index}: {item.title} — {item.detail}{meta}")
-    if not local.items:
-        lines.append("no_shift_rows=true")
-    return "\n".join(lines)
-
-
-async def _with_cloud(local: AssistantAnswer, question: str, snapshot: str) -> AssistantAnswer:
-    if not cloud_providers():
-        return local
-    cloud = await cloud_answer(question, _facts_from_lookup(local, snapshot), factual=True)
-    if not cloud:
-        return local
-    items = local.items
-    if not items:
-        items = [AssistantItem(**row) for row in cloud.get("items") or []]
+def _howto_answer() -> AssistantAnswer:
     return AssistantAnswer(
-        intent=local.intent,
-        answer=cloud["answer"],
-        items=items,
-        suggestions=cloud.get("suggestions") or local.suggestions,
-        source=cloud.get("source") or "local",
+        intent="help",
+        answer=_HOWTO,
+        suggestions=["Show my schedule", "Show my tasks", "What is Amruta’s shift today?"],
+        source="local",
     )
 
 
@@ -407,46 +409,33 @@ async def ask_assistant(body: AssistantQuery, user=Depends(get_current_user)):
     message = body.message.strip()
     lower = message.lower()
     dept_id = await _scope_department(user, body.department_id)
-    snapshot = await _live_snapshot(db, user, dept_id)
-    people = await _department_people(db, dept_id)
+    people = await _all_people(db)
     named = _match_named_users(message, people)
+    if any(phrase in lower for phrase in ("how do i apply", "how to apply", "apply leave", "apply swap", "apply comp")):
+        return _howto_answer()
     if any(phrase in lower for phrase in ("my task", "show my task", "kanban", "assigned to me")) and not named:
-        local = await _tasks_answer(db, body, user, dept_id)
-        return await _with_cloud(local, message, snapshot)
+        return await _tasks_answer(db, body, user, dept_id, people)
     if named and any(phrase in lower for phrase in ("task", "kanban", "assigned")):
-        local = await _tasks_answer(db, body, user, dept_id)
-        return await _with_cloud(local, message, snapshot)
+        return await _tasks_answer(db, body, user, dept_id, people)
     if any(phrase in lower for phrase in ("who is on", "who's on", "who is working", "coverage")) and not named:
-        local = await _coverage_answer(db, body, dept_id)
-        return await _with_cloud(local, message, snapshot)
+        return await _coverage_answer(db, body, dept_id)
     if any(phrase in lower for phrase in ("comp-off", "compoff", "compensatory", "comp off")) and not named:
-        local = await _comp_off_answer(db, user)
-        return await _with_cloud(local, message, snapshot)
-    wants_own = any(
-        phrase in lower
-        for phrase in ("my schedule", "show schedule", "my roster", "my shifts", "my shift", "show my roster")
-    ) and not named
+        return await _comp_off_answer(db, user)
+    wants_own = _asks_about_self(message) and _looks_like_roster(message) and not named
     named_id = bool(re.search(r"\b[A-Za-z]*\d[A-Za-z0-9_-]{2,}\b", message)) and any(
         word in lower for word in ("schedule", "roster", "shift")
     )
-    colleague_shift = bool(named) and (
-        _looks_like_roster(message) or _asks_about_other_person(message) or any(
-            word in lower for word in ("today", "tomorrow", "tonight", "now")
-        )
-    )
-    if wants_own or named_id or colleague_shift or (len(named) == 1 and not _looks_like_roster(message) and _asks_about_other_person(message)):
-        local = await _schedule_answer(db, body, user, dept_id)
-        return await _with_cloud(local, message, snapshot)
-    if len(named) == 1:
-        local = await _schedule_answer(db, body, user, dept_id)
-        return await _with_cloud(local, message, snapshot)
+    if named or wants_own or named_id or _asks_about_other_person(message):
+        return await _schedule_answer(db, body, user, people)
+    if _looks_like_roster(message) and not any(phrase in lower for phrase in ("night shift", "what is a", "what is an")):
+        return await _schedule_answer(db, body, user, people)
     if cloud_providers():
-        cloud = await cloud_answer(message, GENERAL_CONTEXT, factual=False)
+        cloud = await cloud_answer(message)
         if cloud:
             return AssistantAnswer(**cloud)
     return AssistantAnswer(
         intent="help",
         answer="Ask anything — a teammate’s shift by name, your roster, or a general question.",
-        suggestions=["What is Smruti’s shift today?", "Show my schedule", "Who is on G shift tomorrow?"],
+        suggestions=["What is Amruta’s shift today?", "Show my schedule", "Who is on G shift tomorrow?"],
         source="local",
     )
