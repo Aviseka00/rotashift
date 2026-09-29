@@ -3763,7 +3763,14 @@ a { color: var(--tan); }
 .assistant-message { display: flex; align-items: flex-start; gap: 0.55rem; margin-bottom: 0.8rem; }
 .assistant-message-user { justify-content: flex-end; }
 .assistant-avatar { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 10px; color: var(--oxford); background: var(--tan); font: 800 0.8rem var(--font-display); }
-.assistant-bubble { max-width: 86%; padding: 0.7rem 0.8rem; border: 1px solid rgba(210, 180, 140, 0.2); border-radius: 6px 16px 16px; background: rgba(10, 49, 88, 0.78); font-size: 0.84rem; line-height: 1.5; white-space: pre-wrap; }
+.assistant-bubble { max-width: 86%; padding: 0.7rem 0.8rem; border: 1px solid rgba(210, 180, 140, 0.2); border-radius: 6px 16px 16px; background: rgba(10, 49, 88, 0.78); font-size: 0.84rem; line-height: 1.5; }
+.assistant-message-user .assistant-bubble { white-space: pre-wrap; }
+.assistant-bubble p { margin: 0 0 0.45rem; }
+.assistant-bubble p:last-child { margin-bottom: 0; }
+.assistant-heading { font-weight: 800; color: var(--lemon); }
+.assistant-list { margin: 0.3rem 0 0.5rem; padding-left: 0; list-style: none; }
+.assistant-list li { position: relative; margin: 0.22rem 0; padding-left: 1.05rem; }
+.assistant-list li::before { content: ""; position: absolute; left: 0.12rem; top: 0.52em; width: 0.36rem; height: 0.36rem; border-radius: 50%; background: var(--tan); }
 .assistant-message-user .assistant-bubble { border-radius: 16px 16px 6px; color: var(--oxford-deep); background: var(--lemon); }
 .assistant-result-list { display: grid; gap: 0.42rem; margin-top: 0.65rem; }
 .assistant-result { display: grid; grid-template-columns: 1fr auto; gap: 0.1rem 0.65rem; padding: 0.55rem 0.6rem; border-radius: 10px; background: rgba(0, 21, 47, 0.62); }

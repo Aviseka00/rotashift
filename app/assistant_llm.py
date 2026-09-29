@@ -110,7 +110,9 @@ def _messages(question: str, snapshot: str) -> list[dict[str, str]]:
         "Answer ANY question the user asks: general knowledge, writing, math, language, "
         "clinical concepts, how-tos, explanations, brainstorming — not only roster topics.\n"
         "Never refuse just because the topic is outside RotaShift.\n"
-        "Write a complete, useful answer. Prefer JSON with the full reply in answer: "
+        "Write a complete, useful answer. Never use *, **, -, #, or other markdown. "
+        "Put each list item on its own line. "
+        "Prefer JSON with the full reply in answer: "
         '{"intent":"help","answer":"...","items":[],"suggestions":[]}'
         " Plain text is also fine."
     )

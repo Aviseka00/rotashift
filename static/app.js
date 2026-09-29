@@ -1459,6 +1459,49 @@ function escapeHtml(s) {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function cleanAssistantPlain(text) {
+  return String(text || "")
+    .replace(/\*\*/g, "")
+    .replace(/__/g, "")
+    .replace(/[`#_]+/g, "")
+    .replace(/\*/g, "")
+    .replace(/^\s*[-–—•]+\s*/, "")
+    .trim();
+}
+
+function formatAssistantMarkdown(raw) {
+  const text = String(raw || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+  const blocks = [];
+  let bullets = [];
+  const flushBullets = () => {
+    if (!bullets.length) return;
+    blocks.push(`<ul class="assistant-list">${bullets.map((item) => `<li>${escapeHtml(cleanAssistantPlain(item))}</li>`).join("")}</ul>`);
+    bullets = [];
+  };
+  for (const line of text.split("\n")) {
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if (heading) {
+      flushBullets();
+      blocks.push(`<p class="assistant-heading">${escapeHtml(cleanAssistantPlain(heading[1]))}</p>`);
+      continue;
+    }
+    const bullet = line.match(/^\s*(?:[-*•–—]+|\d+[.)])\s*(.*)$/);
+    if (bullet && cleanAssistantPlain(bullet[1])) {
+      bullets.push(bullet[1]);
+      continue;
+    }
+    if (!line.trim()) {
+      flushBullets();
+      continue;
+    }
+    flushBullets();
+    blocks.push(`<p>${escapeHtml(cleanAssistantPlain(line))}</p>`);
+  }
+  flushBullets();
+  return blocks.join("");
+}
+
 /** Accessible loading UI (replaces plain “Loading…” text in tables and panels). */
 function loadingSpinnerHTML(caption = "Loading…") {
   const label = escapeHtml(caption);
@@ -4896,7 +4939,8 @@ function appendAssistantMessage(kind, message, items = []) {
   const cards = items.length
     ? `<div class="assistant-result-list">${items.map((item) => `<div class="assistant-result"><strong>${escapeHtml(item.title || "")}</strong><span>${escapeHtml(item.detail || "")}</span>${item.meta ? `<small>${escapeHtml(item.meta)}</small>` : ""}</div>`).join("")}</div>`
     : "";
-  row.innerHTML = `${avatar}<div class="assistant-bubble">${escapeHtml(message)}${cards}</div>`;
+  const body = kind === "bot" ? formatAssistantMarkdown(message) : escapeHtml(message);
+  row.innerHTML = `${avatar}<div class="assistant-bubble">${body}${cards}</div>`;
   root.appendChild(row);
   root.scrollTop = root.scrollHeight;
   return row;
