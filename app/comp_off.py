@@ -13,13 +13,25 @@ EARN_TYPES = {
     "worked_holiday": "Worked on holiday",
     "joint_ab": "Joint extra shift A + B",
     "joint_bc": "Joint extra shift B + C",
-    "joint_ca": "Joint extra shift C + A",
+    "joint_ca": "Overnight C then A next morning",
+    "joint_ac": "A then C later the same day",
 }
 
 JOINT_PAIRS = {
     "joint_ab": frozenset({"A", "B"}),
     "joint_bc": frozenset({"B", "C"}),
     "joint_ca": frozenset({"C", "A"}),
+    "joint_ac": frozenset({"A", "C"}),
+}
+OVERNIGHT_EARN_TYPES = frozenset({"joint_ca"})
+SAME_DAY_JOINT_TYPES = frozenset({"joint_ab", "joint_bc", "joint_ac"})
+ROSTER_DUAL_UNSET = {
+    "extra_shift_code": "",
+    "dual_pair": "",
+    "overnight_to_date": "",
+    "overnight_to_code": "",
+    "overnight_from_date": "",
+    "overnight_from_code": "",
 }
 
 # Extra duty that can generate a credit: A, B, C, or G general duty.
@@ -57,13 +69,15 @@ def validate_earn(earn_type: str, worked_shift: str) -> tuple[str, str]:
         raise HTTPException(status_code=400, detail="The extra duty must be shift A, B, C, or G")
     pair = JOINT_PAIRS.get(et)
     if pair and ws not in pair:
+        if et == "joint_ca":
+            raise HTTPException(status_code=400, detail="For overnight C then A, the extra shift must be A or C")
         a, b = sorted(pair, key=lambda c: _SHIFT_ORDER.get(c, 9))
         raise HTTPException(status_code=400, detail=f"For {a}+{b} extra duty, the extra shift must be {a} or {b}")
     return et, ws
 
 
 def joint_pair_label(earn_type: str) -> str:
-    labels = {"joint_ab": "A+B", "joint_bc": "B+C", "joint_ca": "C+A"}
+    labels = {"joint_ab": "A+B", "joint_bc": "B+C", "joint_ca": "C→A", "joint_ac": "A+C"}
     if earn_type in labels:
         return labels[earn_type]
     pair = JOINT_PAIRS.get(earn_type) or frozenset()
@@ -71,14 +85,41 @@ def joint_pair_label(earn_type: str) -> str:
 
 
 def pair_label_for_codes(primary: str, extra: str) -> str:
-    codes = {str(primary or "").strip().upper(), str(extra or "").strip().upper()} - {""}
+    p = str(primary or "").strip().upper()
+    e = str(extra or "").strip().upper()
+    codes = {c for c in (p, e) if c}
+    if p == "A" and e == "C":
+        return "A+C"
     if codes == {"A", "B"}:
         return "A+B"
     if codes == {"B", "C"}:
         return "B+C"
     if codes == {"C", "A"}:
         return "C+A"
-    return "+".join(sorted(codes, key=lambda c: _SHIFT_ORDER.get(c, 9)))
+    if p and e and p != e:
+        return f"{p}+{e}"
+    return p or e
+
+
+def iso_offset(day_iso: str, days: int) -> str:
+    return (datetime.strptime(str(day_iso)[:10], "%Y-%m-%d").date() + timedelta(days=days)).isoformat()
+
+
+def overnight_ca_span(work_date: str, current_code: str, worked_shift: str) -> tuple[str, str]:
+    """C is overnight into the next calendar morning A. Return (c_date, a_date)."""
+    day = str(work_date or "")[:10]
+    current = (current_code or "").strip().upper()
+    extra = (worked_shift or "").strip().upper()
+    if current == "A" or (current not in {"C"} and extra == "C"):
+        return iso_offset(day, -1), day
+    return day, iso_offset(day, 1)
+
+
+def overnight_follow_label(extra: str) -> str:
+    extra_u = (extra or "").strip().upper()
+    if extra_u in {"B", "C"}:
+        return f"C→A+{extra_u}"
+    return "C→A"
 
 
 def dual_roster_codes(earn_type: str, current_code: str, worked_shift: str) -> tuple[str, str, str]:

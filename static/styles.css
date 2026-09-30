@@ -1494,6 +1494,11 @@ table.matrix select.matrix-cell-select {
   letter-spacing: 0.04em;
   vertical-align: middle;
 }
+.cell-overnight .dual-shift-mark {
+  border-color: #a5b4fc;
+  background: #312e81;
+  color: #e0e7ff;
+}
 
 .emp-co-own {
   margin: 0 0 0.9rem;

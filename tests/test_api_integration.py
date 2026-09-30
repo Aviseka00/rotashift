@@ -679,3 +679,79 @@ def test_comp_off_earn_avail_g_and_dual(
     assert dual_row["duals"][dual_day]["pair"] == "A+B"
     assert dual_row["duals"][dual_day]["extra"] == "A"
     assert dual_row["duals"][dual_day]["pending"] is False
+
+
+def test_overnight_ca_then_follow_on_b(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "overnight-ca-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Overnight CA QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    c_day = date.today().isoformat()
+    a_day = (date.today() + timedelta(days=1)).isoformat()
+    bulk = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [{"employee_id": unique_employee_id, "date": c_day, "shift_code": "C"}],
+        },
+        headers=admin_headers,
+    )
+    assert bulk.status_code == 200, bulk.text
+    overnight = client.post(
+        "/api/requests/comp-off/earn",
+        json={"work_date": c_day, "earn_type": "joint_ca", "worked_shift": "A", "reason": "C into A"},
+        headers=headers,
+    )
+    assert overnight.status_code == 200, overnight.text
+    assert overnight.json().get("span_end_date") == a_day
+    pending = client.get(f"/api/shifts/table?start={c_day}&end={a_day}", headers=headers).json()
+    pending_row = next(r for r in pending["rows"] if r["employee_id"] == unique_employee_id)
+    assert pending_row["duals"][c_day]["overnight"] is True
+    assert pending_row["duals"][c_day]["role"] == "c"
+    assert pending_row["duals"][a_day]["role"] == "a"
+    approved = client.patch(
+        f"/api/requests/comp-off/{overnight.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    after = client.get(f"/api/shifts/table?start={c_day}&end={a_day}", headers=headers).json()
+    row = next(r for r in after["rows"] if r["employee_id"] == unique_employee_id)
+    assert row["cells"][c_day] == "C"
+    assert row["cells"][a_day] == "A"
+    assert row["duals"][c_day]["pair"] == "C→A"
+    assert row["duals"][a_day]["pair"] == "C→A"
+    follow = client.post(
+        "/api/requests/comp-off/earn",
+        json={"work_date": a_day, "earn_type": "joint_ab", "worked_shift": "B", "reason": "Then B after A"},
+        headers=headers,
+    )
+    assert follow.status_code == 200, follow.text
+    follow_ok = client.patch(
+        f"/api/requests/comp-off/{follow.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert follow_ok.status_code == 200, follow_ok.text
+    final = client.get(f"/api/shifts/table?start={c_day}&end={a_day}", headers=headers).json()
+    final_row = next(r for r in final["rows"] if r["employee_id"] == unique_employee_id)
+    assert final_row["cells"][c_day] == "C"
+    assert final_row["cells"][a_day] == "A"
+    assert final_row["duals"][a_day]["extra"] == "B"
+    assert final_row["duals"][a_day]["pair"] == "C→A+B"
+    assert final_row["duals"][c_day]["pair"] == "C→A+B"

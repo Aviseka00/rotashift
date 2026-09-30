@@ -6,7 +6,18 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.comp_off import EARN_TYPES, JOINT_EARN_TYPES, _credit_trace, _earn_trace, dual_roster_codes, pair_label_for_codes
+from app.comp_off import (
+    EARN_TYPES,
+    JOINT_EARN_TYPES,
+    OVERNIGHT_EARN_TYPES,
+    ROSTER_DUAL_UNSET,
+    _credit_trace,
+    _earn_trace,
+    dual_roster_codes,
+    iso_offset,
+    overnight_follow_label,
+    pair_label_for_codes,
+)
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import get_current_user, require_roles
@@ -87,7 +98,7 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin", "manag
         }
         await db.shifts.update_one(
             {"department_id": dept_id, "user_id": target["_id"], "date": doc["date"]},
-            {"$set": doc, "$unset": {"extra_shift_code": "", "dual_pair": ""}},
+            {"$set": doc, "$unset": dict(ROSTER_DUAL_UNSET)},
             upsert=True,
         )
         inserted += 1
@@ -123,7 +134,7 @@ async def set_own_roster_day(body: SelfRosterDayBody, user=Depends(get_current_u
     }
     await db.shifts.update_one(
         {"department_id": dept_id, "user_id": uid, "date": doc["date"]},
-        {"$set": doc, "$unset": {"extra_shift_code": "", "dual_pair": ""}},
+        {"$set": doc, "$unset": dict(ROSTER_DUAL_UNSET)},
         upsert=True,
     )
     return {"ok": True, "shift_code": code, "date": doc["date"]}
@@ -261,7 +272,10 @@ async def table_matrix(
         "department_id": dept_oid,
         "kind": "earn",
         "status": "pending",
-        "work_date": {"$gte": d0_iso, "$lte": d1_iso},
+        "$or": [
+            {"work_date": {"$gte": d0_iso, "$lte": d1_iso}},
+            {"span_end_date": {"$gte": d0_iso, "$lte": d1_iso}},
+        ],
     }
     users_list, shifts_docs, credit_docs, pending_earn_docs, dept = await asyncio.gather(
         db.users.find({"department_id": dept_oid}, {"employee_id": 1, "full_name": 1, "role": 1})
@@ -283,19 +297,41 @@ async def table_matrix(
         if not uid or not day:
             continue
         code = s.get("shift_code", "")
+        code_u = str(code or "").strip().upper()
         shifts_by_user.setdefault(uid, {})[day] = code
         extra = str(s.get("extra_shift_code") or "").strip().upper()
-        pair = str(s.get("dual_pair") or "").strip()
-        if extra:
-            if not pair:
-                pair = pair_label_for_codes(code, extra)
+        overnight_to = str(s.get("overnight_to_date") or "")[:10]
+        overnight_from = str(s.get("overnight_from_date") or "")[:10]
+        if overnight_to:
+            duals_by_user.setdefault(uid, {})[day] = {
+                "pair": "C→A",
+                "primary": code_u or "C",
+                "extra": "",
+                "overnight": True,
+                "role": "c",
+                "linked_date": overnight_to,
+                "pending": False,
+            }
+        elif overnight_from:
+            follow = extra if extra and extra != "A" else ""
+            duals_by_user.setdefault(uid, {})[day] = {
+                "pair": overnight_follow_label(follow),
+                "primary": code_u or "A",
+                "extra": follow,
+                "overnight": True,
+                "role": "a",
+                "linked_date": overnight_from,
+                "pending": False,
+            }
+        elif extra:
+            pair = str(s.get("dual_pair") or "").strip() or pair_label_for_codes(code_u, extra)
             duals_by_user.setdefault(uid, {})[day] = {
                 "pair": pair,
-                "primary": str(code or "").strip().upper(),
+                "primary": code_u,
                 "extra": extra,
                 "pending": False,
             }
-        if str(code or "").strip().upper() == "CO":
+        if code_u == "CO":
             earn_type = s.get("comp_off_earn_type")
             traces_by_user.setdefault(uid, {})[day] = {
                 "kind": "avail",
@@ -327,24 +363,64 @@ async def table_matrix(
         day = req.get("work_date")
         if not uid or not day:
             continue
-        if earns_by_user.setdefault(uid, {}).get(day):
-            continue
-        earns_by_user[uid][day] = _earn_trace(req, pending=True)
-        if req.get("earn_type") in JOINT_EARN_TYPES:
-            existing_dual = duals_by_user.setdefault(uid, {}).get(day)
-            if not (existing_dual and not existing_dual.get("pending")):
-                current = shifts_by_user.get(uid, {}).get(day, "")
-                primary, extra, label = dual_roster_codes(
-                    req.get("earn_type") or "",
-                    current,
-                    req.get("worked_shift") or "",
-                )
+        earn_type = req.get("earn_type") or ""
+        if not earns_by_user.setdefault(uid, {}).get(day):
+            earns_by_user[uid][day] = _earn_trace(req, pending=True)
+        if earn_type in OVERNIGHT_EARN_TYPES:
+            c_date = str(day)[:10]
+            a_date = str(req.get("span_end_date") or iso_offset(c_date, 1))[:10]
+            for dual_day, role in ((c_date, "c"), (a_date, "a")):
+                existing = duals_by_user.setdefault(uid, {}).get(dual_day)
+                if existing and not existing.get("pending"):
+                    continue
+                if role == "c":
+                    duals_by_user[uid][dual_day] = {
+                        "pair": "C→A",
+                        "primary": "C",
+                        "extra": "",
+                        "overnight": True,
+                        "role": "c",
+                        "linked_date": a_date,
+                        "pending": True,
+                    }
+                else:
+                    extra = (existing or {}).get("extra") or ""
+                    duals_by_user[uid][dual_day] = {
+                        "pair": overnight_follow_label(extra),
+                        "primary": "A",
+                        "extra": extra,
+                        "overnight": True,
+                        "role": "a",
+                        "linked_date": c_date,
+                        "pending": True,
+                    }
+        elif earn_type in JOINT_EARN_TYPES:
+            existing = duals_by_user.setdefault(uid, {}).get(day)
+            current = shifts_by_user.get(uid, {}).get(day, "")
+            if existing and existing.get("overnight") and existing.get("role") == "a":
+                current = "A"
+            primary, extra, label = dual_roster_codes(earn_type, current, req.get("worked_shift") or "")
+            if existing and existing.get("overnight") and existing.get("role") == "a":
+                follow = extra if extra != "A" else existing.get("extra") or ""
+                existing["extra"] = follow
+                existing["pair"] = overnight_follow_label(follow)
+                existing["follow_pending"] = True
+            elif not (existing and not existing.get("pending")):
                 duals_by_user[uid][day] = {
                     "pair": label,
                     "primary": primary,
                     "extra": extra,
                     "pending": True,
                 }
+
+    for _uid, days_map in duals_by_user.items():
+        for _day, dual in days_map.items():
+            if dual.get("role") != "c":
+                continue
+            nxt = days_map.get(dual.get("linked_date") or "")
+            if nxt and nxt.get("extra"):
+                dual["pair"] = overnight_follow_label(nxt.get("extra") or "")
+                dual["follow"] = nxt.get("extra")
 
     rows = []
     for u in users_list:

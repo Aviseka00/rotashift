@@ -38,8 +38,8 @@ _ROSTER_HINTS = (
 _HOWTO = (
     "Apply leave, swap, or comp-off from the employee ⋮ menu. Only an administrator can approve those requests. "
     "Comp-off can be used against leave (L) or a rostered A, B, C, or G day; after approval the day shows CO. "
-    "Earn a credit by working on WO, leave, or a holiday (including G), or a joint extra A+B / B+C / C+A, then get it approved. "
-    "Approved dual days show A+B (or B+C / C+A) on the roster. Tap CO to see which extra-duty day paid it. Tap +CO to see a generated credit."
+    "Earn a credit by working on WO, leave, or a holiday (including G), a same-day extra A+B / B+C / A then C, or overnight C into A the next morning, then get it approved. "
+    "Overnight C stays on the first roster day; A (and later B or C) shows on the next day. Tap CO to see which extra-duty day paid it. Tap +CO to see a generated credit."
 )
 _people_cache: tuple[float, list[dict]] = (0.0, [])
 _PEOPLE_TTL_S = 20.0

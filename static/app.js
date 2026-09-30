@@ -727,14 +727,22 @@ function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
   td.dataset.coEarnPending = !showCo && earn?.pending ? "1" : "";
   if (dual?.pair) {
     td.dataset.dualPair = dual.pair;
-    td.dataset.dualExtra = dual.extra || "";
+    td.dataset.dualExtra = dual.extra || dual.follow || "";
     td.dataset.dualPrimary = dual.primary || c;
     td.dataset.dualPending = dual.pending ? "1" : "";
+    td.dataset.dualOvernight = dual.overnight ? "1" : "";
+    td.dataset.dualRole = dual.role || "";
+    td.dataset.dualLinked = dual.linked_date || "";
+    if (dual.overnight && dual.role === "c") td.dataset.shiftCode = "C";
+    if (dual.overnight && dual.role === "a") td.dataset.shiftCode = "A";
   } else {
     delete td.dataset.dualPair;
     delete td.dataset.dualExtra;
     delete td.dataset.dualPrimary;
     delete td.dataset.dualPending;
+    delete td.dataset.dualOvernight;
+    delete td.dataset.dualRole;
+    delete td.dataset.dualLinked;
   }
   const source = showCo ? trace : earn;
   if (source) {
@@ -762,6 +770,32 @@ function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
       : trace?.earned_on
         ? `Paid CO. Taken on this day. Earned by working ${trace.worked_shift || "extra"} on ${trace.earned_on}. Tap for the trail.`
         : "Paid comp-off. Tap to see which extra-duty day paid this leave.";
+  } else if (dual?.overnight && dual.role === "c") {
+    td.textContent = "C";
+    td.classList.add("cell-c", "cell-dual", "cell-overnight");
+    if (dual.pending) td.classList.add("cell-dual-pending");
+    const dualMark = document.createElement("span");
+    dualMark.className = "dual-shift-mark";
+    dualMark.textContent = dual.pending ? "→A?" : (dual.pair || "C→A").replace(/^C/, "") || "→A";
+    td.appendChild(dualMark);
+    const followOnC = (dual.follow || dual.extra || "").toUpperCase();
+    td.title = dual.pending
+      ? "Pending overnight C then A next morning — waiting for administrator approval."
+      : followOnC
+        ? `Did overnight C into A the next morning, then ${followOnC}.`
+        : "Did overnight C into A the next morning.";
+  } else if (dual?.overnight && dual.role === "a") {
+    const follow = (dual.extra || "").toUpperCase();
+    td.textContent = follow ? `A+${follow}` : "A";
+    td.classList.add("cell-a", "cell-dual", "cell-overnight");
+    if (dual.pending || dual.follow_pending) td.classList.add("cell-dual-pending");
+    const dualMark = document.createElement("span");
+    dualMark.className = "dual-shift-mark";
+    dualMark.textContent = "from C";
+    td.appendChild(dualMark);
+    td.title = follow
+      ? `After overnight C: did A then ${follow} on this day.`
+      : "A this morning after overnight C yesterday.";
   } else if (dual?.pair) {
     td.textContent = dual.pair;
     td.classList.add("cell-dual", `cell-${String(dual.primary || c || "a").toLowerCase()}`);
@@ -795,12 +829,14 @@ function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
   }
   if (!showCo && editable) {
     td.classList.add("matrix-cell-editable");
-    if (!earn && !dual) {
+    if (!earn) {
       td.title =
         state.user?.role === "employee"
-          ? ["L", "A", "B", "C", "G"].includes(c)
-            ? "Tap to apply an earned comp-off against this day, or request a change"
-            : "Tap to request leave, a shift change, or a comp-off"
+          ? dual?.overnight
+            ? "Tap to apply another extra shift (B or C after A) or a comp-off"
+            : ["L", "A", "B", "C", "G"].includes(c)
+              ? "Tap to apply an earned comp-off against this day, or request a change"
+              : "Tap to request leave, a shift change, or a comp-off"
           : "Tap to choose A, B, C, G, L (leave), WO (week off), or CO (comp-off)";
     }
   }
@@ -875,13 +911,18 @@ function dualFromCell(td) {
     extra: td.dataset.dualExtra || "",
     primary: td.dataset.dualPrimary || td.dataset.shiftCode || "",
     pending: td.dataset.dualPending === "1",
+    overnight: td.dataset.dualOvernight === "1",
+    role: td.dataset.dualRole || "",
+    linked_date: td.dataset.dualLinked || "",
   };
 }
 
-function fillRosterRequestSelect(fromCode) {
+function fillRosterRequestSelect(fromCode, dual) {
   const sel = $("roster-request-to");
   if (!sel) return;
   sel.innerHTML = "";
+  if (dual?.overnight && dual.role === "a") fromCode = "A";
+  if (dual?.overnight && dual.role === "c") fromCode = "C";
   const restCodes = new Set(["WO", "L"]);
   if (restCodes.has(fromCode) || !fromCode) {
     ["A", "B", "C", "G"].forEach((ws) => {
@@ -891,10 +932,10 @@ function fillRosterRequestSelect(fromCode) {
       sel.appendChild(earn);
     });
   }
-  jointPairsFor(fromCode).forEach(([earnType, extra, pair]) => {
+  jointPairsFor(fromCode, dual).forEach(([earnType, extra, pair]) => {
     const earn = document.createElement("option");
     earn.value = `__earn_${earnType}`;
-    earn.textContent = `Earn CO for dual ${pair} (also did ${extra})`;
+    earn.textContent = `Earn CO for ${pair}`;
     sel.appendChild(earn);
   });
   if (["L", "A", "B", "C", "G"].includes(fromCode)) {
@@ -913,7 +954,7 @@ function fillRosterRequestSelect(fromCode) {
     o.textContent = code === "L" ? "Leave (L)" : shiftOptionLabel(code);
     sel.appendChild(o);
   });
-  if (jointPairsFor(fromCode).length || (restCodes.has(fromCode) || !fromCode)) {
+  if (jointPairsFor(fromCode, dual).length || (restCodes.has(fromCode) || !fromCode)) {
     sel.selectedIndex = 0;
   } else if ([...sel.options].some((o) => o.value === "__avail")) {
     sel.value = "__avail";
@@ -970,10 +1011,12 @@ function closeRosterRequestModal() {
 
 function openRosterRequestModal(td) {
   const date = td.dataset.date;
-  const fromCode = (td.dataset.shiftCode || "").trim().toUpperCase();
   const dual = dualFromCell(td);
+  let fromCode = (td.dataset.shiftCode || "").trim().toUpperCase();
+  if (dual?.overnight && dual.role === "a") fromCode = "A";
+  if (dual?.overnight && dual.role === "c") fromCode = "C";
   state.rosterRequest = { date, fromCode };
-  fillRosterRequestSelect(fromCode);
+  fillRosterRequestSelect(fromCode, dual);
   const meta = $("roster-request-meta");
   if (meta) {
     const shown = dual?.pair || fromCode || "—";
@@ -1021,7 +1064,9 @@ async function submitRosterCellRequest() {
         }),
       });
       notice = isJoint
-        ? `Dual-shift comp-off requested for ${req.date} (${rest.replace("joint_", "").toUpperCase().split("").join("+") || "joint"}). An administrator must approve it.`
+        ? earnType === "joint_ca"
+          ? `Overnight C then A requested. After approval the roster shows C on the first day and A the next morning. You can still apply B or C after A.`
+          : `Dual-shift comp-off requested for ${req.date}. An administrator must approve it.`
         : `Comp-off earn requested for ${req.date} (worked ${workedShift}). An administrator must approve it.`;
     } else if (toCode === "__avail") {
       await api("/api/requests/comp-off/avail", {
@@ -1062,14 +1107,28 @@ async function submitRosterCellRequest() {
   }
 }
 
-function jointPairsFor(fromCode) {
-  if (fromCode === "A") return [["joint_ab", "B", "A+B"], ["joint_ca", "C", "C+A"]];
-  if (fromCode === "B") return [["joint_ab", "A", "A+B"], ["joint_bc", "C", "B+C"]];
-  if (fromCode === "C") return [["joint_bc", "B", "B+C"], ["joint_ca", "A", "C+A"]];
-  return [];
+function jointPairsFor(fromCode, dual) {
+  const out = [];
+  if (fromCode === "A") {
+    out.push(["joint_ca", "C", "overnight C last night → A today"]);
+    out.push(["joint_ab", "B", "A+B (also did B after A)"]);
+    out.push(["joint_ac", "C", "A then C later today"]);
+  } else if (fromCode === "B") {
+    out.push(["joint_ab", "A", "A+B"]);
+    out.push(["joint_bc", "C", "B+C"]);
+  } else if (fromCode === "C") {
+    out.push(["joint_ca", "A", "overnight C then A tomorrow morning"]);
+    out.push(["joint_bc", "B", "B+C"]);
+  }
+  if (dual?.overnight && dual.role === "a" && fromCode === "A") {
+    return out.filter((row) => row[0] !== "joint_ca");
+  }
+  return out;
 }
 
 function jointExtraFor(fromCode, earnType) {
+  if (earnType === "joint_ca") return fromCode === "A" ? "C" : "A";
+  if (earnType === "joint_ac") return fromCode === "A" ? "C" : "A";
   const pair = earnType === "joint_ab" ? ["A", "B"] : earnType === "joint_bc" ? ["B", "C"] : ["C", "A"];
   return pair.find((c) => c !== fromCode) || pair[1];
 }
@@ -1382,6 +1441,10 @@ function coverageBannerHtml(preview) {
 
 function compOffDetail(r) {
   if (r.kind === "earn") {
+    if (r.earn_type === "joint_ca") {
+      const nextDay = r.span_end_date || "next morning";
+      return `Overnight C ${r.work_date || "—"} → A ${nextDay}`;
+    }
     return `Earn ${r.earn_label || r.earn_type || "comp-off"} on ${r.work_date || "—"} (worked ${r.worked_shift || "—"})`;
   }
   return `Avail ${r.days || 1} day(s) ${r.start_date || "—"} → ${r.end_date || "—"}`;
@@ -3887,8 +3950,11 @@ $("co-earn-submit")?.addEventListener("click", async () => {
         reason: $("co-earn-reason")?.value || "",
       }),
     });
+    const earnType = $("co-earn-type").value;
     showEmployeeRequestNotice(
-      `Comp-off earn submitted. Reference id: ${res.id}. After approval, one paid day is added to your bank.`,
+      earnType === "joint_ca"
+        ? `Overnight C then A submitted (${res.work_date || $("co-earn-date").value} → ${res.span_end_date || "next morning"}). After approval the roster shows C, then A the next day. You can still apply B or C after that A.`
+        : `Comp-off earn submitted. Reference id: ${res.id}. After approval, one paid day is added to your bank.`,
       "success",
     );
     if ($("co-earn-reason")) $("co-earn-reason").value = "";
@@ -3896,6 +3962,7 @@ $("co-earn-submit")?.addEventListener("click", async () => {
     await refreshCompOffBalance();
     await refreshManagerQueues();
     await refreshTodayHome().catch(() => {});
+    await refreshTable().catch(() => {});
     setEmployeeApplyPanel("status");
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");

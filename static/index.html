@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=73" />
+    <link rel="stylesheet" href="/static/styles.css?v=75" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -287,7 +287,7 @@
               <section class="emp-apply-panel hidden" data-apply-panel="compoff" id="compoff-earn-section">
                 <h3>Earn a comp-off</h3>
                 <p class="hint">
-                  Worked on WO, leave, or a holiday (A, B, C, or G), or did a dual A+B / B+C / C+A. After administrator approval, one paid day is banked and dual days show both codes.
+                  Worked on WO, leave, or a holiday (A, B, C, or G), same-day A+B / B+C / A then C, or overnight C then A the next morning. After C→A you can still apply B or C on the A day. An administrator approves; the roster shows C on the first day and A (or A+B / A+C) the next.
                 </p>
                 <div class="row emp-apply-fields">
                   <div>
@@ -302,7 +302,8 @@
                       <option value="worked_holiday">I worked on a holiday</option>
                       <option value="joint_ab">Extra joint shift A + B</option>
                       <option value="joint_bc">Extra joint shift B + C</option>
-                      <option value="joint_ca">Extra joint shift C + A</option>
+                      <option value="joint_ca">Overnight C then A next morning</option>
+                      <option value="joint_ac">A then C later the same day</option>
                     </select>
                   </div>
                   <div>
@@ -1101,7 +1102,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=73"></script>
+    <script src="/static/app.js?v=75"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

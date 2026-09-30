@@ -9,17 +9,22 @@ from pydantic import BaseModel, Field
 from app.comp_off import (
     EARN_TYPES,
     JOINT_EARN_TYPES,
+    OVERNIGHT_EARN_TYPES,
     REST_EARN_TYPES,
     consume_reserved_credits,
     credit_counts,
     dual_roster_codes,
     existing_open_earn,
     inclusive_days,
+    iso_offset,
     ledger_rows,
+    overnight_ca_span,
+    pair_label_for_codes,
     release_reserved_credits,
     require_leave_days,
     reserve_oldest_credits,
     validate_earn,
+    ROSTER_DUAL_UNSET,
 )
 from app.config import SWAP_SHIFT_CODES, TIMED_SHIFT_CODES
 from app.database import get_db
@@ -151,6 +156,7 @@ def _request_row(x: dict, kind: str, users: dict, departments: dict) -> dict:
                 "earn_type": x.get("earn_type"),
                 "earn_label": EARN_TYPES.get(x.get("earn_type") or "", x.get("earn_type")),
                 "worked_shift": x.get("worked_shift"),
+                "span_end_date": x.get("span_end_date"),
                 "start_date": x.get("start_date"),
                 "end_date": x.get("end_date"),
                 "days": x.get("days"),
@@ -299,7 +305,14 @@ async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("a
                         "updated_at": now,
                         "leave_request_id": oid,
                     },
-                    "$unset": {"extra_shift_code": "", "dual_pair": ""},
+                    "$unset": {
+                        "extra_shift_code": "",
+                        "dual_pair": "",
+                        "overnight_to_date": "",
+                        "overnight_to_code": "",
+                        "overnight_from_date": "",
+                        "overnight_from_code": "",
+                    },
                 },
                 upsert=True,
             )
@@ -402,7 +415,7 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
                     "updated_at": now,
                     "change_request_id": oid,
                 },
-                "$unset": {"extra_shift_code": "", "dual_pair": ""},
+                "$unset": dict(ROSTER_DUAL_UNSET),
             },
             upsert=True,
         )
@@ -410,7 +423,17 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
     return {"ok": True, "status": new_status}
 
 
-async def _upsert_roster_code(db, *, dept_id, user_id, day_iso: str, code: str, actor: ObjectId, extra: dict | None = None):
+async def _upsert_roster_code(
+    db,
+    *,
+    dept_id,
+    user_id,
+    day_iso: str,
+    code: str,
+    actor: ObjectId,
+    extra: dict | None = None,
+    unset: dict | None = None,
+):
     payload = {
         "department_id": dept_id,
         "user_id": user_id,
@@ -422,12 +445,110 @@ async def _upsert_roster_code(db, *, dept_id, user_id, day_iso: str, code: str, 
     if extra:
         payload.update(extra)
     op: dict[str, Any] = {"$set": payload}
-    if "extra_shift_code" not in payload:
-        op["$unset"] = {"extra_shift_code": "", "dual_pair": ""}
+    keep_dual = any(
+        k in payload
+        for k in ("extra_shift_code", "overnight_to_date", "overnight_from_date")
+    )
+    to_unset = unset
+    if to_unset is None and not keep_dual:
+        to_unset = dict(ROSTER_DUAL_UNSET)
+    if to_unset:
+        op["$unset"] = to_unset
     await db.shifts.update_one(
         {"department_id": dept_id, "user_id": user_id, "date": day_iso},
         op,
         upsert=True,
+    )
+
+
+async def _apply_joint_earn_to_roster(db, req: dict, actor: ObjectId, oid: ObjectId) -> None:
+    earn_type = req.get("earn_type") or ""
+    work_date = str(req.get("work_date") or "")[:10]
+    worked_shift = str(req.get("worked_shift") or "").strip().upper()
+    if earn_type in OVERNIGHT_EARN_TYPES:
+        c_date = work_date
+        a_date = str(req.get("span_end_date") or iso_offset(work_date, 1))[:10]
+        await _upsert_roster_code(
+            db,
+            dept_id=req["department_id"],
+            user_id=req["user_id"],
+            day_iso=c_date,
+            code="C",
+            actor=actor,
+            extra={
+                "overnight_to_date": a_date,
+                "overnight_to_code": "A",
+                "comp_off_earn_request_id": oid,
+            },
+            unset={"extra_shift_code": "", "dual_pair": ""},
+        )
+        current_a = await db.shifts.find_one(
+            {"department_id": req["department_id"], "user_id": req["user_id"], "date": a_date},
+            {"shift_code": 1, "extra_shift_code": 1},
+        )
+        cur_code = str((current_a or {}).get("shift_code") or "").strip().upper()
+        extra_code = str((current_a or {}).get("extra_shift_code") or "").strip().upper()
+        if cur_code in {"B", "C"}:
+            extra_code = extra_code or cur_code
+        payload: dict[str, Any] = {
+            "overnight_from_date": c_date,
+            "overnight_from_code": "C",
+            "comp_off_earn_request_id": oid,
+        }
+        unset_a = None
+        if extra_code and extra_code != "A":
+            payload["extra_shift_code"] = extra_code
+            payload["dual_pair"] = pair_label_for_codes("A", extra_code)
+        else:
+            unset_a = {"extra_shift_code": "", "dual_pair": ""}
+        await _upsert_roster_code(
+            db,
+            dept_id=req["department_id"],
+            user_id=req["user_id"],
+            day_iso=a_date,
+            code="A",
+            actor=actor,
+            extra=payload,
+            unset=unset_a,
+        )
+        return
+
+    current = await db.shifts.find_one(
+        {"department_id": req["department_id"], "user_id": req["user_id"], "date": work_date},
+        {
+            "shift_code": 1,
+            "extra_shift_code": 1,
+            "overnight_from_date": 1,
+            "overnight_from_code": 1,
+            "overnight_to_date": 1,
+            "overnight_to_code": 1,
+        },
+    )
+    current_code = str((current or {}).get("shift_code") or "")
+    if (current or {}).get("overnight_from_date"):
+        current_code = "A"
+    primary, extra_code, pair_label = dual_roster_codes(earn_type, current_code, worked_shift)
+    if (current or {}).get("overnight_from_date"):
+        primary = "A"
+        if extra_code == "A":
+            extra_code = worked_shift if worked_shift != "A" else "B"
+            pair_label = pair_label_for_codes("A", extra_code)
+    extra: dict[str, Any] = {
+        "extra_shift_code": extra_code,
+        "dual_pair": pair_label,
+        "comp_off_earn_request_id": oid,
+    }
+    for key in ("overnight_from_date", "overnight_from_code", "overnight_to_date", "overnight_to_code"):
+        if (current or {}).get(key):
+            extra[key] = current[key]
+    await _upsert_roster_code(
+        db,
+        dept_id=req["department_id"],
+        user_id=req["user_id"],
+        day_iso=work_date,
+        code=primary,
+        actor=actor,
+        extra=extra,
     )
 
 
@@ -479,6 +600,22 @@ async def create_comp_off_earn(body: CompOffEarnCreate, user=Depends(get_current
     earn_type, worked_shift = validate_earn(body.earn_type, body.worked_shift)
     work_date = work_day.isoformat()
     uid = ObjectId(user["_id"])
+    dept_id = ObjectId(user["department_id"])
+    current = await db.shifts.find_one(
+        {"user_id": uid, "department_id": dept_id, "date": work_date},
+        {"shift_code": 1, "overnight_from_date": 1, "overnight_to_date": 1},
+    )
+    current_code = str((current or {}).get("shift_code") or "")
+    if (current or {}).get("overnight_from_date"):
+        current_code = "A"
+    elif (current or {}).get("overnight_to_date"):
+        current_code = "C"
+    span_end_date = None
+    if earn_type in OVERNIGHT_EARN_TYPES:
+        c_date, a_date = overnight_ca_span(work_date, current_code, worked_shift)
+        work_date = c_date
+        span_end_date = a_date
+        worked_shift = "A"
     if await existing_open_earn(db, uid, work_date, earn_type):
         raise HTTPException(
             status_code=400,
@@ -487,7 +624,7 @@ async def create_comp_off_earn(body: CompOffEarnCreate, user=Depends(get_current
     doc = {
         "kind": "earn",
         "user_id": uid,
-        "department_id": ObjectId(user["department_id"]),
+        "department_id": dept_id,
         "work_date": work_date,
         "earn_type": earn_type,
         "worked_shift": worked_shift,
@@ -495,8 +632,13 @@ async def create_comp_off_earn(body: CompOffEarnCreate, user=Depends(get_current
         "status": "pending",
         "created_at": datetime.now(timezone.utc),
     }
+    if span_end_date:
+        doc["span_end_date"] = span_end_date
     res = await db.comp_off_requests.insert_one(doc)
-    return {"id": str(res.inserted_id), "status": "pending", "kind": "earn"}
+    out = {"id": str(res.inserted_id), "status": "pending", "kind": "earn", "work_date": work_date}
+    if span_end_date:
+        out["span_end_date"] = span_end_date
+    return out
 
 
 @router.get("/comp-off/ledger")
@@ -627,33 +769,7 @@ async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles
                     extra={"comp_off_earn_request_id": oid},
                 )
             elif req.get("earn_type") in JOINT_EARN_TYPES:
-                current = await db.shifts.find_one(
-                    {
-                        "department_id": req["department_id"],
-                        "user_id": req["user_id"],
-                        "date": req["work_date"],
-                    },
-                    {"shift_code": 1, "extra_shift_code": 1},
-                )
-                current_code = str((current or {}).get("shift_code") or "")
-                primary, extra_code, pair_label = dual_roster_codes(
-                    req.get("earn_type") or "",
-                    current_code,
-                    req.get("worked_shift") or "",
-                )
-                await _upsert_roster_code(
-                    db,
-                    dept_id=req["department_id"],
-                    user_id=req["user_id"],
-                    day_iso=req["work_date"],
-                    code=primary,
-                    actor=actor,
-                    extra={
-                        "extra_shift_code": extra_code,
-                        "dual_pair": pair_label,
-                        "comp_off_earn_request_id": oid,
-                    },
-                )
+                await _apply_joint_earn_to_roster(db, req, actor, oid)
         return {"ok": True, "status": body.status, "kind": "earn"}
 
     if body.status == "approved":
