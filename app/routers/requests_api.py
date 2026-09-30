@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 
 from app.comp_off import (
     EARN_TYPES,
+    JOINT_EARN_TYPES,
     REST_EARN_TYPES,
     consume_reserved_credits,
     credit_counts,
+    dual_roster_codes,
     existing_open_earn,
     inclusive_days,
     ledger_rows,
@@ -256,7 +258,7 @@ async def list_leave(
 
 
 @router.patch("/leave/{rid}/decide")
-async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("admin", "manager"))):
+async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(rid)
@@ -265,10 +267,6 @@ async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("a
     req = await db.leave_requests.find_one({"_id": oid})
     if not req:
         raise HTTPException(status_code=404, detail="Not found")
-
-    if user["role"] == "manager":
-        if str(req["department_id"]) != user.get("department_id"):
-            raise HTTPException(status_code=403, detail="Wrong department")
 
     await db.leave_requests.update_one(
         {"_id": oid},
@@ -300,7 +298,8 @@ async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("a
                         "assigned_by": actor,
                         "updated_at": now,
                         "leave_request_id": oid,
-                    }
+                    },
+                    "$unset": {"extra_shift_code": "", "dual_pair": ""},
                 },
                 upsert=True,
             )
@@ -361,7 +360,7 @@ async def list_shift_change(
 
 
 @router.patch("/shift-change/{rid}/decide")
-async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_roles("admin", "manager"))):
+async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(rid)
@@ -370,10 +369,6 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
     req = await db.shift_change_requests.find_one({"_id": oid})
     if not req:
         raise HTTPException(status_code=404, detail="Not found")
-
-    if user["role"] == "manager":
-        if str(req["department_id"]) != user.get("department_id"):
-            raise HTTPException(status_code=403, detail="Wrong department")
 
     new_status = body.status
     await db.shift_change_requests.update_one(
@@ -406,7 +401,8 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
                     "assigned_by": actor,
                     "updated_at": now,
                     "change_request_id": oid,
-                }
+                },
+                "$unset": {"extra_shift_code": "", "dual_pair": ""},
             },
             upsert=True,
         )
@@ -425,9 +421,12 @@ async def _upsert_roster_code(db, *, dept_id, user_id, day_iso: str, code: str, 
     }
     if extra:
         payload.update(extra)
+    op: dict[str, Any] = {"$set": payload}
+    if "extra_shift_code" not in payload:
+        op["$unset"] = {"extra_shift_code": "", "dual_pair": ""}
     await db.shifts.update_one(
         {"department_id": dept_id, "user_id": user_id, "date": day_iso},
-        {"$set": payload},
+        op,
         upsert=True,
     )
 
@@ -577,7 +576,7 @@ async def list_comp_off(
 
 
 @router.patch("/comp-off/{rid}/decide")
-async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles("admin", "manager"))):
+async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles("admin"))):
     db = get_db()
     try:
         oid = ObjectId(rid)
@@ -588,9 +587,6 @@ async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles
         raise HTTPException(status_code=404, detail="Not found")
     if req.get("status") != "pending":
         raise HTTPException(status_code=400, detail="This request was already decided")
-    if user["role"] == "manager":
-        if str(req["department_id"]) != user.get("department_id"):
-            raise HTTPException(status_code=403, detail="Wrong department")
 
     actor = ObjectId(user["_id"])
     now = datetime.now(timezone.utc)
@@ -629,6 +625,34 @@ async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles
                     code=req["worked_shift"],
                     actor=actor,
                     extra={"comp_off_earn_request_id": oid},
+                )
+            elif req.get("earn_type") in JOINT_EARN_TYPES:
+                current = await db.shifts.find_one(
+                    {
+                        "department_id": req["department_id"],
+                        "user_id": req["user_id"],
+                        "date": req["work_date"],
+                    },
+                    {"shift_code": 1, "extra_shift_code": 1},
+                )
+                current_code = str((current or {}).get("shift_code") or "")
+                primary, extra_code, pair_label = dual_roster_codes(
+                    req.get("earn_type") or "",
+                    current_code,
+                    req.get("worked_shift") or "",
+                )
+                await _upsert_roster_code(
+                    db,
+                    dept_id=req["department_id"],
+                    user_id=req["user_id"],
+                    day_iso=req["work_date"],
+                    code=primary,
+                    actor=actor,
+                    extra={
+                        "extra_shift_code": extra_code,
+                        "dual_pair": pair_label,
+                        "comp_off_earn_request_id": oid,
+                    },
                 )
         return {"ok": True, "status": body.status, "kind": "earn"}
 

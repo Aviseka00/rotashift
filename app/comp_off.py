@@ -22,11 +22,14 @@ JOINT_PAIRS = {
     "joint_ca": frozenset({"C", "A"}),
 }
 
-# Extra duty that can generate a credit — G general duty never qualifies.
-WORKED_SHIFT_CODES = frozenset({"A", "B", "C"})
+# Extra duty that can generate a credit: A, B, C, or G general duty.
+WORKED_SHIFT_CODES = frozenset({"A", "B", "C", "G"})
+# Using a banked credit can convert these roster days to paid CO.
+AVAIL_SHIFT_CODES = frozenset({"L", "A", "B", "C", "G"})
 REST_EARN_TYPES = frozenset({"worked_wo", "worked_leave", "worked_holiday"})
 JOINT_EARN_TYPES = frozenset(JOINT_PAIRS)
 MAX_AVAIL_DAYS = 31
+_SHIFT_ORDER = {"A": 0, "B": 1, "C": 2, "G": 3}
 
 
 def inclusive_days(start: date, end: date) -> list[str]:
@@ -51,12 +54,47 @@ def validate_earn(earn_type: str, worked_shift: str) -> tuple[str, str]:
             detail="Choose why this credit is due: week off, leave, holiday, or a joint A+B / B+C / C+A shift",
         )
     if ws not in WORKED_SHIFT_CODES:
-        raise HTTPException(status_code=400, detail="The extra duty must be shift A, B, or C — G does not earn comp-off")
+        raise HTTPException(status_code=400, detail="The extra duty must be shift A, B, C, or G")
     pair = JOINT_PAIRS.get(et)
     if pair and ws not in pair:
-        a, b = sorted(pair)
+        a, b = sorted(pair, key=lambda c: _SHIFT_ORDER.get(c, 9))
         raise HTTPException(status_code=400, detail=f"For {a}+{b} extra duty, the extra shift must be {a} or {b}")
     return et, ws
+
+
+def joint_pair_label(earn_type: str) -> str:
+    labels = {"joint_ab": "A+B", "joint_bc": "B+C", "joint_ca": "C+A"}
+    if earn_type in labels:
+        return labels[earn_type]
+    pair = JOINT_PAIRS.get(earn_type) or frozenset()
+    return "+".join(sorted(pair, key=lambda c: _SHIFT_ORDER.get(c, 9)))
+
+
+def pair_label_for_codes(primary: str, extra: str) -> str:
+    codes = {str(primary or "").strip().upper(), str(extra or "").strip().upper()} - {""}
+    if codes == {"A", "B"}:
+        return "A+B"
+    if codes == {"B", "C"}:
+        return "B+C"
+    if codes == {"C", "A"}:
+        return "C+A"
+    return "+".join(sorted(codes, key=lambda c: _SHIFT_ORDER.get(c, 9)))
+
+
+def dual_roster_codes(earn_type: str, current_code: str, worked_shift: str) -> tuple[str, str, str]:
+    """Return (primary roster code, extra shift, A+B label) for a joint extra-duty day."""
+    pair = JOINT_PAIRS.get(earn_type)
+    extra = (worked_shift or "").strip().upper()
+    current = (current_code or "").strip().upper()
+    if not pair:
+        return current or extra, "", ""
+    if extra not in pair:
+        extra = sorted(pair, key=lambda c: _SHIFT_ORDER.get(c, 9))[-1]
+    if current in pair and current != extra:
+        primary = current
+    else:
+        primary = next(c for c in sorted(pair, key=lambda c: _SHIFT_ORDER.get(c, 9)) if c != extra)
+    return primary, extra, joint_pair_label(earn_type)
 
 
 async def existing_open_earn(db, user_id: ObjectId, work_date: str, earn_type: str) -> dict | None:
@@ -71,8 +109,8 @@ async def existing_open_earn(db, user_id: ObjectId, work_date: str, earn_type: s
     )
 
 
-async def require_leave_days(db, user_id: ObjectId, department_id: ObjectId, days: list[str]) -> None:
-    """Comp-off can only be applied to days already marked leave on the roster."""
+async def require_avail_days(db, user_id: ObjectId, department_id: ObjectId, days: list[str]) -> None:
+    """Comp-off can be applied against leave (L) or a rostered A, B, C, or G shift."""
     if not days:
         return
     found: dict[str, str] = {}
@@ -81,17 +119,21 @@ async def require_leave_days(db, user_id: ObjectId, department_id: ObjectId, day
         {"date": 1, "shift_code": 1},
     ):
         found[str(shift.get("date") or "")] = str((shift or {}).get("shift_code") or "").strip().upper()
-    not_leave = [day for day in days if found.get(day) != "L"]
-    if not_leave:
-        shown = ", ".join(not_leave[:6])
-        extra = f" (+{len(not_leave) - 6} more)" if len(not_leave) > 6 else ""
+    not_ok = [day for day in days if found.get(day) not in AVAIL_SHIFT_CODES]
+    if not_ok:
+        shown = ", ".join(not_ok[:6])
+        extra = f" (+{len(not_ok) - 6} more)" if len(not_ok) > 6 else ""
         raise HTTPException(
             status_code=400,
             detail=(
-                "Comp-off can only be used against leave you have already taken. "
-                f"These dates are not leave (L): {shown}{extra}"
+                "Comp-off can be used against leave (L) or a rostered A, B, C, or G shift. "
+                f"These dates are not eligible: {shown}{extra}"
             ),
         )
+
+
+async def require_leave_days(db, user_id: ObjectId, department_id: ObjectId, days: list[str]) -> None:
+    await require_avail_days(db, user_id, department_id, days)
 
 
 async def credit_counts(db, user_id: ObjectId) -> dict[str, int]:

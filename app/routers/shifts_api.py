@@ -6,7 +6,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from app.comp_off import EARN_TYPES, _credit_trace, _earn_trace
+from app.comp_off import EARN_TYPES, JOINT_EARN_TYPES, _credit_trace, _earn_trace, dual_roster_codes, pair_label_for_codes
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import get_current_user, require_roles
@@ -87,7 +87,7 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin", "manag
         }
         await db.shifts.update_one(
             {"department_id": dept_id, "user_id": target["_id"], "date": doc["date"]},
-            {"$set": doc},
+            {"$set": doc, "$unset": {"extra_shift_code": "", "dual_pair": ""}},
             upsert=True,
         )
         inserted += 1
@@ -123,7 +123,7 @@ async def set_own_roster_day(body: SelfRosterDayBody, user=Depends(get_current_u
     }
     await db.shifts.update_one(
         {"department_id": dept_id, "user_id": uid, "date": doc["date"]},
-        {"$set": doc},
+        {"$set": doc, "$unset": {"extra_shift_code": "", "dual_pair": ""}},
         upsert=True,
     )
     return {"ok": True, "shift_code": code, "date": doc["date"]}
@@ -187,6 +187,7 @@ async def calendar_feed(
                 shift_code=s["shift_code"],
                 day=day,
                 kind="shift",
+                extra_shift_code=s.get("extra_shift_code"),
             )
         )
 
@@ -275,6 +276,7 @@ async def table_matrix(
     shifts_by_user: Dict[ObjectId, Dict[str, str]] = {}
     traces_by_user: Dict[ObjectId, Dict[str, dict]] = {}
     earns_by_user: Dict[ObjectId, Dict[str, dict]] = {}
+    duals_by_user: Dict[ObjectId, Dict[str, dict]] = {}
     for s in shifts_docs:
         uid = s.get("user_id")
         day = s.get("date")
@@ -282,6 +284,17 @@ async def table_matrix(
             continue
         code = s.get("shift_code", "")
         shifts_by_user.setdefault(uid, {})[day] = code
+        extra = str(s.get("extra_shift_code") or "").strip().upper()
+        pair = str(s.get("dual_pair") or "").strip()
+        if extra:
+            if not pair:
+                pair = pair_label_for_codes(code, extra)
+            duals_by_user.setdefault(uid, {})[day] = {
+                "pair": pair,
+                "primary": str(code or "").strip().upper(),
+                "extra": extra,
+                "pending": False,
+            }
         if str(code or "").strip().upper() == "CO":
             earn_type = s.get("comp_off_earn_type")
             traces_by_user.setdefault(uid, {})[day] = {
@@ -317,6 +330,21 @@ async def table_matrix(
         if earns_by_user.setdefault(uid, {}).get(day):
             continue
         earns_by_user[uid][day] = _earn_trace(req, pending=True)
+        if req.get("earn_type") in JOINT_EARN_TYPES:
+            existing_dual = duals_by_user.setdefault(uid, {}).get(day)
+            if not (existing_dual and not existing_dual.get("pending")):
+                current = shifts_by_user.get(uid, {}).get(day, "")
+                primary, extra, label = dual_roster_codes(
+                    req.get("earn_type") or "",
+                    current,
+                    req.get("worked_shift") or "",
+                )
+                duals_by_user[uid][day] = {
+                    "pair": label,
+                    "primary": primary,
+                    "extra": extra,
+                    "pending": True,
+                }
 
     rows = []
     for u in users_list:
@@ -330,6 +358,7 @@ async def table_matrix(
                 "cells": cells,
                 "traces": traces_by_user.get(uid, {}),
                 "earns": earns_by_user.get(uid, {}),
+                "duals": duals_by_user.get(uid, {}),
             }
         )
 

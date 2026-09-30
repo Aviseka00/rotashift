@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 from typing import Any, Dict
 
+from app.comp_off import pair_label_for_codes
 from app.config import SHIFT_DEFINITIONS
 
 
@@ -31,9 +32,12 @@ def calendar_event_for_shift(
     shift_code: str,
     day: date,
     kind: str = "shift",
+    extra_shift_code: str | None = None,
 ) -> Dict[str, Any]:
     info = SHIFT_DEFINITIONS[shift_code]
-    label = info["label"]
+    extra = (extra_shift_code or "").strip().upper()
+    pair = pair_label_for_codes(shift_code, extra) if extra and extra != shift_code else ""
+    label = pair or info["label"]
     title = f"{label} · {user_name} ({employee_id})"
     if not info.get("start"):
         end_plus = day + timedelta(days=1)
@@ -46,11 +50,14 @@ def calendar_event_for_shift(
             "display": "block",
             "extendedProps": {
                 "shift_code": shift_code,
+                "extra_shift_code": extra or None,
+                "dual_pair": pair or None,
                 "employee_id": employee_id,
                 "kind": kind,
                 "user_name": user_name,
             },
-            "classNames": [f"shift-{shift_code.lower()}", f"evt-{kind}", "evt-roster-day"],
+            "classNames": [f"shift-{shift_code.lower()}", f"evt-{kind}", "evt-roster-day"]
+            + (["shift-dual"] if pair else []),
         }
     start, end = shift_event_window(day, shift_code)
     return {
@@ -60,12 +67,14 @@ def calendar_event_for_shift(
         "end": end.isoformat(),
         "extendedProps": {
             "shift_code": shift_code,
+            "extra_shift_code": extra or None,
+            "dual_pair": pair or None,
             "employee_id": employee_id,
             "kind": kind,
             "user_name": user_name,
         },
         "display": "block",
-        "classNames": [f"shift-{shift_code.lower()}", f"evt-{kind}"],
+        "classNames": [f"shift-{shift_code.lower()}", f"evt-{kind}"] + (["shift-dual"] if pair else []),
     }
 
 

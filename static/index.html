@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=72" />
+    <link rel="stylesheet" href="/static/styles.css?v=73" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -257,14 +257,14 @@
                 <textarea id="leave-reason" placeholder="e.g. annual leave, training day…"></textarea>
                 <label class="check-inline" for="leave-use-compoff">
                   <input type="checkbox" id="leave-use-compoff" />
-                  Convert these already-approved leave days to paid CO (only if they are already L)
+                  Convert these days to paid CO if they are already L, A, B, C, or G on the roster
                 </label>
                 <button type="button" id="leave-submit" class="btn emp-apply-submit">Submit leave</button>
               </section>
 
               <section class="emp-apply-panel hidden" data-apply-panel="swap" id="shift-change-section">
                 <h3>Request swap</h3>
-                <p class="hint">Swap to A, B, C, G, WO, or L. Your manager approves it first.</p>
+                <p class="hint">Swap to A, B, C, G, WO, or L. An administrator approves it.</p>
                 <div class="row emp-apply-fields">
                   <div>
                     <label for="chg-date">Date</label>
@@ -287,7 +287,7 @@
               <section class="emp-apply-panel hidden" data-apply-panel="compoff" id="compoff-earn-section">
                 <h3>Earn a comp-off</h3>
                 <p class="hint">
-                  Worked on WO, leave, or a holiday — or did A+B, B+C, or C+A (not G). After approval, one paid day is banked.
+                  Worked on WO, leave, or a holiday (A, B, C, or G), or did a dual A+B / B+C / C+A. After administrator approval, one paid day is banked and dual days show both codes.
                 </p>
                 <div class="row emp-apply-fields">
                   <div>
@@ -311,6 +311,7 @@
                       <option value="A">A</option>
                       <option value="B">B</option>
                       <option value="C">C</option>
+                      <option value="G">G</option>
                     </select>
                   </div>
                 </div>
@@ -986,7 +987,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             </div>
             <button type="button" id="roster-request-close" class="icon-btn" aria-label="Close">×</button>
           </div>
-          <p class="hint" id="roster-request-lead">Pick leave, a shift swap, or a comp-off action. Your manager reviews it before the roster or bank changes.</p>
+          <p class="hint" id="roster-request-lead">Pick leave, a shift swap, or a comp-off action. An administrator reviews it before the roster or bank changes.</p>
           <p class="roster-request-meta" id="roster-request-meta"></p>
           <label for="roster-request-to">Request</label>
           <select id="roster-request-to"></select>
@@ -1100,7 +1101,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=72"></script>
+    <script src="/static/app.js?v=73"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

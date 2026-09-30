@@ -410,7 +410,7 @@ function updateDashboardBanner() {
     role === "employee"
       ? "Your roster is below. Use the ⋮ menu to apply leave, swap, or comp-off."
       : role === "manager"
-        ? "Today shows coverage, pending approvals, and your work. Approve with a coverage warning before you decide."
+        ? "Today shows coverage and pending requests in your department. Only an administrator can approve leave, swaps, and comp-off."
         : "Today summarizes pending work. Departments, People, Approvals, and the roster stay one tap away.";
   show(banner, role !== "employee");
 }
@@ -709,7 +709,11 @@ function canEditMatrixCell(employeeId) {
   return false;
 }
 
-function paintMatrixDataCell(td, code, editable, trace, earn) {
+function canDecideRequests() {
+  return state.user?.role === "admin";
+}
+
+function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
   td.replaceChildren();
   td.className = "";
   td.classList.add("matrix-data-cell");
@@ -721,6 +725,17 @@ function paintMatrixDataCell(td, code, editable, trace, earn) {
   td.dataset.coKind = showCo ? "avail" : earn ? "earn" : "";
   td.dataset.coEarnedMark = !showCo && earn ? "1" : "";
   td.dataset.coEarnPending = !showCo && earn?.pending ? "1" : "";
+  if (dual?.pair) {
+    td.dataset.dualPair = dual.pair;
+    td.dataset.dualExtra = dual.extra || "";
+    td.dataset.dualPrimary = dual.primary || c;
+    td.dataset.dualPending = dual.pending ? "1" : "";
+  } else {
+    delete td.dataset.dualPair;
+    delete td.dataset.dualExtra;
+    delete td.dataset.dualPrimary;
+    delete td.dataset.dualPending;
+  }
   const source = showCo ? trace : earn;
   if (source) {
     td.dataset.coEarnedOn = source.earned_on || "";
@@ -747,6 +762,17 @@ function paintMatrixDataCell(td, code, editable, trace, earn) {
       : trace?.earned_on
         ? `Paid CO. Taken on this day. Earned by working ${trace.worked_shift || "extra"} on ${trace.earned_on}. Tap for the trail.`
         : "Paid comp-off. Tap to see which extra-duty day paid this leave.";
+  } else if (dual?.pair) {
+    td.textContent = dual.pair;
+    td.classList.add("cell-dual", `cell-${String(dual.primary || c || "a").toLowerCase()}`);
+    if (dual.pending) td.classList.add("cell-dual-pending");
+    const dualMark = document.createElement("span");
+    dualMark.className = "dual-shift-mark";
+    dualMark.textContent = dual.pending ? "DUAL?" : "DUAL";
+    td.appendChild(dualMark);
+    td.title = dual.pending
+      ? `Pending dual shift ${dual.pair} — waiting for administrator approval.`
+      : `Did dual shift ${dual.pair} on this day.`;
   } else if (c) {
     td.textContent = c;
     td.classList.add(`cell-${c.toLowerCase()}`);
@@ -765,15 +791,15 @@ function paintMatrixDataCell(td, code, editable, trace, earn) {
       ? `Pending earned CO from extra duty (${earn.earn_label || earn.earn_type || "extra"}). Tap +CO for the trail.`
       : earn.used_on
         ? `Generated a CO this day. Already used on ${earn.used_on}. Tap +CO for the trail.`
-        : `Generated a CO this day (${earn.earn_label || earn.earn_type || "extra duty"}). Ready to use against leave.`;
+        : `Generated a CO this day (${earn.earn_label || earn.earn_type || "extra duty"}). Ready to use against leave or an A/B/C/G day.`;
   }
   if (!showCo && editable) {
     td.classList.add("matrix-cell-editable");
-    if (!earn) {
+    if (!earn && !dual) {
       td.title =
         state.user?.role === "employee"
-          ? c === "L"
-            ? "Tap to apply an earned comp-off against this leave"
+          ? ["L", "A", "B", "C", "G"].includes(c)
+            ? "Tap to apply an earned comp-off against this day, or request a change"
             : "Tap to request leave, a shift change, or a comp-off"
           : "Tap to choose A, B, C, G, L (leave), WO (week off), or CO (comp-off)";
     }
@@ -784,7 +810,7 @@ function restoreOpenMatrixCellEditor() {
   const sel = document.querySelector("#matrix-body select.matrix-cell-select, #matrix-cards select.matrix-cell-select");
   if (!sel) return;
   const td = sel.closest("td");
-  if (td) paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td));
+  if (td) paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td), dualFromCell(td));
 }
 
 function traceFromCell(td) {
@@ -842,28 +868,42 @@ async function saveMatrixCellShift(td, shiftCode) {
   await refreshTable();
 }
 
+function dualFromCell(td) {
+  if (!td?.dataset.dualPair) return null;
+  return {
+    pair: td.dataset.dualPair,
+    extra: td.dataset.dualExtra || "",
+    primary: td.dataset.dualPrimary || td.dataset.shiftCode || "",
+    pending: td.dataset.dualPending === "1",
+  };
+}
+
 function fillRosterRequestSelect(fromCode) {
   const sel = $("roster-request-to");
   if (!sel) return;
   sel.innerHTML = "";
   const restCodes = new Set(["WO", "L"]);
-  const jointCodes = new Set(["A", "B", "C"]);
   if (restCodes.has(fromCode) || !fromCode) {
-    const earn = document.createElement("option");
-    earn.value = "__earn";
-    earn.textContent = "Earn comp-off (I worked this rest / holiday day)";
-    sel.appendChild(earn);
+    ["A", "B", "C", "G"].forEach((ws) => {
+      const earn = document.createElement("option");
+      earn.value = `__earn_${ws}`;
+      earn.textContent = `Earn comp-off (I worked ${ws} on this rest / holiday day)`;
+      sel.appendChild(earn);
+    });
   }
-  if (jointCodes.has(fromCode)) {
+  jointPairsFor(fromCode).forEach(([earnType, extra, pair]) => {
     const earn = document.createElement("option");
-    earn.value = "__earn_joint";
-    earn.textContent = `Earn comp-off (I also did a joint extra with ${fromCode})`;
+    earn.value = `__earn_${earnType}`;
+    earn.textContent = `Earn CO for dual ${pair} (also did ${extra})`;
     sel.appendChild(earn);
-  }
-  if (fromCode === "L") {
+  });
+  if (["L", "A", "B", "C", "G"].includes(fromCode)) {
     const avail = document.createElement("option");
     avail.value = "__avail";
-    avail.textContent = "Use earned comp-off against this leave (CO)";
+    avail.textContent =
+      fromCode === "L"
+        ? "Use earned comp-off against this leave (CO)"
+        : `Use earned comp-off against this ${fromCode} shift (CO)`;
     sel.appendChild(avail);
   }
   matrixShiftCodes().forEach((code) => {
@@ -873,7 +913,13 @@ function fillRosterRequestSelect(fromCode) {
     o.textContent = code === "L" ? "Leave (L)" : shiftOptionLabel(code);
     sel.appendChild(o);
   });
-  if ([...sel.options].some((o) => o.value === "L")) sel.value = "L";
+  if (jointPairsFor(fromCode).length || (restCodes.has(fromCode) || !fromCode)) {
+    sel.selectedIndex = 0;
+  } else if ([...sel.options].some((o) => o.value === "__avail")) {
+    sel.value = "__avail";
+  } else if ([...sel.options].some((o) => o.value === "L")) {
+    sel.value = "L";
+  }
 }
 
 function closeCompOffTrace() {
@@ -895,12 +941,12 @@ function openCompOffTrace(td) {
     const usedLine = td.dataset.coUsedOn
       ? `It already paid leave on <strong>${escapeHtml(formatFriendlyDay(td.dataset.coUsedOn))}</strong> — that roster day shows CO.`
       : pending
-        ? "Waiting for approval. After it is approved it is banked and ready to use against leave."
-        : "It is in your bank. Apply it against an approved leave day; the roster then shows CO.";
+        ? "Waiting for administrator approval. After it is approved it is banked and ready to use against leave or an A, B, C, or G day."
+        : "It is in your bank. Apply it against leave or a rostered A, B, C, or G day; the roster then shows CO.";
     body.innerHTML = `
       <p><strong>${escapeHtml(who)}</strong> generated this CO on <strong>${escapeHtml(formatFriendlyDay(earnedOn))}</strong> by working <strong>${escapeHtml(worked || "A/B/C")}</strong> (${escapeHtml(earnLabel)})${pending ? " <span class=\"badge status-pending\">pending approval</span>" : ""}.</p>
       <p>${usedLine}</p>
-      <p class="hint">Generated credits stay on the extra-duty day as +CO. Used credits also update the leave day to CO so you and your department can see them.</p>
+      <p class="hint">Generated credits stay on the extra-duty day as +CO. Dual A+B / B+C / C+A days show both codes. Used credits update the day to CO so you and your department can see them.</p>
     `;
   } else if (body) {
     const earnLine = earnedOn
@@ -925,12 +971,14 @@ function closeRosterRequestModal() {
 function openRosterRequestModal(td) {
   const date = td.dataset.date;
   const fromCode = (td.dataset.shiftCode || "").trim().toUpperCase();
+  const dual = dualFromCell(td);
   state.rosterRequest = { date, fromCode };
   fillRosterRequestSelect(fromCode);
   const meta = $("roster-request-meta");
   if (meta) {
+    const shown = dual?.pair || fromCode || "—";
     const hours = fromCode ? shiftHoursLabel(fromCode) : "not assigned";
-    meta.textContent = `${formatFriendlyDay(date)} · currently ${fromCode || "—"} ${hours ? `(${hours})` : ""}`;
+    meta.textContent = `${formatFriendlyDay(date)} · currently ${shown}${dual ? " (dual)" : ""}${hours ? ` (${hours})` : ""}`;
   }
   if ($("roster-request-reason")) $("roster-request-reason").value = "";
   const msg = $("roster-request-msg");
@@ -951,17 +999,18 @@ async function submitRosterCellRequest() {
   if (msg) msg.textContent = "Submitting…";
   try {
     let notice = "";
-    if (toCode === "__earn" || toCode === "__earn_joint") {
+    if (toCode.startsWith("__earn_")) {
       const from = req.fromCode || "";
-      const earnType =
-        toCode === "__earn_joint"
-          ? jointEarnTypeFor(from)
-          : from === "L"
-            ? "worked_leave"
-            : from === "WO"
-              ? "worked_wo"
-              : "worked_holiday";
-      const workedShift = toCode === "__earn_joint" ? jointExtraShift(from) : $("co-earn-shift")?.value || "A";
+      const rest = toCode.slice(7);
+      const isJoint = rest.startsWith("joint_");
+      const earnType = isJoint
+        ? rest
+        : from === "L"
+          ? "worked_leave"
+          : from === "WO"
+            ? "worked_wo"
+            : "worked_holiday";
+      const workedShift = isJoint ? jointExtraFor(from, rest) : rest;
       await api("/api/requests/comp-off/earn", {
         method: "POST",
         body: JSON.stringify({
@@ -971,13 +1020,15 @@ async function submitRosterCellRequest() {
           reason,
         }),
       });
-      notice = `Comp-off earn requested for ${req.date}. After approval, one paid day is added to your bank.`;
+      notice = isJoint
+        ? `Dual-shift comp-off requested for ${req.date} (${rest.replace("joint_", "").toUpperCase().split("").join("+") || "joint"}). An administrator must approve it.`
+        : `Comp-off earn requested for ${req.date} (worked ${workedShift}). An administrator must approve it.`;
     } else if (toCode === "__avail") {
       await api("/api/requests/comp-off/avail", {
         method: "POST",
         body: JSON.stringify({ start_date: req.date, end_date: req.date, reason }),
       });
-      notice = `Comp-off avail requested for ${req.date}. After approval the roster shows CO (no loss of pay).`;
+      notice = `Comp-off avail requested for ${req.date}. After administrator approval the roster shows CO (no loss of pay).`;
     } else if (toCode === "L") {
       await api("/api/requests/leave", {
         method: "POST",
@@ -1011,18 +1062,16 @@ async function submitRosterCellRequest() {
   }
 }
 
-function jointEarnTypeFor(fromCode) {
-  if (fromCode === "A") return "joint_ab";
-  if (fromCode === "B") return "joint_bc";
-  if (fromCode === "C") return "joint_ca";
-  return "joint_ab";
+function jointPairsFor(fromCode) {
+  if (fromCode === "A") return [["joint_ab", "B", "A+B"], ["joint_ca", "C", "C+A"]];
+  if (fromCode === "B") return [["joint_ab", "A", "A+B"], ["joint_bc", "C", "B+C"]];
+  if (fromCode === "C") return [["joint_bc", "B", "B+C"], ["joint_ca", "A", "C+A"]];
+  return [];
 }
 
-function jointExtraShift(fromCode) {
-  if (fromCode === "A") return "B";
-  if (fromCode === "B") return "C";
-  if (fromCode === "C") return "A";
-  return "A";
+function jointExtraFor(fromCode, earnType) {
+  const pair = earnType === "joint_ab" ? ["A", "B"] : earnType === "joint_bc" ? ["B", "C"] : ["C", "A"];
+  return pair.find((c) => c !== fromCode) || pair[1];
 }
 
 function openMatrixCellEditor(td) {
@@ -1064,13 +1113,13 @@ function openMatrixCellEditor(td) {
       await saveMatrixCellShift(td, code);
     } catch (e) {
       alert(e.message || String(e));
-      paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td));
+      paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td), dualFromCell(td));
     }
   });
   sel.addEventListener("blur", () => {
     setTimeout(() => {
       if (committed) return;
-      if (td.querySelector("select.matrix-cell-select")) paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td));
+      if (td.querySelector("select.matrix-cell-select")) paintMatrixDataCell(td, td.dataset.shiftCode, true, traceFromCell(td), earnFromCell(td), dualFromCell(td));
     }, 0);
   });
 }
@@ -1189,7 +1238,7 @@ function buildMatrixMobileCards(data) {
       tdS.dataset.date = d;
       tdS.dataset.employeeId = row.employee_id;
       tdS.dataset.employeeName = row.full_name || "";
-      paintMatrixDataCell(tdS, row.cells[d] || "", canEditMatrix, row.traces?.[d], row.earns?.[d]);
+      paintMatrixDataCell(tdS, row.cells[d] || "", canEditMatrix, row.traces?.[d], row.earns?.[d], row.duals?.[d]);
       tr.appendChild(tdD);
       tr.appendChild(tdS);
       tb.appendChild(tr);
@@ -1301,7 +1350,7 @@ async function refreshTable() {
       td.dataset.employeeId = row.employee_id;
       td.dataset.employeeName = row.full_name || "";
       const code = row.cells[d];
-      paintMatrixDataCell(td, code || "", canEditMatrix, row.traces?.[d], row.earns?.[d]);
+      paintMatrixDataCell(td, code || "", canEditMatrix, row.traces?.[d], row.earns?.[d], row.duals?.[d]);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -1372,7 +1421,13 @@ async function refreshManagerQueues() {
     div.innerHTML = `<div>${deptBadge}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
       <div>${r.start_date} → ${r.end_date}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
       <div class="coverage-slot" data-coverage-kind="leave" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
-    if (state.user.role === "manager" || state.user.role === "admin") {
+    if (!canDecideRequests()) {
+      const wait = document.createElement("p");
+      wait.className = "hint";
+      wait.textContent = "Waiting for administrator approval.";
+      div.appendChild(wait);
+    }
+    if (canDecideRequests()) {
       const actions = document.createElement("div");
       actions.className = "req-actions";
       actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="leave" data-status="approved">Approve</button>
@@ -1403,11 +1458,18 @@ async function refreshManagerQueues() {
     div.innerHTML = `<div>${deptChg}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
       <div>${r.date}: ${r.from_shift} → ${r.to_shift}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
       <div class="coverage-slot" data-coverage-kind="shift" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
-    const actions = document.createElement("div");
-    actions.className = "req-actions";
-    actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="chg" data-status="approved">Approve</button>
-      <button type="button" class="btn secondary" data-id="${r.id}" data-kind="chg" data-status="rejected">Reject</button>`;
-    div.appendChild(actions);
+    if (!canDecideRequests()) {
+      const wait = document.createElement("p");
+      wait.className = "hint";
+      wait.textContent = "Waiting for administrator approval.";
+      div.appendChild(wait);
+    } else {
+      const actions = document.createElement("div");
+      actions.className = "req-actions";
+      actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="chg" data-status="approved">Approve</button>
+        <button type="button" class="btn secondary" data-id="${r.id}" data-kind="chg" data-status="rejected">Reject</button>`;
+      div.appendChild(actions);
+    }
     cbox.appendChild(div);
   });
   cbox.querySelectorAll('button[data-kind="chg"]').forEach((btn) => {
@@ -1436,11 +1498,18 @@ async function refreshManagerQueues() {
           : "";
       div.innerHTML = `<div>${deptCo}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
         <div>${escapeHtml(compOffDetail(r))}</div><div class="hint">${escapeHtml(r.reason || "")}</div>${coverage}`;
-      const actions = document.createElement("div");
-      actions.className = "req-actions";
-      actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="compoff" data-status="approved">Approve</button>
+      if (!canDecideRequests()) {
+        const wait = document.createElement("p");
+        wait.className = "hint";
+        wait.textContent = "Waiting for administrator approval.";
+        div.appendChild(wait);
+      } else {
+        const actions = document.createElement("div");
+        actions.className = "req-actions";
+        actions.innerHTML = `<button type="button" class="btn" data-id="${r.id}" data-kind="compoff" data-status="approved">Approve</button>
         <button type="button" class="btn secondary" data-id="${r.id}" data-kind="compoff" data-status="rejected">Reject</button>`;
-      div.appendChild(actions);
+        div.appendChild(actions);
+      }
       cobox.appendChild(div);
     });
     cobox.querySelectorAll('button[data-kind="compoff"]').forEach((btn) => {
@@ -2864,17 +2933,24 @@ function todayMountEl() {
   return $("emp-today-mount");
 }
 
-function findOwnRosterCodes(tableData, employeeId) {
+function findOwnRosterRow(tableData, employeeId) {
   const mine = String(employeeId || "").toUpperCase();
-  const row = (tableData?.rows || []).find((r) => String(r.employee_id || "").toUpperCase() === mine);
-  return row?.cells || {};
+  return (tableData?.rows || []).find((r) => String(r.employee_id || "").toUpperCase() === mine) || null;
 }
 
-function todayCodeCard(label, dateIso, code) {
-  const hours = shiftHoursLabel(code);
-  return `<article class="today-shift-pill cell-${String(code || "wo").toLowerCase()}">
+function findOwnRosterCodes(tableData, employeeId) {
+  return findOwnRosterRow(tableData, employeeId)?.cells || {};
+}
+
+function todayCodeCard(label, dateIso, code, dual) {
+  const display = dual?.pair || code || "—";
+  const hours = dual?.pair ? `Dual ${dual.pair}` : shiftHoursLabel(code);
+  const klass = dual?.pair
+    ? `cell-dual cell-${String(dual.primary || code || "wo").toLowerCase()}`
+    : `cell-${String(code || "wo").toLowerCase()}`;
+  return `<article class="today-shift-pill ${klass}">
     <span class="eyebrow">${escapeHtml(label)}</span>
-    <div class="today-shift-code">${escapeHtml(code || "—")}</div>
+    <div class="today-shift-code">${escapeHtml(display)}</div>
     <div class="hint">${escapeHtml(formatFriendlyDay(dateIso))}${hours ? ` · ${escapeHtml(hours)}` : ""}</div>
   </article>`;
 }
@@ -2931,7 +3007,9 @@ async function refreshTodayHome() {
     if (table.shift_legend) {
       state.shiftLegend = { ...state.shiftLegend, ...table.shift_legend };
     }
-    const cells = findOwnRosterCodes(table, state.user.employee_id);
+    const ownRow = findOwnRosterRow(table, state.user.employee_id);
+    const cells = ownRow?.cells || {};
+    const duals = ownRow?.duals || {};
     const todayCode = cells[today] || "";
     const tomorrowCode = cells[tomorrow] || "";
     const myTasks = (tasks || []).filter(taskIsMine);
@@ -2967,12 +3045,12 @@ async function refreshTodayHome() {
       role === "employee"
         ? ""
         : `<section class="today-card">
-            <h3>Approvals waiting</h3>
+            <h3>${role === "admin" ? "Approvals waiting" : "Pending in your department"}</h3>
             <div class="today-stat-grid">
               <div class="today-stat"><span class="hint">Pending</span><strong>${pendingQueue.length}</strong></div>
             </div>
             <div class="today-actions">
-              <button type="button" class="btn" data-today-go="approvals">Review approvals</button>
+              <button type="button" class="btn" data-today-go="approvals">${role === "admin" ? "Review approvals" : "View requests"}</button>
             </div>
           </section>`;
     const coSummary = ownCompOffSummary(coBalance);
@@ -2983,8 +3061,8 @@ async function refreshTodayHome() {
           <h2>${escapeHtml(firstName)}</h2>
           <p class="hint">${escapeHtml(state.user.department_name || "Your department")} · ${escapeHtml(formatFriendlyDay(today))}</p>
           <div class="today-shift-row">
-            ${todayCodeCard("Today", today, todayCode)}
-            ${todayCodeCard("Tomorrow", tomorrow, tomorrowCode)}
+            ${todayCodeCard("Today", today, todayCode, duals[today])}
+            ${todayCodeCard("Tomorrow", tomorrow, tomorrowCode, duals[tomorrow])}
           </div>
         </section>
         <details class="emp-more-details">
@@ -3008,8 +3086,8 @@ async function refreshTodayHome() {
         <h2>${escapeHtml(firstName)}, here’s today</h2>
         <p class="hint">${escapeHtml(state.user.department_name || "Your department")} · ${escapeHtml(formatFriendlyDay(today))}</p>
         <div class="today-shift-row">
-          ${todayCodeCard("Today", today, todayCode)}
-          ${todayCodeCard("Tomorrow", tomorrow, tomorrowCode)}
+          ${todayCodeCard("Today", today, todayCode, duals[today])}
+          ${todayCodeCard("Tomorrow", tomorrow, tomorrowCode, duals[tomorrow])}
         </div>
         <div class="today-actions">
           <button type="button" class="btn" data-today-go="swap">Request swap / leave</button>
@@ -3401,7 +3479,7 @@ function applyRoleVisibility() {
       role === "admin"
         ? "Pending leave, shift-change, and comp-off requests from every department. Approve or reject here. Full history is under the Activity tab."
         : role === "manager"
-          ? "Pending requests from your department only. After each action, the full audit trail updates in the Department activity log on this page and on the Approval log tab."
+          ? "Pending requests from your department only. An administrator must approve leave, swaps, and comp-off. The audit trail is in the Department activity log and Approval log tab."
           : "";
   }
   const mgrActLog = $("mgr-approvals-activity-log");

@@ -93,6 +93,19 @@ def test_manager_can_request_leave_and_shift_change_for_admin_approval(
     assert any(item["id"] == leave.json()["id"] and item["status"] == "pending" for item in own_leave)
     assert any(item["id"] == shift.json()["id"] and item["status"] == "pending" for item in own_shift)
 
+    manager_leave_decide = client.patch(
+        f"/api/requests/leave/{leave.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=manager_headers,
+    )
+    manager_shift_decide = client.patch(
+        f"/api/requests/shift-change/{shift.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=manager_headers,
+    )
+    assert manager_leave_decide.status_code == 403
+    assert manager_shift_decide.status_code == 403
+
     approved = client.patch(
         f"/api/requests/leave/{leave.json()['id']}/decide",
         json={"status": "approved"},
@@ -444,7 +457,7 @@ def test_coverage_preview_and_manager_department_scope(
     assert any(item["id"] == leave.json()["id"] for item in dept_leave.json()["requests"])
 
 
-def test_comp_off_earn_avail_and_reject_g(
+def test_comp_off_earn_avail_g_and_dual(
     client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
 ):
     department_id = client.get("/api/departments").json()["departments"][0]["id"]
@@ -461,22 +474,34 @@ def test_comp_off_earn_avail_and_reject_g(
         headers=admin_headers,
     )
     assert created.status_code == 200, created.text
+    manager_id = f"M{uuid.uuid4().hex[:10].upper()}"
+    manager_created = client.post(
+        "/api/users",
+        json={
+            "employee_id": manager_id,
+            "password": "compoff-mgr-pass-9x",
+            "full_name": "Comp Off Manager QA",
+            "department_id": department_id,
+            "role": "manager",
+        },
+        headers=admin_headers,
+    )
+    assert manager_created.status_code == 200, manager_created.text
+    manager_login = client.post(
+        "/api/auth/login", json={"employee_id": manager_id, "password": "compoff-mgr-pass-9x"}
+    )
+    assert manager_login.status_code == 200, manager_login.text
+    manager_headers = {"Authorization": f"Bearer {manager_login.json()['access_token']}"}
     login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
     assert login.status_code == 200, login.text
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     work_day = date.today().isoformat()
+    dual_day = (date.today() + timedelta(days=1)).isoformat()
     later = (date.today() + timedelta(days=3)).isoformat()
-
-    blocked = client.post(
-        "/api/requests/comp-off/earn",
-        json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "G"},
-        headers=headers,
-    )
-    assert blocked.status_code == 400
 
     earn = client.post(
         "/api/requests/comp-off/earn",
-        json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "A", "reason": "Came in on WO"},
+        json={"work_date": work_day, "earn_type": "worked_wo", "worked_shift": "G", "reason": "Came in on WO as G"},
         headers=headers,
     )
     assert earn.status_code == 200, earn.text
@@ -507,6 +532,13 @@ def test_comp_off_earn_avail_and_reject_g(
     )
     assert empty_avail.status_code == 400
 
+    manager_blocked = client.patch(
+        f"/api/requests/comp-off/{earn.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=manager_headers,
+    )
+    assert manager_blocked.status_code == 403
+
     approved = client.patch(
         f"/api/requests/comp-off/{earn.json()['id']}/decide",
         json={"status": "approved"},
@@ -522,35 +554,32 @@ def test_comp_off_earn_avail_and_reject_g(
     assert earned_row["earns"][work_day]["pending"] is False
     assert earned_row["earns"][work_day]["status"] == "available"
     assert earned_row["earns"][work_day]["earned_on"] == work_day
+    assert earned_row["cells"][work_day] == "G"
     balance = client.get("/api/requests/comp-off/balance", headers=headers)
     assert balance.status_code == 200
     assert balance.json()["available"] == 1
     assert balance.json()["earned"] == 1
 
-    not_leave = client.post(
+    not_eligible = client.post(
         "/api/requests/comp-off/avail",
-        json={"start_date": later, "end_date": later, "reason": "No leave yet"},
+        json={"start_date": later, "end_date": later, "reason": "No roster yet"},
         headers=headers,
     )
-    assert not_leave.status_code == 400
-    assert "leave" in not_leave.json()["detail"].lower()
+    assert not_eligible.status_code == 400
 
-    leave = client.post(
-        "/api/requests/leave",
-        json={"start_date": later, "end_date": later, "reason": "Planned leave"},
-        headers=headers,
-    )
-    assert leave.status_code == 200, leave.text
-    leave_ok = client.patch(
-        f"/api/requests/leave/{leave.json()['id']}/decide",
-        json={"status": "approved"},
+    bulk_a = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [{"employee_id": unique_employee_id, "date": later, "shift_code": "A"}],
+        },
         headers=admin_headers,
     )
-    assert leave_ok.status_code == 200, leave_ok.text
+    assert bulk_a.status_code == 200, bulk_a.text
 
     avail = client.post(
         "/api/requests/comp-off/avail",
-        json={"start_date": later, "end_date": later, "reason": "Paid day off"},
+        json={"start_date": later, "end_date": later, "reason": "Paid day off against A"},
         headers=headers,
     )
     assert avail.status_code == 200, avail.text
@@ -598,7 +627,7 @@ def test_comp_off_earn_avail_and_reject_g(
     my_row = next(r for r in table.json()["rows"] if r["employee_id"] == unique_employee_id)
     assert my_row["cells"][later] == "CO"
     assert my_row["traces"][later]["earned_on"] == work_day
-    assert my_row["traces"][later]["worked_shift"] == "A"
+    assert my_row["traces"][later]["worked_shift"] == "G"
     assert len(table.json()["rows"]) >= 1
     generated = client.get(
         f"/api/shifts/table?start={work_day}&end={work_day}",
@@ -607,3 +636,46 @@ def test_comp_off_earn_avail_and_reject_g(
     generated_row = next(r for r in generated["rows"] if r["employee_id"] == unique_employee_id)
     assert generated_row["earns"][work_day]["status"] == "used"
     assert generated_row["earns"][work_day]["used_on"] == later
+
+    bulk_dual = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [{"employee_id": unique_employee_id, "date": dual_day, "shift_code": "B"}],
+        },
+        headers=admin_headers,
+    )
+    assert bulk_dual.status_code == 200, bulk_dual.text
+    joint = client.post(
+        "/api/requests/comp-off/earn",
+        json={
+            "work_date": dual_day,
+            "earn_type": "joint_ab",
+            "worked_shift": "A",
+            "reason": "Did A+B",
+        },
+        headers=headers,
+    )
+    assert joint.status_code == 200, joint.text
+    pending_dual = client.get(
+        f"/api/shifts/table?start={dual_day}&end={dual_day}",
+        headers=headers,
+    ).json()
+    pending_dual_row = next(r for r in pending_dual["rows"] if r["employee_id"] == unique_employee_id)
+    assert pending_dual_row["duals"][dual_day]["pair"] == "A+B"
+    assert pending_dual_row["duals"][dual_day]["pending"] is True
+    joint_ok = client.patch(
+        f"/api/requests/comp-off/{joint.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert joint_ok.status_code == 200, joint_ok.text
+    dual_table = client.get(
+        f"/api/shifts/table?start={dual_day}&end={dual_day}",
+        headers=headers,
+    ).json()
+    dual_row = next(r for r in dual_table["rows"] if r["employee_id"] == unique_employee_id)
+    assert dual_row["cells"][dual_day] == "B"
+    assert dual_row["duals"][dual_day]["pair"] == "A+B"
+    assert dual_row["duals"][dual_day]["extra"] == "A"
+    assert dual_row["duals"][dual_day]["pending"] is False

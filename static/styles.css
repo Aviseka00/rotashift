@@ -1472,6 +1472,28 @@ table.matrix select.matrix-cell-select {
   outline: 2px solid #7dd3fc;
   outline-offset: 1px;
 }
+.cell-dual {
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22), 0 0 12px rgba(234, 88, 12, 0.35);
+}
+.cell-dual-pending {
+  border-style: dashed !important;
+}
+.dual-shift-mark {
+  display: inline-block;
+  margin-left: 0.2rem;
+  padding: 0 0.28rem;
+  border-radius: 999px;
+  border: 1px solid #fdba74;
+  background: #9a3412;
+  color: #ffedd5;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
 
 .emp-co-own {
   margin: 0 0 0.9rem;
