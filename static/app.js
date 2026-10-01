@@ -190,12 +190,12 @@ async function loadMeta() {
     span.appendChild(tail);
     leg.appendChild(span);
   });
-  ["chg-from", "chg-to"].forEach((id) => {
+  ["chg-from"].forEach((id) => {
     const sel = $(id);
     if (!sel) return;
     const cur = sel.value;
     sel.innerHTML = "";
-    matrixShiftCodes().forEach((c) => {
+    ["A", "B", "C", "G", "L", "WO"].forEach((c) => {
       const o = document.createElement("option");
       o.value = c;
       o.textContent = shiftOptionLabel(c);
@@ -203,6 +203,7 @@ async function loadMeta() {
     });
     if (cur && [...sel.options].some((opt) => opt.value === cur)) sel.value = cur;
   });
+  fillSwapToSelect($("chg-from")?.value || "");
   fillMgrAssignShiftSelect();
 }
 
@@ -213,6 +214,32 @@ function shiftOptionLabel(code) {
   if (inf?.description) return `${c} · ${inf.description}`;
   if (inf?.label) return `${c} · ${inf.label}`;
   return c;
+}
+
+function fillSwapToSelect(fromCode) {
+  const sel = $("chg-to");
+  if (!sel) return;
+  const cur = sel.value;
+  const from = String(fromCode || "").trim().toUpperCase();
+  sel.innerHTML = "";
+  if (["L", "A", "B", "C", "G"].includes(from)) {
+    const avail = document.createElement("option");
+    avail.value = "__avail";
+    avail.textContent =
+      from === "L"
+        ? "Use earned comp-off against this leave (CO)"
+        : `Use earned comp-off against this ${from} shift (CO)`;
+    sel.appendChild(avail);
+  }
+  ["A", "B", "C", "G", "L"].forEach((code) => {
+    if (code === from) return;
+    const o = document.createElement("option");
+    o.value = code;
+    o.textContent = code === "L" ? "Leave (L)" : shiftOptionLabel(code);
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  else if ([...sel.options].some((o) => o.value === "__avail")) sel.value = "__avail";
 }
 
 function fillMgrAssignShiftSelect() {
@@ -924,6 +951,15 @@ function fillRosterRequestSelect(fromCode, dual) {
   if (dual?.overnight && dual.role === "a") fromCode = "A";
   if (dual?.overnight && dual.role === "c") fromCode = "C";
   const restCodes = new Set(["WO", "L"]);
+  if (["L", "A", "B", "C", "G"].includes(fromCode)) {
+    const avail = document.createElement("option");
+    avail.value = "__avail";
+    avail.textContent =
+      fromCode === "L"
+        ? "Use earned comp-off against this leave (CO)"
+        : `Use earned comp-off against this ${fromCode} shift (CO)`;
+    sel.appendChild(avail);
+  }
   if (restCodes.has(fromCode) || !fromCode) {
     ["A", "B", "C", "G"].forEach((ws) => {
       const earn = document.createElement("option");
@@ -938,26 +974,17 @@ function fillRosterRequestSelect(fromCode, dual) {
     earn.textContent = `Earn CO for ${pair}`;
     sel.appendChild(earn);
   });
-  if (["L", "A", "B", "C", "G"].includes(fromCode)) {
-    const avail = document.createElement("option");
-    avail.value = "__avail";
-    avail.textContent =
-      fromCode === "L"
-        ? "Use earned comp-off against this leave (CO)"
-        : `Use earned comp-off against this ${fromCode} shift (CO)`;
-    sel.appendChild(avail);
-  }
   matrixShiftCodes().forEach((code) => {
-    if (code === fromCode || code === "CO") return;
+    if (code === fromCode || code === "CO" || code === "WO") return;
     const o = document.createElement("option");
     o.value = code;
     o.textContent = code === "L" ? "Leave (L)" : shiftOptionLabel(code);
     sel.appendChild(o);
   });
-  if (jointPairsFor(fromCode, dual).length || (restCodes.has(fromCode) || !fromCode)) {
-    sel.selectedIndex = 0;
-  } else if ([...sel.options].some((o) => o.value === "__avail")) {
+  if ([...sel.options].some((o) => o.value === "__avail")) {
     sel.value = "__avail";
+  } else if (jointPairsFor(fromCode, dual).length || restCodes.has(fromCode) || !fromCode) {
+    sel.selectedIndex = 0;
   } else if ([...sel.options].some((o) => o.value === "L")) {
     sel.value = "L";
   }
@@ -1022,6 +1049,12 @@ function openRosterRequestModal(td) {
     const shown = dual?.pair || fromCode || "—";
     const hours = fromCode ? shiftHoursLabel(fromCode) : "not assigned";
     meta.textContent = `${formatFriendlyDay(date)} · currently ${shown}${dual ? " (dual)" : ""}${hours ? ` (${hours})` : ""}`;
+  }
+  const lead = $("roster-request-lead");
+  if (lead) {
+    lead.textContent = ["A", "B", "C", "G"].includes(fromCode)
+      ? "Use earned comp-off against this allocated shift, request leave, or swap to another duty. Week off cannot be requested here."
+      : "Pick leave, a shift swap, or a comp-off action. An administrator reviews it before the roster or bank changes.";
   }
   if ($("roster-request-reason")) $("roster-request-reason").value = "";
   const msg = $("roster-request-msg");
@@ -3011,7 +3044,11 @@ function todayCodeCard(label, dateIso, code, dual) {
   const klass = dual?.pair
     ? `cell-dual cell-${String(dual.primary || code || "wo").toLowerCase()}`
     : `cell-${String(code || "wo").toLowerCase()}`;
-  return `<article class="today-shift-pill ${klass}">
+  const employeeTap =
+    state.user?.role === "employee"
+      ? ` role="button" tabindex="0" data-today-go="swap-modal" data-today-date="${escapeHtml(dateIso)}" data-today-code="${escapeHtml(code || "")}"`
+      : "";
+  return `<article class="today-shift-pill ${klass}"${employeeTap}>
     <span class="eyebrow">${escapeHtml(label)}</span>
     <div class="today-shift-code">${escapeHtml(display)}</div>
     <div class="hint">${escapeHtml(formatFriendlyDay(dateIso))}${hours ? ` · ${escapeHtml(hours)}` : ""}</div>
@@ -3177,7 +3214,9 @@ async function refreshTodayHome() {
       ${queueCard}`;
     }
     root.querySelectorAll("[data-today-go]").forEach((btn) => {
-      btn.addEventListener("click", () => handleTodayAction(btn.dataset.todayGo, today, todayCode));
+      btn.addEventListener("click", () =>
+        handleTodayAction(btn.dataset.todayGo, btn.dataset.todayDate || today, btn.dataset.todayCode || todayCode),
+      );
     });
   } catch (e) {
     root.innerHTML = `<p class="error">${escapeHtml(e.message || String(e))}</p>`;
@@ -3969,29 +4008,47 @@ $("co-earn-submit")?.addEventListener("click", async () => {
   }
 });
 
+$("chg-from")?.addEventListener("change", () => fillSwapToSelect($("chg-from").value));
+
 $("chg-submit").addEventListener("click", async () => {
   try {
     if (!$("chg-date").value) {
       showEmployeeRequestNotice("Please choose the date for the shift change.", "error");
       return;
     }
-    const res = await api("/api/requests/shift-change", {
-      method: "POST",
-      body: JSON.stringify({
-        date: $("chg-date").value,
-        from_shift: $("chg-from").value,
-        to_shift: $("chg-to").value,
-        reason: $("chg-reason").value,
-      }),
-    });
-    showEmployeeRequestNotice(
-      `Shift change request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
-      "success",
-    );
+    const toCode = $("chg-to").value;
+    const fromCode = $("chg-from").value;
+    const date = $("chg-date").value;
+    const reason = $("chg-reason").value;
+    if (toCode === "__avail") {
+      const res = await api("/api/requests/comp-off/avail", {
+        method: "POST",
+        body: JSON.stringify({ start_date: date, end_date: date, reason }),
+      });
+      showEmployeeRequestNotice(
+        `Comp-off avail requested for ${date}. After administrator approval the roster shows CO (no loss of pay). Reference id: ${res.id}.`,
+        "success",
+      );
+    } else {
+      const res = await api("/api/requests/shift-change", {
+        method: "POST",
+        body: JSON.stringify({
+          date,
+          from_shift: fromCode,
+          to_shift: toCode,
+          reason,
+        }),
+      });
+      showEmployeeRequestNotice(
+        `Shift change request submitted successfully. Reference id: ${res.id}. Status: ${res.status ?? "pending"} — an administrator will review it. You can track it in the log below.`,
+        "success",
+      );
+    }
     $("chg-reason").value = "";
     await refreshEmployeeRequestLog();
     await refreshManagerQueues();
     await refreshTodayHome().catch(() => {});
+    await refreshTable().catch(() => {});
     setEmployeeApplyPanel("status");
   } catch (e) {
     showEmployeeRequestNotice(e.message, "error");

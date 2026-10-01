@@ -71,6 +71,8 @@ SHIFT_DEFINITIONS = {
 TIMED_SHIFT_CODES = frozenset(k for k, v in SHIFT_DEFINITIONS.items() if v.get("start"))
 # Employees swap via request; CO is only written after an approved avail (not a free swap).
 SWAP_SHIFT_CODES = frozenset(k for k in SHIFT_DEFINITIONS if k != "CO")
+# Allocated duty bands. Staff cannot request week off against these; they apply earned CO instead.
+DUTY_SHIFT_CODES = frozenset({"A", "B", "C", "G"})
 
 # Canonical roster cell codes (client always merges these into pickers even if an older API omits some).
 ROSTER_SHIFT_CODES: tuple[str, ...] = tuple(SHIFT_DEFINITIONS.keys())

@@ -150,6 +150,46 @@ def test_user_can_request_swap_from_wo_or_leave(
     assert from_leave.status_code == 200, from_leave.text
 
 
+def test_cannot_swap_allocated_duty_to_week_off(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "no-wo-on-duty-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "No WO On Duty QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    today = date.today().isoformat()
+    bulk = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [{"employee_id": unique_employee_id, "date": today, "shift_code": "G"}],
+        },
+        headers=admin_headers,
+    )
+    assert bulk.status_code == 200, bulk.text
+    blocked = client.post(
+        "/api/requests/shift-change",
+        json={"date": today, "from_shift": "G", "to_shift": "WO", "reason": "Want week off"},
+        headers=headers,
+    )
+    assert blocked.status_code == 400, blocked.text
+    assert "Week off" in blocked.json()["detail"]
+    assert "comp-off" in blocked.json()["detail"].lower()
+
+
 def test_register_requires_admin_approval(
     client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
 ):

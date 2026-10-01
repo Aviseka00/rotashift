@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=75" />
+    <link rel="stylesheet" href="/static/styles.css?v=76" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -264,7 +264,7 @@
 
               <section class="emp-apply-panel hidden" data-apply-panel="swap" id="shift-change-section">
                 <h3>Request swap</h3>
-                <p class="hint">Swap to A, B, C, G, WO, or L. An administrator approves it.</p>
+                <p class="hint">Swap to A, B, C, G, or L. Week off cannot be requested against an allocated A, B, C, or G shift — apply earned CO instead. An administrator approves it.</p>
                 <div class="row emp-apply-fields">
                   <div>
                     <label for="chg-date">Date</label>
@@ -663,15 +663,11 @@ Amruta Mishra	80100331</pre>
                   >Main view is a dated grid table (staff in rows, dates in columns). Scroll horizontally for more days.
                   Codes: <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong> (shifts),
                   <strong>L</strong> (leave), <strong>WO</strong> (week off), <strong>CO</strong> (paid comp-off).
-                  A <strong>+CO</strong> mark is a day that generated a credit. Employees: tap your cell to request leave
-                  or a swap. Managers and admins can assign any code directly.</span>
-                >
+                  A <strong>+CO</strong> mark is a day that generated a credit. Employees: tap your allocated shift to apply earned CO, leave, or a duty swap — not week off. Managers and admins can assign any code directly.</span>
                 <span class="roster-hint-narrow"
                   >The dated table scrolls sideways; below it, each person also has a compact card list by day. Tap
-                  your cell to request <strong>A</strong>, <strong>B</strong>, <strong>C</strong>, <strong>G</strong>,
-                  <strong>L</strong> (leave), <strong>WO</strong> (week off), or <strong>CO</strong>. A <strong>+CO</strong>
+                  your allocated shift to apply earned <strong>CO</strong>, leave, or another duty — not week off. A <strong>+CO</strong>
                   mark is a generated credit. Managers and admins edit any row.</span>
-                >
               </p>
               <div class="row">
                 <div>
@@ -988,7 +984,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             </div>
             <button type="button" id="roster-request-close" class="icon-btn" aria-label="Close">×</button>
           </div>
-          <p class="hint" id="roster-request-lead">Pick leave, a shift swap, or a comp-off action. An administrator reviews it before the roster or bank changes.</p>
+          <p class="hint" id="roster-request-lead">Use earned CO against this shift, request leave, or swap to another duty. Week off cannot be requested against an allocated A, B, C, or G day.</p>
           <p class="roster-request-meta" id="roster-request-meta"></p>
           <label for="roster-request-to">Request</label>
           <select id="roster-request-to"></select>
@@ -1102,7 +1098,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=75"></script>
+    <script src="/static/app.js?v=76"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

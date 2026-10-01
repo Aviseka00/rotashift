@@ -4387,6 +4387,9 @@ table.matrix.roster-matrix thead th.sticky {
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(2, 6, 23, 0.45);
 }
+.today-shift-pill[data-today-go] {
+  cursor: pointer;
+}
 
 .today-shift-pill .eyebrow {
   display: block;

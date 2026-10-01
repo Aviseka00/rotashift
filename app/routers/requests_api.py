@@ -26,7 +26,7 @@ from app.comp_off import (
     validate_earn,
     ROSTER_DUAL_UNSET,
 )
-from app.config import SWAP_SHIFT_CODES, TIMED_SHIFT_CODES
+from app.config import DUTY_SHIFT_CODES, SWAP_SHIFT_CODES, TIMED_SHIFT_CODES
 from app.database import get_db
 from app.deps import get_current_user, require_roles
 
@@ -331,9 +331,22 @@ async def create_shift_change(body: ShiftChangeCreate, user=Depends(get_current_
         raise HTTPException(status_code=400, detail="Invalid shift codes (use A, B, C, G, L, or WO)")
     if fs == ts:
         raise HTTPException(status_code=400, detail="Choose a different shift to swap to")
+    uid = ObjectId(user["_id"])
+    dept_id = ObjectId(user["department_id"])
+    day = body.date[:10]
+    current = await db.shifts.find_one(
+        {"user_id": uid, "department_id": dept_id, "date": day},
+        {"shift_code": 1},
+    )
+    current_code = str((current or {}).get("shift_code") or "").strip().upper()
+    if ts == "WO" and (fs in DUTY_SHIFT_CODES or current_code in DUTY_SHIFT_CODES):
+        raise HTTPException(
+            status_code=400,
+            detail="Week off cannot be requested against an allocated A, B, C, or G shift. Apply earned comp-off (CO) on that day instead.",
+        )
     doc = {
-        "user_id": ObjectId(user["_id"]),
-        "department_id": ObjectId(user["department_id"]),
+        "user_id": uid,
+        "department_id": dept_id,
         "date": body.date[:10],
         "from_shift": fs,
         "to_shift": ts,
