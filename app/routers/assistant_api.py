@@ -37,7 +37,7 @@ _ROSTER_HINTS = (
 )
 _HOWTO = (
     "Apply leave, swap, or comp-off from the employee ⋮ menu. Only an administrator can approve those requests. "
-    "Comp-off can be used against leave (L) or a rostered A, B, C, or G day; after approval the day shows CO. "
+    "Comp-off can be used against leave (L), week off (WO), or a rostered A, B, C, or G day; after approval the day shows CO. "
     "Week off cannot be requested against an allocated A, B, C, or G shift — tap that day and apply earned CO instead. "
     "Earn a credit by working on WO, leave, or a holiday (including G), a same-day extra A+B / B+C / A then C, or overnight C into A the next morning, then get it approved. "
     "Overnight C stays on the first roster day; A (and later B or C) shows on the next day. Tap CO to see which extra-duty day paid it. Tap +CO to see a generated credit."

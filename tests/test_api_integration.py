@@ -190,6 +190,69 @@ def test_cannot_swap_allocated_duty_to_week_off(
     assert "comp-off" in blocked.json()["detail"].lower()
 
 
+def test_can_avail_comp_off_against_week_off(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "wo-avail-co-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "WO Avail CO QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    earn_day = date.today().isoformat()
+    avail_day = (date.today() + timedelta(days=1)).isoformat()
+    bulk = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [
+                {"employee_id": unique_employee_id, "date": earn_day, "shift_code": "WO"},
+                {"employee_id": unique_employee_id, "date": avail_day, "shift_code": "WO"},
+            ],
+        },
+        headers=admin_headers,
+    )
+    assert bulk.status_code == 200, bulk.text
+    earned = client.post(
+        "/api/requests/comp-off/earn",
+        json={"work_date": earn_day, "earn_type": "worked_wo", "worked_shift": "A", "reason": "Worked on WO"},
+        headers=headers,
+    )
+    assert earned.status_code == 200, earned.text
+    earn_ok = client.patch(
+        f"/api/requests/comp-off/{earned.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert earn_ok.status_code == 200, earn_ok.text
+    avail = client.post(
+        "/api/requests/comp-off/avail",
+        json={"start_date": avail_day, "end_date": avail_day, "reason": "Use CO on week off"},
+        headers=headers,
+    )
+    assert avail.status_code == 200, avail.text
+    avail_ok = client.patch(
+        f"/api/requests/comp-off/{avail.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert avail_ok.status_code == 200, avail_ok.text
+    table = client.get(f"/api/shifts/table?start={avail_day}&end={avail_day}", headers=headers).json()
+    row = next(r for r in table["rows"] if r["employee_id"] == unique_employee_id)
+    assert row["cells"][avail_day] == "CO"
+
+
 def test_register_requires_admin_approval(
     client: TestClient, require_mongo, unique_employee_id: str, admin_headers: dict[str, str]
 ):

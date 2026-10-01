@@ -37,7 +37,7 @@ ROSTER_DUAL_UNSET = {
 # Extra duty that can generate a credit: A, B, C, or G general duty.
 WORKED_SHIFT_CODES = frozenset({"A", "B", "C", "G"})
 # Using a banked credit can convert these roster days to paid CO.
-AVAIL_SHIFT_CODES = frozenset({"L", "A", "B", "C", "G"})
+AVAIL_SHIFT_CODES = frozenset({"L", "A", "B", "C", "G", "WO"})
 REST_EARN_TYPES = frozenset({"worked_wo", "worked_leave", "worked_holiday"})
 JOINT_EARN_TYPES = frozenset(JOINT_PAIRS)
 MAX_AVAIL_DAYS = 31
@@ -151,7 +151,7 @@ async def existing_open_earn(db, user_id: ObjectId, work_date: str, earn_type: s
 
 
 async def require_avail_days(db, user_id: ObjectId, department_id: ObjectId, days: list[str]) -> None:
-    """Comp-off can be applied against leave (L) or a rostered A, B, C, or G shift."""
+    """Comp-off can be applied against leave (L), week off (WO), or a rostered A, B, C, or G shift."""
     if not days:
         return
     found: dict[str, str] = {}
@@ -167,7 +167,7 @@ async def require_avail_days(db, user_id: ObjectId, department_id: ObjectId, day
         raise HTTPException(
             status_code=400,
             detail=(
-                "Comp-off can be used against leave (L) or a rostered A, B, C, or G shift. "
+                "Comp-off can be used against leave (L), week off (WO), or a rostered A, B, C, or G shift. "
                 f"These dates are not eligible: {shown}{extra}"
             ),
         )

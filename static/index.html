@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=76" />
+    <link rel="stylesheet" href="/static/styles.css?v=77" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -257,7 +257,7 @@
                 <textarea id="leave-reason" placeholder="e.g. annual leave, training day…"></textarea>
                 <label class="check-inline" for="leave-use-compoff">
                   <input type="checkbox" id="leave-use-compoff" />
-                  Convert these days to paid CO if they are already L, A, B, C, or G on the roster
+                  Convert these days to paid CO if they are already L, WO, A, B, C, or G on the roster
                 </label>
                 <button type="button" id="leave-submit" class="btn emp-apply-submit">Submit leave</button>
               </section>
@@ -984,7 +984,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             </div>
             <button type="button" id="roster-request-close" class="icon-btn" aria-label="Close">×</button>
           </div>
-          <p class="hint" id="roster-request-lead">Use earned CO against this shift, request leave, or swap to another duty. Week off cannot be requested against an allocated A, B, C, or G day.</p>
+          <p class="hint" id="roster-request-lead">Use earned CO against this shift or week off, request leave, or swap to another duty. Week off cannot be requested against an allocated A, B, C, or G day.</p>
           <p class="roster-request-meta" id="roster-request-meta"></p>
           <label for="roster-request-to">Request</label>
           <select id="roster-request-to"></select>
@@ -1098,7 +1098,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=76"></script>
+    <script src="/static/app.js?v=77"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

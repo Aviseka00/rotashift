@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 from fastapi import HTTPException
 
-from app.comp_off import dual_roster_codes, inclusive_days, overnight_ca_span, overnight_follow_label, pair_label_for_codes, validate_earn
+from app.comp_off import AVAIL_SHIFT_CODES, dual_roster_codes, inclusive_days, overnight_ca_span, overnight_follow_label, pair_label_for_codes, validate_earn
 
 
 def test_validate_earn_accepts_rest_joint_and_g():
@@ -50,3 +50,8 @@ def test_inclusive_days_counts_multi_day_leave():
     assert days == ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"]
     with pytest.raises(HTTPException):
         inclusive_days(date(2026, 9, 4), date(2026, 9, 1))
+
+
+def test_avail_shift_codes_include_week_off():
+    assert "WO" in AVAIL_SHIFT_CODES
+    assert {"L", "A", "B", "C", "G", "WO"} <= AVAIL_SHIFT_CODES

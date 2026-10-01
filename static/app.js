@@ -216,19 +216,22 @@ function shiftOptionLabel(code) {
   return c;
 }
 
+function availCoOptionLabel(fromCode) {
+  if (fromCode === "L") return "Use earned comp-off against this leave (CO)";
+  if (fromCode === "WO") return "Use earned comp-off against this week off (CO)";
+  return `Use earned comp-off against this ${fromCode} shift (CO)`;
+}
+
 function fillSwapToSelect(fromCode) {
   const sel = $("chg-to");
   if (!sel) return;
   const cur = sel.value;
   const from = String(fromCode || "").trim().toUpperCase();
   sel.innerHTML = "";
-  if (["L", "A", "B", "C", "G"].includes(from)) {
+  if (["L", "A", "B", "C", "G", "WO"].includes(from)) {
     const avail = document.createElement("option");
     avail.value = "__avail";
-    avail.textContent =
-      from === "L"
-        ? "Use earned comp-off against this leave (CO)"
-        : `Use earned comp-off against this ${from} shift (CO)`;
+    avail.textContent = availCoOptionLabel(from);
     sel.appendChild(avail);
   }
   ["A", "B", "C", "G", "L"].forEach((code) => {
@@ -852,7 +855,7 @@ function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
       ? `Pending earned CO from extra duty (${earn.earn_label || earn.earn_type || "extra"}). Tap +CO for the trail.`
       : earn.used_on
         ? `Generated a CO this day. Already used on ${earn.used_on}. Tap +CO for the trail.`
-        : `Generated a CO this day (${earn.earn_label || earn.earn_type || "extra duty"}). Ready to use against leave or an A/B/C/G day.`;
+        : `Generated a CO this day (${earn.earn_label || earn.earn_type || "extra duty"}). Ready to use against leave, week off, or an A/B/C/G day.`;
   }
   if (!showCo && editable) {
     td.classList.add("matrix-cell-editable");
@@ -861,7 +864,7 @@ function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
         state.user?.role === "employee"
           ? dual?.overnight
             ? "Tap to apply another extra shift (B or C after A) or a comp-off"
-            : ["L", "A", "B", "C", "G"].includes(c)
+            : ["L", "A", "B", "C", "G", "WO"].includes(c)
               ? "Tap to apply an earned comp-off against this day, or request a change"
               : "Tap to request leave, a shift change, or a comp-off"
           : "Tap to choose A, B, C, G, L (leave), WO (week off), or CO (comp-off)";
@@ -951,13 +954,10 @@ function fillRosterRequestSelect(fromCode, dual) {
   if (dual?.overnight && dual.role === "a") fromCode = "A";
   if (dual?.overnight && dual.role === "c") fromCode = "C";
   const restCodes = new Set(["WO", "L"]);
-  if (["L", "A", "B", "C", "G"].includes(fromCode)) {
+  if (["L", "A", "B", "C", "G", "WO"].includes(fromCode)) {
     const avail = document.createElement("option");
     avail.value = "__avail";
-    avail.textContent =
-      fromCode === "L"
-        ? "Use earned comp-off against this leave (CO)"
-        : `Use earned comp-off against this ${fromCode} shift (CO)`;
+    avail.textContent = availCoOptionLabel(fromCode);
     sel.appendChild(avail);
   }
   if (restCodes.has(fromCode) || !fromCode) {
@@ -1009,8 +1009,8 @@ function openCompOffTrace(td) {
     const usedLine = td.dataset.coUsedOn
       ? `It already paid leave on <strong>${escapeHtml(formatFriendlyDay(td.dataset.coUsedOn))}</strong> — that roster day shows CO.`
       : pending
-        ? "Waiting for administrator approval. After it is approved it is banked and ready to use against leave or an A, B, C, or G day."
-        : "It is in your bank. Apply it against leave or a rostered A, B, C, or G day; the roster then shows CO.";
+        ? "Waiting for administrator approval. After it is approved it is banked and ready to use against leave, week off, or an A, B, C, or G day."
+        : "It is in your bank. Apply it against leave, week off, or a rostered A, B, C, or G day; the roster then shows CO.";
     body.innerHTML = `
       <p><strong>${escapeHtml(who)}</strong> generated this CO on <strong>${escapeHtml(formatFriendlyDay(earnedOn))}</strong> by working <strong>${escapeHtml(worked || "A/B/C")}</strong> (${escapeHtml(earnLabel)})${pending ? " <span class=\"badge status-pending\">pending approval</span>" : ""}.</p>
       <p>${usedLine}</p>
@@ -1052,9 +1052,13 @@ function openRosterRequestModal(td) {
   }
   const lead = $("roster-request-lead");
   if (lead) {
-    lead.textContent = ["A", "B", "C", "G"].includes(fromCode)
-      ? "Use earned comp-off against this allocated shift, request leave, or swap to another duty. Week off cannot be requested here."
-      : "Pick leave, a shift swap, or a comp-off action. An administrator reviews it before the roster or bank changes.";
+    if (["A", "B", "C", "G"].includes(fromCode)) {
+      lead.textContent = "Use earned comp-off against this allocated shift, request leave, or swap to another duty. Week off cannot be requested here.";
+    } else if (fromCode === "WO") {
+      lead.textContent = "Use earned comp-off against this week off, or record extra duty you worked on this rest day.";
+    } else {
+      lead.textContent = "Pick leave, a shift swap, or a comp-off action. An administrator reviews it before the roster or bank changes.";
+    }
   }
   if ($("roster-request-reason")) $("roster-request-reason").value = "";
   const msg = $("roster-request-msg");
