@@ -43,19 +43,14 @@ class SelfRosterDayBody(BaseModel):
 
 
 def _dept_scope(user: dict, body_dept: Optional[str]) -> ObjectId:
-    role = user.get("role")
-    if role == "admin":
-        if not body_dept:
-            raise HTTPException(status_code=400, detail="department_id required for admin bulk assign")
-        try:
-            return ObjectId(body_dept)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid department_id")
-    if role == "manager":
-        if not user.get("department_id"):
-            raise HTTPException(status_code=400, detail="Manager has no department")
-        return ObjectId(user["department_id"])
-    raise HTTPException(status_code=403, detail="Not allowed")
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not allowed")
+    if not body_dept:
+        raise HTTPException(status_code=400, detail="department_id required for admin bulk assign")
+    try:
+        return ObjectId(body_dept)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid department_id")
 
 
 async def _resolve_user_in_dept(db, emp: str, dept_id: ObjectId):
@@ -66,7 +61,7 @@ async def _resolve_user_in_dept(db, emp: str, dept_id: ObjectId):
 
 
 @router.post("/bulk")
-async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin", "manager"))):
+async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin"))):
     db = get_db()
     dept_id = _dept_scope(user, body.department_id)
     now = datetime.now(timezone.utc)
@@ -107,9 +102,9 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin", "manag
 
 @router.post("/mine")
 async def set_own_roster_day(body: SelfRosterDayBody, user=Depends(get_current_user)):
-    """Employees set their own roster cell (same codes as the department table). Managers/admins use /bulk."""
-    if user.get("role") != "employee":
-        raise HTTPException(status_code=403, detail="Managers and administrators use bulk roster assign for any team member")
+    """Employees and managers set their own roster cell. Administrators assign the team roster with /bulk."""
+    if user.get("role") not in ("employee", "manager"):
+        raise HTTPException(status_code=403, detail="Administrators use bulk roster assign")
     if not user.get("department_id"):
         raise HTTPException(status_code=400, detail="No department")
     code = body.shift_code.strip().upper()

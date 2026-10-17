@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=77" />
+    <link rel="stylesheet" href="/static/styles.css?v=78" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -337,12 +337,12 @@
           </div>
         </div>
 
-        <!-- Manager: Schedule | Manage shifts | Approvals -->
+        <!-- Manager: same roster actions as employee; only admin assigns shifts -->
         <div id="dash-manager" class="dash-shell hidden">
           <nav class="dash-nav" aria-label="Manager dashboard">
             <button type="button" class="dash-tab active" data-dash="manager" data-tab="today">Today</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="schedule">Schedule</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="shifts">Manage shifts</button>
+            <button type="button" class="dash-tab hidden" data-dash="manager" data-tab="shifts" hidden>Manage shifts</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="requests">My requests</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="records">Approval log</button>
@@ -355,7 +355,7 @@
           <div class="dash-pane hidden" data-dash="manager" data-tab="schedule">
             <div class="sched-mount" id="mgr-sched-mount"></div>
           </div>
-          <div class="dash-pane hidden" data-dash="manager" data-tab="shifts">
+          <div class="dash-pane hidden" data-dash="manager" data-tab="shifts" hidden>
             <div id="mgr-shift-slot"></div>
           </div>
           <div class="dash-pane hidden" data-dash="manager" data-tab="requests">
@@ -1098,7 +1098,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=77"></script>
+    <script src="/static/app.js?v=78"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

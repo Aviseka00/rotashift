@@ -114,6 +114,47 @@ def test_manager_can_request_leave_and_shift_change_for_admin_approval(
     assert approved.status_code == 200, approved.text
 
 
+def test_manager_cannot_assign_shifts_and_uses_own_roster_like_employee(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "manager-no-assign-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Manager No Assign QA",
+            "department_id": department_id,
+            "role": "manager",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    assert login.status_code == 200, login.text
+    manager_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    today = date.today().isoformat()
+
+    blocked = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [{"employee_id": unique_employee_id, "date": today, "shift_code": "A"}],
+        },
+        headers=manager_headers,
+    )
+    assert blocked.status_code == 403, blocked.text
+
+    own = client.post(
+        "/api/shifts/mine",
+        json={"date": today, "shift_code": "G"},
+        headers=manager_headers,
+    )
+    assert own.status_code == 200, own.text
+    assert own.json()["shift_code"] == "G"
+
+
 def test_user_can_request_swap_from_wo_or_leave(
     client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
 ):

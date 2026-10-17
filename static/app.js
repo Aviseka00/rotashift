@@ -440,7 +440,7 @@ function updateDashboardBanner() {
     role === "employee"
       ? "Your roster is below. Use the ⋮ menu to apply leave, swap, or comp-off."
       : role === "manager"
-        ? "Today shows coverage and pending requests in your department. Only an administrator can approve leave, swaps, and comp-off."
+        ? "Tap your own roster day to request leave, a swap, or comp-off — same as any team member. Only an administrator can assign shifts or approve requests."
         : "Today summarizes pending work. Departments, People, Approvals, and the roster stay one tap away.";
   show(banner, role !== "employee");
 }
@@ -729,13 +729,16 @@ function matrixShiftCodes() {
   return rosterShiftCodeOrder([...merged]);
 }
 
+function isRosterRequester() {
+  const role = state.user?.role;
+  return role === "employee" || role === "manager";
+}
+
 function canEditMatrixCell(employeeId) {
   const role = state.user?.role;
   if (!role) return false;
-  if (role === "manager" || role === "admin") return true;
-  if (role === "employee") {
-    return isOwnEmployeeId(employeeId);
-  }
+  if (role === "admin") return true;
+  if (isRosterRequester()) return isOwnEmployeeId(employeeId);
   return false;
 }
 
@@ -861,7 +864,7 @@ function paintMatrixDataCell(td, code, editable, trace, earn, dual) {
     td.classList.add("matrix-cell-editable");
     if (!earn) {
       td.title =
-        state.user?.role === "employee"
+        isRosterRequester()
           ? dual?.overnight
             ? "Tap to apply another extra shift (B or C after A) or a comp-off"
             : ["L", "A", "B", "C", "G", "WO"].includes(c)
@@ -912,7 +915,7 @@ async function saveMatrixCellShift(td, shiftCode) {
   const emp = td.dataset.employeeId;
   const date = td.dataset.date;
   if (!emp || !date) return;
-  if (state.user.role === "employee") {
+  if (isRosterRequester()) {
     const mine = String(state.user.employee_id || "").toUpperCase();
     if (String(emp).toUpperCase() !== mine) throw new Error("You can only edit your own row.");
     await api("/api/shifts/mine", {
@@ -1137,7 +1140,7 @@ async function submitRosterCellRequest() {
     refreshCompOffBalance().catch(() => {});
     refreshTodayHome().catch(() => {});
     refreshTable().catch(() => {});
-    activateDashTab(state.user?.role === "manager" ? "manager" : "employee", state.user?.role === "employee" ? "schedule" : "requests");
+    activateDashTab(state.user?.role === "manager" ? "manager" : "employee", "schedule");
     setEmployeeApplyPanel("status");
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
@@ -1173,7 +1176,7 @@ function jointExtraFor(fromCode, earnType) {
 function openMatrixCellEditor(td) {
   if (!td || td.classList.contains("sticky")) return;
   if (!canEditMatrixCell(td.dataset.employeeId)) return;
-  if (state.user?.role === "employee") {
+  if (isRosterRequester()) {
     openRosterRequestModal(td);
     return;
   }
@@ -1283,7 +1286,7 @@ function isOwnEmployeeId(employeeId) {
 
 function rosterRowsForViewer(data) {
   const rows = [...(data?.rows || [])];
-  if (state.user?.role !== "employee") return rows;
+  if (!isRosterRequester()) return rows;
   return rows.sort((a, b) => {
     const am = isOwnEmployeeId(a.employee_id);
     const bm = isOwnEmployeeId(b.employee_id);
@@ -3004,18 +3007,17 @@ function mountShiftPanels(role) {
   const ap = $("panel-mgr-approvals");
   const park = $("parked-mgr-panels");
   if (!sm || !ap) return;
-  if (role === "employee") {
+  if (role === "employee" || role === "manager") {
     if (park) {
       park.appendChild(sm);
+    }
+    if (role === "manager") {
+      const mas = $("mgr-approval-slot");
+      if (mas) mas.appendChild(ap);
+      else if (park) park.appendChild(ap);
+    } else if (park) {
       park.appendChild(ap);
     }
-    return;
-  }
-  if (role === "manager") {
-    const ms = $("mgr-shift-slot");
-    const mas = $("mgr-approval-slot");
-    if (ms) ms.appendChild(sm);
-    if (mas) mas.appendChild(ap);
     return;
   }
   if (role === "admin") {
@@ -3049,7 +3051,7 @@ function todayCodeCard(label, dateIso, code, dual) {
     ? `cell-dual cell-${String(dual.primary || code || "wo").toLowerCase()}`
     : `cell-${String(code || "wo").toLowerCase()}`;
   const employeeTap =
-    state.user?.role === "employee"
+    isRosterRequester()
       ? ` role="button" tabindex="0" data-today-go="swap-modal" data-today-date="${escapeHtml(dateIso)}" data-today-code="${escapeHtml(code || "")}"`
       : "";
   return `<article class="today-shift-pill ${klass}"${employeeTap}>
@@ -3254,7 +3256,7 @@ function handleTodayAction(action, today, todayCode) {
     return;
   }
   if (action === "swap-modal") {
-    if (dash === "employee") {
+    if (isRosterRequester()) {
       const fakeTd = document.createElement("td");
       fakeTd.dataset.date = today;
       fakeTd.dataset.shiftCode = todayCode || "";
@@ -3524,7 +3526,7 @@ function activateDashTab(dashId, tabId) {
     refreshRegistrationRequests();
     refreshAdminUsers();
   }
-  if ((dashId === "admin" || dashId === "manager") && tabId === "shifts") {
+  if (dashId === "admin" && tabId === "shifts") {
     refreshManagerRoster().catch(() => {});
   }
   if (tabId === "tasks") {
@@ -3560,6 +3562,10 @@ function applyRoleVisibility() {
   show($("emp-schedule-quick"), false);
   show($("emp-action-bar"), role === "employee");
   show($("emp-co-own"), role === "employee" || role === "manager");
+  const mgrShiftsTab = document.querySelector('.dash-tab[data-dash="manager"][data-tab="shifts"]');
+  const mgrShiftsPane = document.querySelector('.dash-pane[data-dash="manager"][data-tab="shifts"]');
+  show(mgrShiftsTab, false);
+  show(mgrShiftsPane, false);
   const empNav = document.querySelector(".emp-dash-nav");
   if (empNav) {
     empNav.hidden = role === "employee";
@@ -4071,6 +4077,10 @@ $("mgr-roster-refresh").addEventListener("click", () => {
 
 $("mgr-assign-submit").addEventListener("click", async () => {
   $("mgr-assign-msg").textContent = "";
+  if (state.user?.role !== "admin") {
+    $("mgr-assign-msg").textContent = "Only an administrator can assign shifts.";
+    return;
+  }
   const emp = $("mgr-assign-member").value.trim();
   const date = $("mgr-assign-date").value;
   const shift = $("mgr-assign-shift").value;
@@ -4334,6 +4344,10 @@ function renderBulkPreview() {
 }
 
 $("bulk-submit").addEventListener("click", async () => {
+  if (state.user?.role !== "admin") {
+    $("bulk-msg").textContent = "Only an administrator can assign shifts.";
+    return;
+  }
   const raw = $("bulk-lines").value.trim();
   if (!raw) {
     $("bulk-msg").textContent = "Paste a roster grid or CSV lines first.";
