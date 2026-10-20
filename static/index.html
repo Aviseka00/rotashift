@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=83" />
+    <link rel="stylesheet" href="/static/styles.css?v=88" />
   </head>
   <body>
     <header class="topbar">
@@ -733,12 +733,14 @@ Amruta Mishra	80100331</pre>
               <div>
                 <p class="my-kanban-eyebrow">Plan · assign · deliver</p>
                 <h3 class="my-kanban-section-title">Projects</h3>
-                <p class="hint">See the owner, timeline, task progress, and current status at a glance.</p>
+                <p class="hint">Open the tracker to see every running project, ordered by deadline.</p>
               </div>
-              <button type="button" id="projects-refresh-btn" class="btn secondary">Refresh projects</button>
+              <button type="button" id="projects-toggle-btn" class="btn project-tracker-toggle" aria-expanded="false" aria-controls="project-tracker-body">Show running projects</button>
             </div>
-            <div id="projects-grid" class="projects-grid" aria-live="polite"></div>
-            <form id="project-create-form" class="project-create-panel hidden">
+            <div id="project-tracker-body" class="project-tracker-body hidden">
+              <div class="project-tracker-tools"><span id="project-tracker-summary" class="hint"></span><button type="button" id="projects-refresh-btn" class="btn secondary">Refresh</button></div>
+              <div id="projects-grid" class="projects-grid" aria-live="polite"></div>
+              <form id="project-create-form" class="project-create-panel hidden">
               <div class="project-create-title">
                 <strong>Create a project</strong>
                 <span class="hint">Administrators can create and assign projects.</span>
@@ -749,9 +751,17 @@ Amruta Mishra	80100331</pre>
                 <label>Due<input id="project-new-due" type="date" required /></label>
               </div>
               <label>Goal and outcome<textarea id="project-new-summary" maxlength="3000" placeholder="What should the team deliver?"></textarea></label>
-              <label>Project team<select id="project-new-assignees" multiple size="4" class="task-assignee-multi"></select></label>
+              <div class="people-picker" data-people-picker="project">
+                <label for="project-assignee-search">Project team</label>
+                <p class="hint my-kanban-micro">Type at least 3 letters of a name or employee ID.</p>
+                <input id="project-assignee-search" class="my-kanban-input" autocomplete="off" placeholder="Start typing a name…" />
+                <div id="project-assignee-results" class="people-picker-results hidden"></div>
+                <div id="project-assignee-selected" class="people-picker-selected"></div>
+                <select id="project-new-assignees" multiple class="task-assignee-multi people-picker-source" aria-hidden="true" tabindex="-1"></select>
+              </div>
               <div class="project-create-actions"><button class="btn" type="submit">Create project</button><span id="project-form-msg" class="hint"></span></div>
-            </form>
+              </form>
+            </div>
           </section>
 
           <section class="my-kanban-table-section" aria-label="Department work board">
@@ -767,10 +777,13 @@ Amruta Mishra	80100331</pre>
 
           <section id="tasks-create-panel" class="my-kanban-compose" aria-label="Create task">
             <div class="my-kanban-compose-head">
-              <h3 class="my-kanban-compose-title">New task</h3>
-              <p class="my-kanban-compose-sub hint">
-                Assign your team and set priority — everyone in this department sees the board.
-              </p>
+              <div>
+                <h3 class="my-kanban-compose-title">New task</h3>
+                <p class="my-kanban-compose-sub hint">
+                  Assign your team and set priority — everyone in this department sees the board.
+                </p>
+              </div>
+              <button type="button" id="task-create-close" class="icon-btn task-create-close hidden" aria-label="Close task form">×</button>
             </div>
             <div class="row my-kanban-compose-grid">
               <div class="my-kanban-field" style="flex: 2 1 220px">
@@ -809,9 +822,14 @@ Amruta Mishra	80100331</pre>
               <textarea id="task-new-desc" class="my-kanban-textarea" placeholder="Context, links, acceptance criteria…"></textarea>
             </div>
             <div class="my-kanban-field">
-              <label for="task-new-assignees">Responsible people</label>
-              <p class="hint my-kanban-micro">Hold Ctrl / Cmd to select multiple. Only people in this department appear.</p>
-              <select id="task-new-assignees" multiple size="5" class="task-assignee-multi my-kanban-multiselect"></select>
+              <div class="people-picker" data-people-picker="task">
+                <label for="task-assignee-search">Responsible people</label>
+                <p class="hint my-kanban-micro">Type at least 3 letters of a name or employee ID, then tap a result.</p>
+                <input id="task-assignee-search" class="my-kanban-input" autocomplete="off" placeholder="Start typing a name…" />
+                <div id="task-assignee-results" class="people-picker-results hidden"></div>
+                <div id="task-assignee-selected" class="people-picker-selected"></div>
+                <select id="task-new-assignees" multiple class="task-assignee-multi people-picker-source" aria-hidden="true" tabindex="-1"></select>
+              </div>
             </div>
             <div class="my-kanban-compose-footer">
               <button type="button" id="task-create-btn" class="btn my-kanban-submit">Add to board</button>
@@ -1136,7 +1154,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=83"></script>
+    <script src="/static/app.js?v=88"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

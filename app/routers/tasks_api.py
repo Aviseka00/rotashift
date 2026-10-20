@@ -38,6 +38,7 @@ def _task_out(doc: dict, names_by_employee_id: Optional[dict] = None, creators_b
         "priority": int(doc.get("priority") or 3),
         "project_id": str(doc["project_id"]) if doc.get("project_id") else None,
         "due_date": doc.get("due_date"),
+        "progress_stage": doc.get("progress_stage"),
         "assignee_employee_ids": list(assignees),
         "assignee_names": names,
         "created_by": creator,
@@ -49,6 +50,7 @@ def _task_out(doc: dict, names_by_employee_id: Optional[dict] = None, creators_b
                 "employee_id": item.get("employee_id") or "",
                 "full_name": item.get("full_name") or item.get("employee_id") or "Team member",
                 "created_at": _iso(item.get("created_at")),
+                "stage": item.get("stage"),
             }
             for item in (doc.get("updates") or [])[-12:]
         ],
@@ -117,6 +119,7 @@ class TaskUpdate(BaseModel):
     project_id: Optional[str] = None
     due_date: Optional[date] = None
     progress_update: Optional[str] = Field(None, min_length=1, max_length=1200)
+    progress_stage: Optional[Literal["day_1", "day_2", "day_3", "closed"]] = None
 
 
 class TaskBulkDelete(BaseModel):
@@ -212,21 +215,16 @@ async def list_tasks(
 
 @router.post("")
 @router.post("/")
-async def create_task(body: TaskCreate, user=Depends(require_roles("admin", "manager"))):
+async def create_task(body: TaskCreate, user=Depends(require_roles("admin"))):
     db = get_db()
-    if user["role"] == "admin":
-        if not body.department_id:
-            raise HTTPException(status_code=400, detail="department_id is required for administrators")
-        try:
-            dept_oid = ObjectId(body.department_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid department_id")
-        if not await db.departments.find_one({"_id": dept_oid}):
-            raise HTTPException(status_code=400, detail="Department not found")
-    else:
-        if not user.get("department_id"):
-            raise HTTPException(status_code=400, detail="Manager has no department")
-        dept_oid = ObjectId(user["department_id"])
+    if not body.department_id:
+        raise HTTPException(status_code=400, detail="department_id is required for administrators")
+    try:
+        dept_oid = ObjectId(body.department_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid department_id")
+    if not await db.departments.find_one({"_id": dept_oid}):
+        raise HTTPException(status_code=400, detail="Department not found")
 
     if body.column not in COLUMN_VALUES:
         raise HTTPException(status_code=400, detail="Invalid column")
@@ -298,14 +296,17 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_u
     raw = body.model_dump(exclude_unset=True)
     if not raw:
         raise HTTPException(status_code=400, detail="No fields to update")
-    member_action = set(raw.keys()) <= {"column", "progress_update"}
+    member_action = set(raw.keys()) <= {"progress_update", "progress_stage"}
     is_assignee = str(user.get("employee_id") or "").upper() in {
         str(value).upper() for value in (doc.get("assignee_employee_ids") or [])
     }
-    if "progress_update" in raw and user.get("role") == "employee" and not is_assignee:
+    if user.get("role") != "admin" and not member_action:
+        raise HTTPException(status_code=403, detail="Only administrators can change task details")
+    if user.get("role") != "admin" and not is_assignee:
         raise HTTPException(status_code=403, detail="Only assigned team members can update this task")
-    if not member_action and user.get("role") not in ("admin", "manager"):
-        raise HTTPException(status_code=403, detail="Only managers and administrators can edit task details")
+    already_closed = doc.get("progress_stage") == "closed" or doc.get("column") == "done"
+    if already_closed and ("progress_update" in raw or "progress_stage" in raw or ("column" in raw and raw["column"] != "done")):
+        raise HTTPException(status_code=409, detail="Closed tasks are final and cannot be reopened or updated")
 
     updates: dict = {"updated_at": datetime.now(timezone.utc)}
     if "title" in raw:
@@ -317,6 +318,9 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_u
         if col not in COLUMN_VALUES:
             raise HTTPException(status_code=400, detail="Invalid column")
         updates["column"] = col
+    if "progress_stage" in raw:
+        updates["progress_stage"] = raw["progress_stage"]
+        updates["column"] = "done" if raw["progress_stage"] == "closed" else "in_progress"
     if "priority" in raw:
         updates["priority"] = int(raw["priority"])
     if "assignee_employee_ids" in raw:
@@ -339,11 +343,20 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_u
         updates["due_date"] = raw["due_date"].isoformat() if raw["due_date"] else None
 
     mongo_update: dict = {"$set": updates}
-    if "progress_update" in raw:
+    if "progress_update" in raw or "progress_stage" in raw:
+        message = str(raw.get("progress_update") or "").strip()
+        if not message:
+            message = {
+                "day_1": "Day 1 progress recorded",
+                "day_2": "Day 2 progress recorded",
+                "day_3": "Day 3 progress recorded",
+                "closed": "Task completed and closed",
+            }.get(raw.get("progress_stage"), "Progress updated")
         mongo_update["$push"] = {
             "updates": {
                 "$each": [{
-                    "message": raw["progress_update"].strip(),
+                    "message": message,
+                    "stage": raw.get("progress_stage"),
                     "employee_id": user.get("employee_id"),
                     "full_name": user.get("full_name"),
                     "created_at": updates["updated_at"],
@@ -354,7 +367,7 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_u
     await db.tasks.update_one({"_id": oid}, mongo_update)
     invalidate_project_cache(doc["department_id"])
     fresh = {**doc, **updates}
-    if "progress_update" in raw:
+    if "progress_update" in raw or "progress_stage" in raw:
         fresh["updates"] = (doc.get("updates") or []) + [mongo_update["$push"]["updates"]["$each"][0]]
     assignee_ids = fresh.get("assignee_employee_ids") or []
     assignee_names = {}

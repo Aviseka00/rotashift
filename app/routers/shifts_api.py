@@ -5,6 +5,7 @@ import asyncio
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from pymongo import UpdateOne
 
 from app.comp_off import (
     EARN_TYPES,
@@ -35,6 +36,9 @@ class AssignmentItem(BaseModel):
 class BulkBody(BaseModel):
     department_id: Optional[str] = None
     assignments: List[AssignmentItem]
+    # Grid imports are additive by default. Existing allocations, approved
+    # leave, and cells referenced by pending requests remain untouched.
+    overwrite_existing: bool = False
 
 
 class SelfRosterDayBody(BaseModel):
@@ -66,8 +70,9 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin"))):
     dept_id = _dept_scope(user, body.department_id)
     now = datetime.now(timezone.utc)
     actor_id = ObjectId(user["_id"])
-    inserted = 0
     errors = []
+    valid_rows: list[tuple[AssignmentItem, str, str]] = []
+    employee_ids: set[str] = set()
     for row in body.assignments:
         code = row.shift_code.upper()
         if code not in SHIFT_DEFINITIONS:
@@ -78,26 +83,56 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin"))):
         except Exception:
             errors.append({"employee_id": row.employee_id, "error": "bad date"})
             continue
-        try:
-            target = await _resolve_user_in_dept(db, row.employee_id, dept_id)
-        except HTTPException as e:
-            errors.append({"employee_id": row.employee_id, "error": e.detail})
+        employee_id = row.employee_id.strip().upper()
+        valid_rows.append((row, employee_id, code))
+        employee_ids.add(employee_id)
+
+    users = await db.users.find(
+        {"department_id": dept_id, "employee_id": {"$in": list(employee_ids)}},
+        {"employee_id": 1},
+    ).to_list(length=max(len(employee_ids), 1))
+    users_by_employee_id = {str(item.get("employee_id") or "").upper(): item for item in users}
+    operations = []
+    seen_cells: set[tuple[ObjectId, str]] = set()
+    for row, employee_id, code in valid_rows:
+        target = users_by_employee_id.get(employee_id)
+        if not target:
+            errors.append({"employee_id": row.employee_id, "error": f"Employee {row.employee_id} not in selected department"})
             continue
+        day = row.date[:10]
+        cell_key = (target["_id"], day)
+        if cell_key in seen_cells:
+            errors.append({"employee_id": row.employee_id, "date": day, "error": "duplicate employee/date cell skipped"})
+            continue
+        seen_cells.add(cell_key)
         doc = {
             "department_id": dept_id,
             "user_id": target["_id"],
-            "date": row.date[:10],
+            "date": day,
             "shift_code": code,
             "assigned_by": actor_id,
             "updated_at": now,
         }
-        await db.shifts.update_one(
-            {"department_id": dept_id, "user_id": target["_id"], "date": doc["date"]},
-            {"$set": doc, "$unset": dict(ROSTER_DUAL_UNSET)},
-            upsert=True,
+        update = (
+            {"$set": doc, "$unset": dict(ROSTER_DUAL_UNSET)}
+            if body.overwrite_existing
+            else {"$setOnInsert": doc}
         )
-        inserted += 1
-    return {"upserted": inserted, "errors": errors}
+        operations.append(
+            UpdateOne(
+                {"department_id": dept_id, "user_id": target["_id"], "date": day},
+                update,
+                upsert=True,
+            )
+        )
+
+    if not operations:
+        return {"upserted": 0, "updated": 0, "preserved": 0, "errors": errors}
+    result = await db.shifts.bulk_write(operations, ordered=False)
+    upserted = int(result.upserted_count)
+    updated = int(result.modified_count) if body.overwrite_existing else 0
+    preserved = 0 if body.overwrite_existing else int(result.matched_count)
+    return {"upserted": upserted, "updated": updated, "preserved": preserved, "errors": errors}
 
 
 @router.post("/mine")

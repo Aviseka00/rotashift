@@ -930,6 +930,7 @@ async function saveMatrixCellShift(td, shiftCode) {
     });
   } else {
     const payload = {
+      overwrite_existing: true,
       assignments: [{ employee_id: emp, date, shift_code: shiftCode }],
     };
     if (state.user.role === "admin") {
@@ -2547,6 +2548,26 @@ async function onTaskTableActionClick(ev) {
   const move = ev.target.closest("[data-task-move]");
   const del = ev.target.closest("[data-task-del]");
   const progress = ev.target.closest("[data-task-progress]");
+  const stage = ev.target.closest("[data-task-stage]");
+  if (stage) {
+    const id = stage.getAttribute("data-task-id");
+    const progressStage = stage.getAttribute("data-task-stage");
+    const label = { day_1: "Day 1", day_2: "Day 2", day_3: "Day 3", closed: "Close" }[progressStage] || "Progress";
+    const comment = prompt(`${label} status — add a short comment about progress:`);
+    if (!comment?.trim()) return;
+    try {
+      const updated = await api(`/api/tasks/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ progress_stage: progressStage, progress_update: comment.trim() }),
+      });
+      state.tasks = state.tasks.map((task) => task.id === id ? updated : task);
+      renderKanbanFromTasks(state.tasks);
+      refreshProjects(true).catch(() => {});
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+    return;
+  }
   if (progress) {
     const id = progress.getAttribute("data-task-progress");
     const message = prompt("Add a short progress update for your team:");
@@ -2609,8 +2630,9 @@ function buildTaskTableRow(task) {
       ? `<div class="kanban-table-desc">${escapeHtml(rawDesc.slice(0, 140))}${rawDesc.length > 140 ? "…" : ""}</div>`
       : "";
   const canEdit = tasksCanEdit();
+  const closed = task.progress_stage === "closed" || task.column === "done";
   const actionsHtml = canEdit
-    ? `<td class="kanban-table-td-actions">${TASK_COLUMNS.map((c) =>
+    ? `<td class="kanban-table-td-actions">${closed ? "" : TASK_COLUMNS.map((c) =>
         c.id === task.column
           ? ""
           : `<button type="button" class="kanban-table-act" data-task-move="${escapeHtml(task.id)}" data-col="${c.id}">${escapeHtml(c.label)}</button>`,
@@ -2795,11 +2817,11 @@ function tasksCanEdit() {
 }
 
 function tasksCanCreate() {
-  return state.user?.role === "admin" || state.user?.role === "manager";
+  return state.user?.role === "admin";
 }
 
 function tasksCanMove() {
-  return Boolean(state.user);
+  return state.user?.role === "admin";
 }
 
 function taskScopeKey() {
@@ -2837,25 +2859,75 @@ function renderProjects() {
   const root = $("projects-grid");
   if (!root) return;
   renderProjectOptions();
-  if (!state.projects.length) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const activeProjects = state.projects
+    .filter((project) => project.status !== "closed")
+    .map((project) => {
+      const due = new Date(`${project.due_date}T00:00:00`);
+      const daysLeft = Number.isNaN(due.getTime()) ? 99999 : Math.ceil((due - today) / 86400000);
+      const urgency = daysLeft <= 7 ? "critical" : daysLeft <= 21 ? "warning" : "healthy";
+      const urgencyRank = { critical: 0, warning: 1, healthy: 2 }[urgency];
+      return { ...project, daysLeft, urgency, urgencyRank };
+    })
+    .sort((a, b) => a.urgencyRank - b.urgencyRank || a.daysLeft - b.daysLeft || a.name.localeCompare(b.name));
+  const summary = $("project-tracker-summary");
+  if (summary) summary.textContent = `${activeProjects.length} running project${activeProjects.length === 1 ? "" : "s"}`;
+  const toggle = $("projects-toggle-btn");
+  if (toggle) toggle.textContent = toggle.getAttribute("aria-expanded") === "true"
+    ? "Hide running projects"
+    : `Show running projects (${activeProjects.length})`;
+  if (!activeProjects.length) {
     root.innerHTML = '<div class="project-empty">No projects yet. Administrators can create the first project below.</div>';
     return;
   }
-  root.innerHTML = state.projects.map((project) => {
-    const closed = project.status === "closed";
+  root.innerHTML = activeProjects.map((project) => {
     const team = (project.assignee_names || []).length ? project.assignee_names.join(", ") : "Team not assigned";
-    const closeButton = state.user?.role === "admin" && !closed
-      ? `<button type="button" class="project-close-btn" data-project-close="${escapeHtml(project.id)}">Close project</button>`
+    const adminActions = state.user?.role === "admin"
+      ? `<div class="project-card-actions"><button type="button" class="btn project-add-task-btn" data-project-add-task="${escapeHtml(project.id)}">＋ Add task</button><button type="button" class="project-close-btn" data-project-close="${escapeHtml(project.id)}">Close project</button></div>`
       : "";
-    return `<article class="project-card${closed ? " project-card--closed" : ""}">
-      <div class="project-card-top"><span class="project-status">${closed ? "Closed" : "Active"}</span><span>${escapeHtml(project.task_done)} / ${escapeHtml(project.task_total)} tasks</span></div>
-      <h4>${escapeHtml(project.name)}</h4>
-      ${project.summary ? `<p>${escapeHtml(project.summary)}</p>` : ""}
-      <div class="project-progress"><span style="width:${Math.min(100, Math.max(0, Number(project.progress) || 0))}%"></span></div>
-      <div class="project-progress-label"><strong>${escapeHtml(project.progress)}%</strong><span>${escapeHtml(project.start_date)} → ${escapeHtml(project.due_date)}</span></div>
-      <p class="project-team">${escapeHtml(team)}</p>${closeButton}
+    const deadline = project.daysLeft < 0
+      ? `${Math.abs(project.daysLeft)} day${Math.abs(project.daysLeft) === 1 ? "" : "s"} overdue`
+      : project.daysLeft === 0 ? "Due today" : `${project.daysLeft} day${project.daysLeft === 1 ? "" : "s"} left`;
+    return `<article class="project-card project-card--${project.urgency}">
+      <div class="project-card-top">
+        <span class="project-status">${escapeHtml(deadline)}</span>
+        <span class="project-active-mark"><i></i> Running</span>
+      </div>
+      <div class="project-card-layout">
+        <div class="project-card-main">
+          <span class="project-card-label">Project</span>
+          <h4>${escapeHtml(project.name)}</h4>
+          ${project.summary ? `<p class="project-summary">${escapeHtml(project.summary)}</p>` : '<p class="project-summary project-summary--empty">No project summary added.</p>'}
+          <div class="project-progress-head"><span>Overall progress</span><strong>${escapeHtml(project.progress)}%</strong></div>
+          <div class="project-progress" role="progressbar" aria-valuenow="${escapeHtml(project.progress)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${Math.min(100, Math.max(0, Number(project.progress) || 0))}%"></span></div>
+        </div>
+        <div class="project-card-timeline">
+          <span class="project-card-label">Timeline</span>
+          <div class="project-date-row"><span>Start</span><strong>${escapeHtml(formatFriendlyDay(project.start_date))}</strong></div>
+          <div class="project-date-line"><i></i></div>
+          <div class="project-date-row"><span>Deadline</span><strong>${escapeHtml(formatFriendlyDay(project.due_date))}</strong></div>
+        </div>
+        <div class="project-card-team">
+          <span class="project-card-label">Responsibility</span>
+          <strong class="project-task-count">${escapeHtml(project.task_done)} <small>completed</small> / ${escapeHtml(project.task_total)} <small>tasks</small></strong>
+          <p class="project-team"><strong>Team</strong><span>${escapeHtml(team)}</span></p>
+        </div>
+      </div>
+      ${adminActions}
     </article>`;
   }).join("");
+  root.querySelectorAll("[data-project-add-task]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const projectId = button.dataset.projectAddTask;
+      const select = $("task-new-project");
+      if (select) select.value = projectId;
+      const project = state.projects.find((item) => item.id === projectId);
+      const due = $("task-new-due");
+      if (due && project?.due_date) due.value = project.due_date;
+      openTaskCreateOverlay(project?.name || "this project");
+    });
+  });
   root.querySelectorAll("[data-project-close]").forEach((button) => {
     button.addEventListener("click", async () => {
       if (!confirm("Close this project? Its history and tasks will stay visible.")) return;
@@ -2863,6 +2935,29 @@ function renderProjects() {
       await refreshProjects(true);
     });
   });
+}
+
+function openTaskCreateOverlay(projectName) {
+  const panel = $("tasks-create-panel");
+  if (!panel) return;
+  panel.classList.add("task-create-overlay");
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-label", `Add a task to ${projectName}`);
+  show($("task-create-close"), true);
+  document.body.classList.add("task-create-overlay-open");
+  requestAnimationFrame(() => $("task-new-title")?.focus({ preventScroll: true }));
+}
+
+function closeTaskCreateOverlay() {
+  const panel = $("tasks-create-panel");
+  if (!panel?.classList.contains("task-create-overlay")) return;
+  panel.classList.remove("task-create-overlay");
+  panel.removeAttribute("role");
+  panel.removeAttribute("aria-modal");
+  panel.setAttribute("aria-label", "Create task");
+  show($("task-create-close"), false);
+  document.body.classList.remove("task-create-overlay-open");
 }
 
 async function refreshProjects(force = false) {
@@ -2909,13 +3004,13 @@ function updateTasksBoardUiForRole() {
   if (hint) {
     hint.textContent =
       role === "employee"
-        ? "Your cards are listed first. Drag them between columns — or use the buttons. Outlined cards are yours."
+        ? "Your assigned cards appear first. Add daily status or close completed work; closed tasks are final."
         : role === "manager"
-          ? "Your cards first. Drag to move work. Add tasks below. Priority 5 is most urgent."
-          : "Pick a department to open its board. Your cards appear first; drag to move them.";
+          ? "Your assigned cards appear first. Add status or close completed work; administrators manage task details."
+          : "Pick a department to manage its work. Team members can report status and close their assigned tasks.";
   }
   if (adminWrap) show(adminWrap, role === "admin");
-  if (createPanel) show(createPanel, role === "manager" || role === "admin");
+  if (createPanel) show(createPanel, role === "admin");
   show($("project-create-form"), role === "admin");
 }
 
@@ -2944,13 +3039,7 @@ async function loadTaskAssigneeOptions() {
       users = data.users || [];
       state.taskAssigneesByScope.set(scope, users);
     }
-    sel.innerHTML = "";
-    users.forEach((u) => {
-      const o = document.createElement("option");
-      o.value = u.employee_id;
-      o.textContent = `${u.full_name} (${u.employee_id})`;
-      sel.appendChild(o);
-    });
+    renderTaskAssigneeOptions(users);
   } catch {
     sel.innerHTML = "";
   }
@@ -2974,7 +3063,8 @@ function sortKanbanColumnTasks(items) {
 function buildKanbanCard(task) {
   const pri = Math.min(5, Math.max(1, Number(task.priority) || 3));
   const canEdit = tasksCanEdit();
-  const canMove = tasksCanMove();
+  const closed = task.progress_stage === "closed" || task.column === "done";
+  const canMove = tasksCanMove() && !closed;
   const mine = taskIsMine(task);
   const rawDesc = (task.description || "").trim();
   const people =
@@ -2994,8 +3084,16 @@ function buildKanbanCard(task) {
   const actions = moveBtns || delBtn ? `<div class="kanban-card-actions">${moveBtns}${delBtn}</div>` : "";
   const project = projectName(task.project_id);
   const latest = (task.updates || []).at(-1);
-  const progressButton = taskIsMine(task) || state.user?.role === "admin" || state.user?.role === "manager"
-    ? `<button type="button" class="kanban-table-act kanban-progress-action" data-task-progress="${escapeHtml(task.id)}">Add update</button>` : "";
+  const canProgress = !closed && (taskIsMine(task) || state.user?.role === "admin");
+  const stageLabels = { day_1: "Day 1", day_2: "Day 2", day_3: "Day 3", closed: "Closed" };
+  const stageBadge = task.progress_stage
+    ? `<span class="task-progress-stage task-progress-stage--${escapeHtml(task.progress_stage)}">${escapeHtml(stageLabels[task.progress_stage] || task.progress_stage)}</span>`
+    : "";
+  const progressButtons = canProgress
+    ? `<div class="task-progress-actions" aria-label="Update daily progress">${[
+        ["day_1", "Day 1"], ["day_2", "Day 2"], ["day_3", "Day 3"], ["closed", "Close"],
+      ].map(([value, label]) => `<button type="button" class="task-stage-btn${task.progress_stage === value ? " active" : ""}" data-task-id="${escapeHtml(task.id)}" data-task-stage="${value}">${label}</button>`).join("")}</div>`
+    : closed ? '<p class="task-closed-final">Closed · final</p>' : "";
   const select = canEdit
     ? `<label class="kanban-card-select"><input type="checkbox" data-task-select="${escapeHtml(task.id)}" ${state.selectedTaskIds.has(task.id) ? "checked" : ""} aria-label="Select ${escapeHtml(task.title)}" /></label>`
     : "";
@@ -3010,10 +3108,10 @@ function buildKanbanCard(task) {
       <strong>${escapeHtml(task.title)}${mine ? '<span class="kanban-mine-chip">Yours</span>' : ""}</strong>
     </header>
     ${rawDesc ? `<p class="kanban-card-desc">${escapeHtml(rawDesc.slice(0, 160))}${rawDesc.length > 160 ? "…" : ""}</p>` : ""}
-    ${(project || task.due_date) ? `<div class="kanban-card-meta">${project ? `<span>◈ ${escapeHtml(project)}</span>` : ""}${task.due_date ? `<span>Due ${escapeHtml(task.due_date)}</span>` : ""}</div>` : ""}
+    ${(project || task.due_date || stageBadge) ? `<div class="kanban-card-meta">${project ? `<span>◈ ${escapeHtml(project)}</span>` : ""}${task.due_date ? `<span>Due ${escapeHtml(task.due_date)}</span>` : ""}${stageBadge}</div>` : ""}
     <p class="kanban-card-people">${people}</p>
     ${latest ? `<p class="kanban-latest-update"><strong>${escapeHtml(latest.full_name)}:</strong> ${escapeHtml(latest.message)}</p>` : ""}
-    ${progressButton}${actions}`;
+    ${progressButtons}${actions}`;
   return card;
 }
 
@@ -4340,6 +4438,7 @@ $("mgr-assign-submit").addEventListener("click", async () => {
     return;
   }
   const payload = {
+    overwrite_existing: true,
     assignments: [{ employee_id: emp, date, shift_code: shift }],
   };
   if (state.user.role === "admin") {
@@ -4626,7 +4725,7 @@ $("bulk-submit").addEventListener("click", async () => {
   const confirmed = window.confirm(
     `Apply ${assignments.length} shift code${assignments.length === 1 ? "" : "s"} for ${empCount} ` +
       `employee${empCount === 1 ? "" : "s"} from ${dates[0]} to ${dates[dates.length - 1]}?\n\n` +
-      `This overwrites any shift already saved for those employee/date cells.`
+      `Existing employee/date cells will be preserved. Only empty roster cells will be filled.`
   );
   if (!confirmed) {
     $("bulk-msg").textContent = "Cancelled — nothing was saved.";
@@ -4639,7 +4738,10 @@ $("bulk-submit").addEventListener("click", async () => {
     body: JSON.stringify(payload),
   });
   const serverErrs = res.errors || [];
-  let msg = `Saved ${res.upserted} shift${res.upserted === 1 ? "" : "s"}.`;
+  let msg = `Added ${res.upserted} new shift${res.upserted === 1 ? "" : "s"}.`;
+  if (res.preserved) {
+    msg += ` Preserved ${res.preserved} existing roster cell${res.preserved === 1 ? "" : "s"}.`;
+  }
   if (serverErrs.length) {
     const shown = serverErrs
       .slice(0, 5)
@@ -4950,6 +5052,15 @@ $("project-workspace-close")?.addEventListener("click", () => {
 });
 
 $("projects-refresh-btn")?.addEventListener("click", () => refreshProjects(true));
+$("projects-toggle-btn")?.addEventListener("click", () => {
+  const button = $("projects-toggle-btn");
+  const body = $("project-tracker-body");
+  if (!button || !body) return;
+  const open = button.getAttribute("aria-expanded") !== "true";
+  button.setAttribute("aria-expanded", String(open));
+  show(body, open);
+  renderProjects();
+});
 
 $("project-create-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -4967,6 +5078,7 @@ $("project-create-form")?.addEventListener("submit", async (event) => {
   try {
     await api("/api/projects", { method: "POST", body: JSON.stringify(body) });
     form.reset();
+    renderPeoplePicker("project");
     if (message) message.textContent = "Project created.";
     await refreshProjects(true);
   } catch (error) {
@@ -5006,6 +5118,9 @@ $("task-create-btn")?.addEventListener("click", async () => {
     const created = await postTaskCreate(body);
     $("task-new-title").value = "";
     $("task-new-desc").value = "";
+    [...($("task-new-assignees")?.options || [])].forEach((option) => { option.selected = false; });
+    if ($("task-assignee-search")) $("task-assignee-search").value = "";
+    renderPeoplePicker("task");
     if (msg) msg.textContent = "Task added.";
     state.tasks = [...state.tasks, created];
     state.taskScope = taskScopeKey();
@@ -5013,9 +5128,15 @@ $("task-create-btn")?.addEventListener("click", async () => {
     refreshProjects(true).catch(() => {});
     pollKanbanActivity().catch(() => {});
     refreshTodayHome().catch(() => {});
+    closeTaskCreateOverlay();
   } catch (e) {
     if (msg) msg.textContent = e.message || String(e);
   }
+});
+
+$("task-create-close")?.addEventListener("click", closeTaskCreateOverlay);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeTaskCreateOverlay();
 });
 
 $("infovalley-refresh")?.addEventListener("click", () => {
@@ -5174,15 +5295,82 @@ function setPasswordModalOpen(open) {
 
 function renderTaskAssigneeOptions(users) {
   [$("task-new-assignees"), $("project-new-assignees")].filter(Boolean).forEach((sel) => {
+    const selected = new Set([...sel.selectedOptions].map((option) => option.value));
     sel.innerHTML = "";
     (users || []).forEach((user) => {
       const option = document.createElement("option");
       option.value = user.employee_id;
       option.textContent = `${user.full_name} (${user.employee_id})`;
+      option.selected = selected.has(user.employee_id);
       sel.appendChild(option);
     });
   });
+  renderPeoplePicker("task");
+  renderPeoplePicker("project");
 }
+
+const PEOPLE_PICKERS = {
+  task: {
+    search: "task-assignee-search",
+    results: "task-assignee-results",
+    selected: "task-assignee-selected",
+    source: "task-new-assignees",
+  },
+  project: {
+    search: "project-assignee-search",
+    results: "project-assignee-results",
+    selected: "project-assignee-selected",
+    source: "project-new-assignees",
+  },
+};
+
+function renderPeoplePicker(kind) {
+  const config = PEOPLE_PICKERS[kind];
+  if (!config) return;
+  const search = $(config.search);
+  const results = $(config.results);
+  const selectedRoot = $(config.selected);
+  const source = $(config.source);
+  if (!search || !results || !selectedRoot || !source) return;
+  const options = [...source.options];
+  const selected = options.filter((option) => option.selected);
+  selectedRoot.innerHTML = selected.length
+    ? selected.map((option) => `<button type="button" class="people-chip" data-picker-remove="${escapeHtml(option.value)}" data-picker-kind="${kind}" aria-label="Remove ${escapeHtml(option.textContent)}"><span>${escapeHtml(option.textContent)}</span><b aria-hidden="true">×</b></button>`).join("")
+    : '<span class="hint">No people selected yet.</span>';
+
+  const query = search.value.trim().toLowerCase();
+  if (query.length < 3) {
+    results.innerHTML = query.length ? '<span class="hint">Type 3 letters to search.</span>' : "";
+    show(results, Boolean(query.length));
+    return;
+  }
+  const matches = options.filter((option) => !option.selected && option.textContent.toLowerCase().includes(query)).slice(0, 8);
+  results.innerHTML = matches.length
+    ? matches.map((option) => `<button type="button" data-picker-add="${escapeHtml(option.value)}" data-picker-kind="${kind}"><strong>${escapeHtml(option.textContent.replace(/\s*\([^)]*\)\s*$/, ""))}</strong><span>${escapeHtml(option.value)}</span></button>`).join("")
+    : '<span class="hint">No matching person in this department.</span>';
+  show(results, true);
+}
+
+Object.entries(PEOPLE_PICKERS).forEach(([kind, config]) => {
+  $(config.search)?.addEventListener("input", () => renderPeoplePicker(kind));
+  $(config.results)?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-picker-add]");
+    if (!button) return;
+    const source = $(config.source);
+    const option = [...source.options].find((item) => item.value === button.dataset.pickerAdd);
+    if (option) option.selected = true;
+    $(config.search).value = "";
+    renderPeoplePicker(kind);
+  });
+  $(config.selected)?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-picker-remove]");
+    if (!button) return;
+    const source = $(config.source);
+    const option = [...source.options].find((item) => item.value === button.dataset.pickerRemove);
+    if (option) option.selected = false;
+    renderPeoplePicker(kind);
+  });
+});
 
 async function changeOwnPassword() {
   const currentPassword = $("password-current")?.value || "";

@@ -490,6 +490,82 @@ def test_shifts_table_employee(client: TestClient, require_mongo, auth_headers: 
     assert isinstance(data["dates"], list)
 
 
+def test_new_bulk_roster_preserves_existing_future_shifts_and_approved_leave(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "preserve-roster-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Preserved Roster QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    employee_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    first_day = (date.today() + timedelta(days=15)).isoformat()
+    leave_day = (date.today() + timedelta(days=16)).isoformat()
+    new_day = (date.today() + timedelta(days=30)).isoformat()
+
+    initial = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [
+                {"employee_id": unique_employee_id, "date": first_day, "shift_code": "A"},
+                {"employee_id": unique_employee_id, "date": leave_day, "shift_code": "B"},
+            ],
+        },
+        headers=admin_headers,
+    )
+    assert initial.status_code == 200, initial.text
+    leave = client.post(
+        "/api/requests/leave",
+        json={"start_date": leave_day, "end_date": leave_day, "reason": "Advance leave"},
+        headers=employee_headers,
+    )
+    assert leave.status_code == 200, leave.text
+    approved = client.patch(
+        f"/api/requests/leave/{leave.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    later_lot = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [
+                {"employee_id": unique_employee_id, "date": first_day, "shift_code": "C"},
+                {"employee_id": unique_employee_id, "date": leave_day, "shift_code": "G"},
+                {"employee_id": unique_employee_id, "date": new_day, "shift_code": "C"},
+            ],
+        },
+        headers=admin_headers,
+    )
+    assert later_lot.status_code == 200, later_lot.text
+    assert later_lot.json()["upserted"] == 1
+    assert later_lot.json()["preserved"] == 2
+
+    table = client.get(
+        "/api/shifts/table",
+        params={"start": first_day, "end": new_day, "department_id": department_id},
+        headers=admin_headers,
+    )
+    assert table.status_code == 200, table.text
+    row = next(item for item in table.json()["rows"] if item["employee_id"] == unique_employee_id)
+    assert row["cells"][first_day] == "A"
+    assert row["cells"][leave_day] == "L"
+    assert row["cells"][new_day] == "C"
+
+
 def test_department_calendar_is_admin_only(client: TestClient, require_mongo, auth_headers: dict[str, str]):
     today = date.today().isoformat()
     response = client.get(
@@ -591,8 +667,12 @@ def test_tasks_activity_is_light(client: TestClient, require_mongo, auth_headers
     assert isinstance(body["items"], list)
 
 
-def test_employee_can_move_kanban_column(
-    client: TestClient, require_mongo, admin_headers: dict[str, str], auth_headers: dict[str, str]
+def test_only_admin_can_move_task_and_assignee_can_close_it_once(
+    client: TestClient,
+    require_mongo,
+    admin_headers: dict[str, str],
+    auth_headers: dict[str, str],
+    unique_employee_id: str,
 ):
     departments = client.get("/api/departments").json()["departments"]
     department_id = next((d["id"] for d in departments if d.get("name") == "rota"), departments[0]["id"])
@@ -603,19 +683,32 @@ def test_employee_can_move_kanban_column(
     )
     assert created.status_code == 200, created.text
     task_id = created.json()["id"]
-    moved = client.patch(
+    blocked_move = client.patch(
         f"/api/tasks/{task_id}",
         json={"column": "in_progress"},
         headers=auth_headers,
     )
-    assert moved.status_code == 200, moved.text
-    assert moved.json()["column"] == "in_progress"
-    blocked = client.patch(
+    assert blocked_move.status_code == 403
+    admin_move = client.patch(
         f"/api/tasks/{task_id}",
-        json={"title": "Nope"},
+        json={"column": "in_progress", "assignee_employee_ids": [unique_employee_id]},
+        headers=admin_headers,
+    )
+    assert admin_move.status_code == 200, admin_move.text
+    assert admin_move.json()["column"] == "in_progress"
+    closed = client.patch(
+        f"/api/tasks/{task_id}",
+        json={"progress_stage": "closed", "progress_update": "Work completed"},
         headers=auth_headers,
     )
-    assert blocked.status_code == 403
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["column"] == "done"
+    reopen = client.patch(
+        f"/api/tasks/{task_id}",
+        json={"progress_stage": "day_3", "progress_update": "Reopen"},
+        headers=auth_headers,
+    )
+    assert reopen.status_code == 409
 
 
 def test_coverage_preview_and_manager_department_scope(
