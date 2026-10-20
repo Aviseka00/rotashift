@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import time
 from typing import Annotated, Optional
 
 from bson import ObjectId
@@ -14,6 +15,16 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
 ALGORITHM = "HS256"
+_USER_CACHE_TTL_SECONDS = 3.0
+_user_cache: dict[str, tuple[float, dict]] = {}
+
+
+def invalidate_user_cache(user_id: str | None = None) -> None:
+    """Clear cached authentication records after account or permission changes."""
+    if user_id is None:
+        _user_cache.clear()
+    else:
+        _user_cache.pop(str(user_id), None)
 
 
 def hash_password(password: str) -> str:
@@ -53,13 +64,25 @@ async def get_current_user_optional(
         oid = ObjectId(uid)
     except Exception:
         return None
+    now = time.monotonic()
+    cached = _user_cache.get(str(oid))
+    if cached and now - cached[0] < _USER_CACHE_TTL_SECONDS:
+        return dict(cached[1])
     user = await db.users.find_one({"_id": oid})
     if not user:
+        _user_cache.pop(str(oid), None)
         return None
     user["_id"] = str(user["_id"])
     if user.get("department_id"):
         user["department_id"] = str(user["department_id"])
-    return user
+    _user_cache[str(oid)] = (now, dict(user))
+    # Prevent an unbounded cache on long-lived instances with many occasional users.
+    if len(_user_cache) > 2000:
+        cutoff = now - _USER_CACHE_TTL_SECONDS
+        for key, (stored_at, _) in list(_user_cache.items()):
+            if stored_at < cutoff:
+                _user_cache.pop(key, None)
+    return dict(user)
 
 
 async def get_current_user(user=Depends(get_current_user_optional)):

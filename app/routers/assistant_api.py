@@ -201,11 +201,11 @@ async def _scope_department(user: dict, requested: Optional[str]) -> Optional[Ob
     return None
 
 
-async def _all_people(db) -> list[dict]:
+async def _all_people(db, force: bool = False) -> list[dict]:
     global _people_cache
     now = time.monotonic()
     cached_at, rows = _people_cache
-    if rows and now - cached_at < _PEOPLE_TTL_S:
+    if not force and rows and now - cached_at < _PEOPLE_TTL_S:
         return rows
     rows = await db.users.find(
         {}, {"full_name": 1, "employee_id": 1, "department_id": 1}
@@ -412,6 +412,11 @@ async def ask_assistant(body: AssistantQuery, user=Depends(get_current_user)):
     dept_id = await _scope_department(user, body.department_id)
     people = await _all_people(db)
     named = _match_named_users(message, people)
+    # A teammate may have been created since the short-lived directory cache was filled.
+    # Refresh once on a name-like roster miss so new users are immediately searchable.
+    if not named and (_asks_about_other_person(message) or _looks_like_roster(message)):
+        people = await _all_people(db, force=True)
+        named = _match_named_users(message, people)
     if any(phrase in lower for phrase in ("how do i apply", "how to apply", "apply leave", "apply swap", "apply comp")):
         return _howto_answer()
     if any(phrase in lower for phrase in ("my task", "show my task", "kanban", "assigned to me")) and not named:

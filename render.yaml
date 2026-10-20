@@ -9,7 +9,7 @@ services:
     region: singapore
     plan: free
     buildCommand: pip install --no-cache-dir -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*' --timeout-keep-alive 20 --no-access-log
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*' --timeout-keep-alive 20 --limit-concurrency 100 --backlog 256 --no-access-log
     healthCheckPath: /health/live
     envVars:
       - key: PYTHON_VERSION

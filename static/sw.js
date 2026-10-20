@@ -1,9 +1,9 @@
-const CACHE = "rotashift-v78";
+const CACHE = "rotashift-v83";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE).then((cache) =>
-      cache.addAll(["/app", "/static/index.html", "/static/styles.css?v=78", "/static/app.js?v=78", "/manifest.json"]),
+      cache.addAll(["/app", "/static/index.html", "/static/styles.css?v=83", "/static/app.js?v=83", "/static/assets/project-workspace-bg.webp", "/manifest.json"]),
     ),
   );
   self.skipWaiting();

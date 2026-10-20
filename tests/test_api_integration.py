@@ -114,6 +114,66 @@ def test_manager_can_request_leave_and_shift_change_for_admin_approval(
     assert approved.status_code == 200, approved.text
 
 
+def test_admin_can_bulk_approve_requests_and_manager_cannot(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "bulk-approval-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Bulk Approval QA",
+            "department_id": department_id,
+            "role": "manager",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    manager_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    first_day = (date.today() + timedelta(days=21)).isoformat()
+    second_day = (date.today() + timedelta(days=22)).isoformat()
+    leave = client.post(
+        "/api/requests/leave",
+        json={"start_date": first_day, "end_date": first_day, "reason": "Bulk leave"},
+        headers=manager_headers,
+    )
+    shift = client.post(
+        "/api/requests/shift-change",
+        json={"date": second_day, "from_shift": "A", "to_shift": "B", "reason": "Bulk swap"},
+        headers=manager_headers,
+    )
+    assert leave.status_code == 200, leave.text
+    assert shift.status_code == 200, shift.text
+    payload = {
+        "status": "approved",
+        "items": [
+            {"kind": "leave", "id": leave.json()["id"]},
+            {"kind": "shift-change", "id": shift.json()["id"]},
+        ],
+    }
+
+    blocked = client.post("/api/requests/bulk-decide", json=payload, headers=manager_headers)
+    assert blocked.status_code == 403, blocked.text
+    approved = client.post("/api/requests/bulk-decide", json=payload, headers=admin_headers)
+    assert approved.status_code == 200, approved.text
+    result = approved.json()
+    assert result["succeeded"] == 2
+    assert result["failed"] == 0
+
+    own_leave = client.get("/api/requests/leave", headers=manager_headers).json()["requests"]
+    own_shift = client.get("/api/requests/shift-change", headers=manager_headers).json()["requests"]
+    assert next(row for row in own_leave if row["id"] == leave.json()["id"])["status"] == "approved"
+    assert next(row for row in own_shift if row["id"] == shift.json()["id"])["status"] == "approved"
+
+    repeated = client.post("/api/requests/bulk-decide", json=payload, headers=admin_headers)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["succeeded"] == 0
+    assert repeated.json()["failed"] == 2
+
+
 def test_manager_cannot_assign_shifts_and_uses_own_roster_like_employee(
     client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
 ):

@@ -1,6 +1,6 @@
 """Department-scoped Kanban tasks (manager/admin create; all department members can view)."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, List, Literal, Optional
 
 from bson import ObjectId
@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.deps import get_current_user, require_roles
+from app.routers.projects_api import invalidate_project_cache
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -35,11 +36,22 @@ def _task_out(doc: dict, names_by_employee_id: Optional[dict] = None, creators_b
         "description": doc.get("description") or "",
         "column": doc["column"],
         "priority": int(doc.get("priority") or 3),
+        "project_id": str(doc["project_id"]) if doc.get("project_id") else None,
+        "due_date": doc.get("due_date"),
         "assignee_employee_ids": list(assignees),
         "assignee_names": names,
         "created_by": creator,
         "created_at": _iso(doc.get("created_at")),
         "updated_at": _iso(doc.get("updated_at")),
+        "updates": [
+            {
+                "message": item.get("message") or "",
+                "employee_id": item.get("employee_id") or "",
+                "full_name": item.get("full_name") or item.get("employee_id") or "Team member",
+                "created_at": _iso(item.get("created_at")),
+            }
+            for item in (doc.get("updates") or [])[-12:]
+        ],
     }
 
 
@@ -92,6 +104,8 @@ class TaskCreate(BaseModel):
     priority: int = Field(3, ge=1, le=5)
     assignee_employee_ids: List[str] = Field(default_factory=list)
     department_id: Optional[str] = None
+    project_id: Optional[str] = None
+    due_date: Optional[date] = None
 
 
 class TaskUpdate(BaseModel):
@@ -100,6 +114,9 @@ class TaskUpdate(BaseModel):
     column: Optional[Literal["todo", "in_progress", "done"]] = None
     priority: Optional[int] = Field(None, ge=1, le=5)
     assignee_employee_ids: Optional[List[str]] = None
+    project_id: Optional[str] = None
+    due_date: Optional[date] = None
+    progress_update: Optional[str] = Field(None, min_length=1, max_length=1200)
 
 
 class TaskBulkDelete(BaseModel):
@@ -123,6 +140,9 @@ async def tasks_activity(
     db = get_db()
     dept_oid = _require_dept_for_list(user, department_id)
     q: dict = {"department_id": dept_oid}
+    # Personal notifications stay useful: regular users only receive cards assigned to them.
+    if user.get("role") != "admin":
+        q["assignee_employee_ids"] = user.get("employee_id")
     since_dt = None
     if since:
         try:
@@ -135,7 +155,7 @@ async def tasks_activity(
     if since_dt:
         match["updated_at"] = {"$gt": since_dt}
     docs = (
-        await db.tasks.find(match, {"title": 1, "column": 1, "updated_at": 1, "created_at": 1})
+        await db.tasks.find(match, {"title": 1, "column": 1, "updated_at": 1, "created_at": 1, "due_date": 1})
         .sort("updated_at", -1)
         .to_list(length=8)
     )
@@ -145,6 +165,7 @@ async def tasks_activity(
             "title": doc.get("title") or "Untitled task",
             "column": doc.get("column") or "todo",
             "updated_at": _iso(doc.get("updated_at") or doc.get("created_at")),
+            "due_date": doc.get("due_date"),
         }
         for doc in docs
     ]
@@ -161,9 +182,9 @@ async def list_tasks(
 ):
     db = get_db()
     dept_oid = _require_dept_for_list(user, department_id)
-    docs = await db.tasks.find({"department_id": dept_oid}).sort(
-        [("column", 1), ("priority", -1), ("updated_at", -1)]
-    ).to_list(length=None)
+    docs = await db.tasks.find(
+        {"department_id": dept_oid}, {"updates": {"$slice": -12}}
+    ).sort([("column", 1), ("priority", -1), ("updated_at", -1)]).limit(500).to_list(length=500)
     employee_ids = {eid for doc in docs for eid in (doc.get("assignee_employee_ids") or [])}
     creator_ids = {doc["created_by"] for doc in docs if doc.get("created_by")}
     names_by_employee_id = {}
@@ -211,6 +232,14 @@ async def create_task(body: TaskCreate, user=Depends(require_roles("admin", "man
         raise HTTPException(status_code=400, detail="Invalid column")
 
     assignees = await _valid_assignees_in_department(db, dept_oid, body.assignee_employee_ids)
+    project_oid = None
+    if body.project_id:
+        try:
+            project_oid = ObjectId(body.project_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid project_id") from None
+        if not await db.projects.find_one({"_id": project_oid, "department_id": dept_oid, "status": {"$ne": "closed"}}):
+            raise HTTPException(status_code=400, detail="Active project not found in this department")
     now = datetime.now(timezone.utc)
     doc = {
         "department_id": dept_oid,
@@ -218,12 +247,15 @@ async def create_task(body: TaskCreate, user=Depends(require_roles("admin", "man
         "description": (body.description or "").strip(),
         "column": body.column,
         "priority": body.priority,
+        "project_id": project_oid,
+        "due_date": body.due_date.isoformat() if body.due_date else None,
         "assignee_employee_ids": assignees,
         "created_by": ObjectId(user["_id"]),
         "created_at": now,
         "updated_at": now,
     }
     res = await db.tasks.insert_one(doc)
+    invalidate_project_cache(dept_oid)
     doc["_id"] = res.inserted_id
     creator = {ObjectId(user["_id"]): {"employee_id": user.get("employee_id"), "full_name": user.get("full_name")}}
     assignee_names = {}
@@ -247,6 +279,7 @@ async def bulk_delete_tasks(body: TaskBulkDelete, user=Depends(require_roles("ad
         except Exception:
             raise HTTPException(status_code=400, detail=f"Invalid task id: {raw_id}") from None
     result = await db.tasks.delete_many({"_id": {"$in": task_oids}, "department_id": dept_oid})
+    invalidate_project_cache(dept_oid)
     return {"ok": True, "deleted": result.deleted_count}
 
 
@@ -265,8 +298,13 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_u
     raw = body.model_dump(exclude_unset=True)
     if not raw:
         raise HTTPException(status_code=400, detail="No fields to update")
-    only_column = set(raw.keys()) <= {"column"}
-    if not only_column and user.get("role") not in ("admin", "manager"):
+    member_action = set(raw.keys()) <= {"column", "progress_update"}
+    is_assignee = str(user.get("employee_id") or "").upper() in {
+        str(value).upper() for value in (doc.get("assignee_employee_ids") or [])
+    }
+    if "progress_update" in raw and user.get("role") == "employee" and not is_assignee:
+        raise HTTPException(status_code=403, detail="Only assigned team members can update this task")
+    if not member_action and user.get("role") not in ("admin", "manager"):
         raise HTTPException(status_code=403, detail="Only managers and administrators can edit task details")
 
     updates: dict = {"updated_at": datetime.now(timezone.utc)}
@@ -286,8 +324,38 @@ async def update_task(task_id: str, body: TaskUpdate, user=Depends(get_current_u
             db, doc["department_id"], raw["assignee_employee_ids"] or []
         )
 
-    await db.tasks.update_one({"_id": oid}, {"$set": updates})
+    if "project_id" in raw:
+        if not raw["project_id"]:
+            updates["project_id"] = None
+        else:
+            try:
+                project_oid = ObjectId(raw["project_id"])
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid project_id") from None
+            if not await db.projects.find_one({"_id": project_oid, "department_id": doc["department_id"]}):
+                raise HTTPException(status_code=400, detail="Project not found in this department")
+            updates["project_id"] = project_oid
+    if "due_date" in raw:
+        updates["due_date"] = raw["due_date"].isoformat() if raw["due_date"] else None
+
+    mongo_update: dict = {"$set": updates}
+    if "progress_update" in raw:
+        mongo_update["$push"] = {
+            "updates": {
+                "$each": [{
+                    "message": raw["progress_update"].strip(),
+                    "employee_id": user.get("employee_id"),
+                    "full_name": user.get("full_name"),
+                    "created_at": updates["updated_at"],
+                }],
+                "$slice": -50,
+            }
+        }
+    await db.tasks.update_one({"_id": oid}, mongo_update)
+    invalidate_project_cache(doc["department_id"])
     fresh = {**doc, **updates}
+    if "progress_update" in raw:
+        fresh["updates"] = (doc.get("updates") or []) + [mongo_update["$push"]["updates"]["$each"][0]]
     assignee_ids = fresh.get("assignee_employee_ids") or []
     assignee_names = {}
     if assignee_ids:
@@ -313,4 +381,5 @@ async def delete_task(task_id: str, user=Depends(require_roles("admin"))):
         raise HTTPException(status_code=404, detail="Not found")
     await _assert_task_department_access(user, doc["department_id"])
     await db.tasks.delete_one({"_id": oid})
+    invalidate_project_cache(doc["department_id"])
     return {"ok": True}

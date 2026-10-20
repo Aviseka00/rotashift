@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends
+from fastapi.encoders import jsonable_encoder
+from bson import ObjectId
 
 from app.database import get_db
 from app.deps import require_roles
@@ -62,7 +64,17 @@ async def export_all(user=Depends(require_roles("admin"))):
         x["department_id"] = str(x["department_id"])
         if x.get("created_by"):
             x["created_by"] = str(x["created_by"])
+        if x.get("project_id"):
+            x["project_id"] = str(x["project_id"])
         task_rows.append(x)
+
+    projects = []
+    async for x in db.projects.find():
+        x["id"] = str(x.pop("_id"))
+        x["department_id"] = str(x["department_id"])
+        if x.get("created_by"):
+            x["created_by"] = str(x["created_by"])
+        projects.append(x)
 
     def _serialize_comp_off(x: dict) -> dict:
         x["id"] = str(x.pop("_id"))
@@ -86,7 +98,7 @@ async def export_all(user=Depends(require_roles("admin"))):
     async for x in db.comp_off_credits.find():
         comp_off_credits.append(_serialize_comp_off(x))
 
-    return {
+    payload = {
         "departments": departments,
         "users": users,
         "shifts": shifts,
@@ -95,4 +107,8 @@ async def export_all(user=Depends(require_roles("admin"))):
         "comp_off_requests": comp_off_requests,
         "comp_off_credits": comp_off_credits,
         "tasks": task_rows,
+        "projects": projects,
     }
+    # Historical request and task records can contain nested ObjectIds. Encode the
+    # whole report recursively so one legacy field can never break the download.
+    return jsonable_encoder(payload, custom_encoder={ObjectId: str})

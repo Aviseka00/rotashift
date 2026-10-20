@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -184,6 +184,16 @@ class DecideBody(BaseModel):
     status: str = Field(..., pattern="^(approved|rejected)$")
 
 
+class BulkDecisionItem(BaseModel):
+    kind: Literal["leave", "shift-change", "comp-off"]
+    id: str
+
+
+class BulkDecideBody(BaseModel):
+    items: list[BulkDecisionItem] = Field(..., min_length=1, max_length=100)
+    status: Literal["approved", "rejected"] = "approved"
+
+
 class CompOffEarnCreate(BaseModel):
     work_date: str
     earn_type: str
@@ -240,16 +250,25 @@ def _manager_request_filter(user, scope: str | None) -> dict:
 async def list_leave(
     department_id: str | None = Query(None),
     scope: str | None = Query(None, description="mine (default) or department — managers only"),
+    status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
     user=Depends(get_current_user),
 ):
     db = get_db()
     role = user.get("role")
     if role == "employee":
-        cur = db.leave_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
+        qfilter = {"user_id": ObjectId(user["_id"])}
+        if status:
+            qfilter["status"] = status
+        cur = db.leave_requests.find(qfilter).sort("created_at", -1)
     elif role == "manager":
-        cur = db.leave_requests.find(_manager_request_filter(user, scope)).sort("created_at", -1)
+        qfilter = _manager_request_filter(user, scope)
+        if status:
+            qfilter["status"] = status
+        cur = db.leave_requests.find(qfilter).sort("created_at", -1)
     else:
         qfilter = {}
+        if status:
+            qfilter["status"] = status
         if department_id:
             try:
                 qfilter["department_id"] = ObjectId(department_id)
@@ -257,7 +276,7 @@ async def list_leave(
                 raise HTTPException(status_code=400, detail="Invalid department_id")
         cur = db.leave_requests.find(qfilter).sort("created_at", -1)
 
-    docs = await cur.to_list(length=None)
+    docs = await cur.limit(1000).to_list(length=1000)
     users, departments = await _request_lookups(db, docs)
     items = [_request_row(x, "leave", users, departments) for x in docs]
     return {"requests": items}
@@ -273,6 +292,8 @@ async def decide_leave(rid: str, body: DecideBody, user=Depends(require_roles("a
     req = await db.leave_requests.find_one({"_id": oid})
     if not req:
         raise HTTPException(status_code=404, detail="Not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="This request was already decided")
 
     await db.leave_requests.update_one(
         {"_id": oid},
@@ -362,16 +383,25 @@ async def create_shift_change(body: ShiftChangeCreate, user=Depends(get_current_
 async def list_shift_change(
     department_id: str | None = Query(None),
     scope: str | None = Query(None, description="mine (default) or department — managers only"),
+    status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
     user=Depends(get_current_user),
 ):
     db = get_db()
     role = user.get("role")
     if role == "employee":
-        cur = db.shift_change_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
+        qfilter = {"user_id": ObjectId(user["_id"])}
+        if status:
+            qfilter["status"] = status
+        cur = db.shift_change_requests.find(qfilter).sort("created_at", -1)
     elif role == "manager":
-        cur = db.shift_change_requests.find(_manager_request_filter(user, scope)).sort("created_at", -1)
+        qfilter = _manager_request_filter(user, scope)
+        if status:
+            qfilter["status"] = status
+        cur = db.shift_change_requests.find(qfilter).sort("created_at", -1)
     else:
         qfilter = {}
+        if status:
+            qfilter["status"] = status
         if department_id:
             try:
                 qfilter["department_id"] = ObjectId(department_id)
@@ -379,7 +409,7 @@ async def list_shift_change(
                 raise HTTPException(status_code=400, detail="Invalid department_id")
         cur = db.shift_change_requests.find(qfilter).sort("created_at", -1)
 
-    docs = await cur.to_list(length=None)
+    docs = await cur.limit(1000).to_list(length=1000)
     users, departments = await _request_lookups(db, docs)
     items = [_request_row(x, "shift", users, departments) for x in docs]
     return {"requests": items}
@@ -395,6 +425,8 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
     req = await db.shift_change_requests.find_one({"_id": oid})
     if not req:
         raise HTTPException(status_code=404, detail="Not found")
+    if req.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="This request was already decided")
 
     new_status = body.status
     await db.shift_change_requests.update_one(
@@ -707,16 +739,25 @@ async def create_comp_off_avail(body: CompOffAvailCreate, user=Depends(get_curre
 async def list_comp_off(
     department_id: str | None = Query(None),
     scope: str | None = Query(None, description="mine (default) or department — managers only"),
+    status: str | None = Query(None, pattern="^(pending|approved|rejected)$"),
     user=Depends(get_current_user),
 ):
     db = get_db()
     role = user.get("role")
     if role == "employee":
-        cur = db.comp_off_requests.find({"user_id": ObjectId(user["_id"])}).sort("created_at", -1)
+        qfilter = {"user_id": ObjectId(user["_id"])}
+        if status:
+            qfilter["status"] = status
+        cur = db.comp_off_requests.find(qfilter).sort("created_at", -1)
     elif role == "manager":
-        cur = db.comp_off_requests.find(_manager_request_filter(user, scope)).sort("created_at", -1)
+        qfilter = _manager_request_filter(user, scope)
+        if status:
+            qfilter["status"] = status
+        cur = db.comp_off_requests.find(qfilter).sort("created_at", -1)
     else:
         qfilter = {}
+        if status:
+            qfilter["status"] = status
         if department_id:
             try:
                 qfilter["department_id"] = ObjectId(department_id)
@@ -724,7 +765,7 @@ async def list_comp_off(
                 raise HTTPException(status_code=400, detail="Invalid department_id")
         cur = db.comp_off_requests.find(qfilter).sort("created_at", -1)
 
-    docs = await cur.to_list(length=None)
+    docs = await cur.limit(1000).to_list(length=1000)
     users, departments = await _request_lookups(db, docs)
     items = [_request_row(x, "compoff", users, departments) for x in docs]
     return {"requests": items}
@@ -808,6 +849,41 @@ async def decide_comp_off(rid: str, body: DecideBody, user=Depends(require_roles
     else:
         await release_reserved_credits(db, oid)
     return {"ok": True, "status": body.status, "kind": "avail"}
+
+
+@router.post("/bulk-decide")
+async def bulk_decide_requests(body: BulkDecideBody, user=Depends(require_roles("admin"))):
+    """Apply the normal decision workflow to several requests and report partial failures."""
+    handlers = {
+        "leave": decide_leave,
+        "shift-change": decide_shift_change,
+        "comp-off": decide_comp_off,
+    }
+    seen: set[tuple[str, str]] = set()
+    results = []
+    for item in body.items:
+        key = (item.kind, item.id)
+        if key in seen:
+            results.append({"kind": item.kind, "id": item.id, "ok": False, "detail": "Duplicate selection"})
+            continue
+        seen.add(key)
+        try:
+            await handlers[item.kind](item.id, DecideBody(status=body.status), user)
+            results.append({"kind": item.kind, "id": item.id, "ok": True, "status": body.status})
+        except HTTPException as exc:
+            results.append({"kind": item.kind, "id": item.id, "ok": False, "detail": str(exc.detail)})
+        except Exception:
+            results.append({"kind": item.kind, "id": item.id, "ok": False, "detail": "Could not process request"})
+
+    succeeded = sum(1 for result in results if result["ok"])
+    return {
+        "ok": succeeded == len(results),
+        "status": body.status,
+        "processed": len(results),
+        "succeeded": succeeded,
+        "failed": len(results) - succeeded,
+        "results": results,
+    }
 
 
 def _count_codes(shift_by_user: dict[ObjectId, str]) -> dict[str, int]:

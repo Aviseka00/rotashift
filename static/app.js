@@ -1,5 +1,8 @@
 /* global FullCalendar */
 
+const IS_PROJECT_WORKSPACE = new URLSearchParams(window.location.search).get("view") === "work";
+if (IS_PROJECT_WORKSPACE) document.documentElement.classList.add("project-workspace-view");
+
 const state = {
   token: localStorage.getItem("rs_token"),
   user: null,
@@ -8,10 +11,13 @@ const state = {
   shiftLegend: {},
   adminShortcutsWired: false,
   tasks: [],
+  projects: [],
+  projectScope: null,
   taskScope: null,
   taskBoardRequestId: 0,
   taskAssigneesByScope: new Map(),
   selectedTaskIds: new Set(),
+  selectedApprovalKeys: new Set(),
   meetPeople: [],
   googleConnected: false,
   incomingCallId: null,
@@ -1459,8 +1465,8 @@ async function refreshTable() {
 }
 
 function managerDeptRequestsUrl(kind) {
-  if (state.user?.role === "manager") return `/api/requests/${kind}?scope=department`;
-  return `/api/requests/${kind}`;
+  if (state.user?.role === "manager") return `/api/requests/${kind}?scope=department&status=pending`;
+  return `/api/requests/${kind}?status=pending`;
 }
 
 async function fetchCoveragePreview(kind, id) {
@@ -1490,12 +1496,65 @@ function compOffDetail(r) {
   return `Avail ${r.days || 1} day(s) ${r.start_date || "—"} → ${r.end_date || "—"}`;
 }
 
+function approvalKey(kind, id) {
+  return `${kind}:${id}`;
+}
+
+function approvalSelectHtml(kind, request) {
+  if (!canDecideRequests()) return "";
+  const key = approvalKey(kind, request.id);
+  const checked = state.selectedApprovalKeys.has(key) ? " checked" : "";
+  return `<label class="approval-item-select"><input type="checkbox" data-approval-kind="${kind}" data-approval-id="${escapeHtml(request.id)}"${checked} /><span>Select</span></label>`;
+}
+
+function syncBulkApprovalToolbar(pendingKeys = null) {
+  const toolbar = $("approval-bulk-toolbar");
+  if (!toolbar) return;
+  const isAdmin = canDecideRequests();
+  show(toolbar, isAdmin);
+  if (!isAdmin) return;
+  const checkboxes = [...document.querySelectorAll("input[data-approval-kind][data-approval-id]")];
+  const available = pendingKeys || new Set(checkboxes.map((box) => approvalKey(box.dataset.approvalKind, box.dataset.approvalId)));
+  state.selectedApprovalKeys = new Set([...state.selectedApprovalKeys].filter((key) => available.has(key)));
+  checkboxes.forEach((box) => {
+    box.checked = state.selectedApprovalKeys.has(approvalKey(box.dataset.approvalKind, box.dataset.approvalId));
+  });
+  const selected = state.selectedApprovalKeys.size;
+  const count = $("approval-selected-count");
+  if (count) count.textContent = `${selected} selected`;
+  const button = $("approval-bulk-approve");
+  if (button) button.disabled = selected === 0;
+  const all = $("approval-select-all");
+  if (all) {
+    all.checked = available.size > 0 && selected === available.size;
+    all.indeterminate = selected > 0 && selected < available.size;
+    all.disabled = available.size === 0;
+  }
+}
+
+function bindApprovalSelectors(pendingKeys) {
+  document.querySelectorAll("input[data-approval-kind][data-approval-id]").forEach((box) => {
+    box.addEventListener("change", () => {
+      const key = approvalKey(box.dataset.approvalKind, box.dataset.approvalId);
+      if (box.checked) state.selectedApprovalKeys.add(key);
+      else state.selectedApprovalKeys.delete(key);
+      syncBulkApprovalToolbar(pendingKeys);
+    });
+  });
+  syncBulkApprovalToolbar(pendingKeys);
+}
+
 async function refreshManagerQueues() {
   if (!state.user || !["manager", "admin"].includes(state.user.role)) return;
   const [lv, ch, co] = await Promise.all([
     api(managerDeptRequestsUrl("leave")),
     api(managerDeptRequestsUrl("shift-change")),
     api(managerDeptRequestsUrl("comp-off")),
+  ]);
+  const pendingKeys = new Set([
+    ...(lv.requests || []).filter((r) => r.status === "pending").map((r) => approvalKey("leave", r.id)),
+    ...(ch.requests || []).filter((r) => r.status === "pending").map((r) => approvalKey("shift-change", r.id)),
+    ...(co.requests || []).filter((r) => r.status === "pending").map((r) => approvalKey("comp-off", r.id)),
   ]);
 
   if (state.user.role === "admin") {
@@ -1521,7 +1580,7 @@ async function refreshManagerQueues() {
       state.user.role === "admin" && r.department_name
         ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
         : "";
-    div.innerHTML = `<div>${deptBadge}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
+    div.innerHTML = `${approvalSelectHtml("leave", r)}<div>${deptBadge}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
       <div>${r.start_date} → ${r.end_date}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
       <div class="coverage-slot" data-coverage-kind="leave" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
     if (!canDecideRequests()) {
@@ -1558,7 +1617,7 @@ async function refreshManagerQueues() {
       state.user.role === "admin" && r.department_name
         ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
         : "";
-    div.innerHTML = `<div>${deptChg}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
+    div.innerHTML = `${approvalSelectHtml("shift-change", r)}<div>${deptChg}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
       <div>${r.date}: ${r.from_shift} → ${r.to_shift}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
       <div class="coverage-slot" data-coverage-kind="shift" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
     if (!canDecideRequests()) {
@@ -1599,7 +1658,7 @@ async function refreshManagerQueues() {
         r.kind === "avail"
           ? `<div class="coverage-slot" data-coverage-kind="compoff" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`
           : "";
-      div.innerHTML = `<div>${deptCo}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
+      div.innerHTML = `${approvalSelectHtml("comp-off", r)}<div>${deptCo}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
         <div>${escapeHtml(compOffDetail(r))}</div><div class="hint">${escapeHtml(r.reason || "")}</div>${coverage}`;
       if (!canDecideRequests()) {
         const wait = document.createElement("p");
@@ -1624,6 +1683,7 @@ async function refreshManagerQueues() {
       });
     });
   }
+  bindApprovalSelectors(pendingKeys);
 }
 
 function escapeHtml(s) {
@@ -1803,6 +1863,75 @@ async function confirmCoverageIfNeeded(kind, id, status) {
   if (!preview?.warnings?.length) return true;
   return window.confirm(`${preview.warnings.join("\n\n")}\n\nApprove anyway?`);
 }
+
+async function bulkApproveSelectedRequests() {
+  const button = $("approval-bulk-approve");
+  const message = $("approval-bulk-msg");
+  const items = [...state.selectedApprovalKeys].map((key) => {
+    const separator = key.indexOf(":");
+    return { kind: key.slice(0, separator), id: key.slice(separator + 1) };
+  });
+  if (!items.length || !canDecideRequests()) return;
+  if (!window.confirm(`Approve ${items.length} selected request${items.length === 1 ? "" : "s"}?`)) return;
+
+  button.disabled = true;
+  button.textContent = "Checking…";
+  if (message) message.textContent = "Checking coverage before approval…";
+  try {
+    const coverageKinds = { leave: "leave", "shift-change": "shift", "comp-off": "compoff" };
+    const previews = await Promise.all(
+      items.map((item) => fetchCoveragePreview(coverageKinds[item.kind], item.id)),
+    );
+    const warnings = previews.flatMap((preview) => preview?.warnings || []);
+    if (warnings.length && !window.confirm(`${warnings.slice(0, 12).join("\n\n")}${warnings.length > 12 ? `\n\n…and ${warnings.length - 12} more warning(s).` : ""}\n\nApprove the selected requests anyway?`)) {
+      return;
+    }
+
+    button.textContent = "Approving…";
+    const result = await api("/api/requests/bulk-decide", {
+      method: "POST",
+      body: JSON.stringify({ status: "approved", items }),
+    });
+    (result.results || []).filter((row) => row.ok).forEach((row) => {
+      state.selectedApprovalKeys.delete(approvalKey(row.kind, row.id));
+    });
+    const failureDetails = (result.results || []).filter((row) => !row.ok).map((row) => row.detail).filter(Boolean);
+    if (message) {
+      message.textContent = result.failed
+        ? `Approved ${result.succeeded}; ${result.failed} failed${failureDetails.length ? `: ${failureDetails.slice(0, 2).join("; ")}` : "."}`
+        : `Approved ${result.succeeded} request${result.succeeded === 1 ? "" : "s"}.`;
+      message.classList.toggle("error", Boolean(result.failed));
+    }
+    await refreshManagerQueues();
+    if (state.calendar) state.calendar.refetchEvents();
+    await Promise.all([
+      refreshTable(),
+      refreshTodayHome().catch(() => {}),
+      refreshCompOffBalance().catch(() => {}),
+      refreshAdminRequestLog().catch(() => {}),
+    ]);
+  } catch (error) {
+    if (message) {
+      message.textContent = error?.message || String(error);
+      message.classList.add("error");
+    }
+  } finally {
+    button.textContent = "Approve selected";
+    syncBulkApprovalToolbar();
+  }
+}
+
+$("approval-select-all")?.addEventListener("change", (event) => {
+  const boxes = [...document.querySelectorAll("input[data-approval-kind][data-approval-id]")];
+  boxes.forEach((box) => {
+    const key = approvalKey(box.dataset.approvalKind, box.dataset.approvalId);
+    box.checked = event.currentTarget.checked;
+    if (box.checked) state.selectedApprovalKeys.add(key);
+    else state.selectedApprovalKeys.delete(key);
+  });
+  syncBulkApprovalToolbar();
+});
+$("approval-bulk-approve")?.addEventListener("click", bulkApproveSelectedRequests);
 
 async function decideLeave(id, status) {
   if (!(await confirmCoverageIfNeeded("leave", id, status))) return;
@@ -2417,6 +2546,23 @@ function sortedTasksForTable(tasks) {
 async function onTaskTableActionClick(ev) {
   const move = ev.target.closest("[data-task-move]");
   const del = ev.target.closest("[data-task-del]");
+  const progress = ev.target.closest("[data-task-progress]");
+  if (progress) {
+    const id = progress.getAttribute("data-task-progress");
+    const message = prompt("Add a short progress update for your team:");
+    if (!message?.trim()) return;
+    try {
+      const updated = await api(`/api/tasks/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ progress_update: message.trim() }),
+      });
+      state.tasks = state.tasks.map((task) => task.id === id ? updated : task);
+      renderKanbanFromTasks(state.tasks);
+    } catch (e) {
+      alert(e.message || String(e));
+    }
+    return;
+  }
   if (move) {
     const id = move.getAttribute("data-task-move");
     const col = move.getAttribute("data-col");
@@ -2661,6 +2807,85 @@ function taskScopeKey() {
   return state.user.role === "admin" ? ($("tasks-admin-dept")?.value || null) : state.user.department_id;
 }
 
+function projectName(projectId) {
+  return state.projects.find((project) => project.id === projectId)?.name || "";
+}
+
+function projectScopePath() {
+  const scope = taskScopeKey();
+  if (!scope) return null;
+  return state.user?.role === "admin"
+    ? `/api/projects?department_id=${encodeURIComponent(scope)}`
+    : "/api/projects";
+}
+
+function renderProjectOptions() {
+  const select = $("task-new-project");
+  if (!select) return;
+  const selected = select.value;
+  select.innerHTML = '<option value="">No project</option>';
+  state.projects.filter((project) => project.status !== "closed").forEach((project) => {
+    const option = document.createElement("option");
+    option.value = project.id;
+    option.textContent = project.name;
+    select.appendChild(option);
+  });
+  if ([...select.options].some((option) => option.value === selected)) select.value = selected;
+}
+
+function renderProjects() {
+  const root = $("projects-grid");
+  if (!root) return;
+  renderProjectOptions();
+  if (!state.projects.length) {
+    root.innerHTML = '<div class="project-empty">No projects yet. Administrators can create the first project below.</div>';
+    return;
+  }
+  root.innerHTML = state.projects.map((project) => {
+    const closed = project.status === "closed";
+    const team = (project.assignee_names || []).length ? project.assignee_names.join(", ") : "Team not assigned";
+    const closeButton = state.user?.role === "admin" && !closed
+      ? `<button type="button" class="project-close-btn" data-project-close="${escapeHtml(project.id)}">Close project</button>`
+      : "";
+    return `<article class="project-card${closed ? " project-card--closed" : ""}">
+      <div class="project-card-top"><span class="project-status">${closed ? "Closed" : "Active"}</span><span>${escapeHtml(project.task_done)} / ${escapeHtml(project.task_total)} tasks</span></div>
+      <h4>${escapeHtml(project.name)}</h4>
+      ${project.summary ? `<p>${escapeHtml(project.summary)}</p>` : ""}
+      <div class="project-progress"><span style="width:${Math.min(100, Math.max(0, Number(project.progress) || 0))}%"></span></div>
+      <div class="project-progress-label"><strong>${escapeHtml(project.progress)}%</strong><span>${escapeHtml(project.start_date)} → ${escapeHtml(project.due_date)}</span></div>
+      <p class="project-team">${escapeHtml(team)}</p>${closeButton}
+    </article>`;
+  }).join("");
+  root.querySelectorAll("[data-project-close]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Close this project? Its history and tasks will stay visible.")) return;
+      await api(`/api/projects/${button.dataset.projectClose}`, { method: "PATCH", body: JSON.stringify({ status: "closed" }) });
+      await refreshProjects(true);
+    });
+  });
+}
+
+async function refreshProjects(force = false) {
+  const root = $("projects-grid");
+  const path = projectScopePath();
+  if (!root || !path) return;
+  const scope = taskScopeKey();
+  if (!force && state.projectScope === scope && state.projects.length) {
+    renderProjects();
+    return;
+  }
+  if (!state.projects.length || state.projectScope !== scope) root.innerHTML = loadingSpinnerHTML("Loading projects…");
+  try {
+    const data = await api(path);
+    state.projects = data.projects || [];
+    state.projectScope = scope;
+    renderProjects();
+    if (state.tasks.length) renderKanbanFromTasks(state.tasks);
+  } catch (error) {
+    root.innerHTML = `<p class="error">${escapeHtml(error.message || String(error))}</p>`;
+  }
+}
+
 function setTasksKanbanBanner(message, kind) {
   const wrap = $("tasks-kanban-banner");
   const msg = $("tasks-kanban-banner-msg");
@@ -2691,6 +2916,7 @@ function updateTasksBoardUiForRole() {
   }
   if (adminWrap) show(adminWrap, role === "admin");
   if (createPanel) show(createPanel, role === "manager" || role === "admin");
+  show($("project-create-form"), role === "admin");
 }
 
 async function loadTaskAssigneeOptions() {
@@ -2766,6 +2992,10 @@ function buildKanbanCard(task) {
     ? `<button type="button" class="kanban-table-act kanban-table-act-del" data-task-del="${escapeHtml(task.id)}">Delete</button>`
     : "";
   const actions = moveBtns || delBtn ? `<div class="kanban-card-actions">${moveBtns}${delBtn}</div>` : "";
+  const project = projectName(task.project_id);
+  const latest = (task.updates || []).at(-1);
+  const progressButton = taskIsMine(task) || state.user?.role === "admin" || state.user?.role === "manager"
+    ? `<button type="button" class="kanban-table-act kanban-progress-action" data-task-progress="${escapeHtml(task.id)}">Add update</button>` : "";
   const select = canEdit
     ? `<label class="kanban-card-select"><input type="checkbox" data-task-select="${escapeHtml(task.id)}" ${state.selectedTaskIds.has(task.id) ? "checked" : ""} aria-label="Select ${escapeHtml(task.title)}" /></label>`
     : "";
@@ -2780,8 +3010,10 @@ function buildKanbanCard(task) {
       <strong>${escapeHtml(task.title)}${mine ? '<span class="kanban-mine-chip">Yours</span>' : ""}</strong>
     </header>
     ${rawDesc ? `<p class="kanban-card-desc">${escapeHtml(rawDesc.slice(0, 160))}${rawDesc.length > 160 ? "…" : ""}</p>` : ""}
+    ${(project || task.due_date) ? `<div class="kanban-card-meta">${project ? `<span>◈ ${escapeHtml(project)}</span>` : ""}${task.due_date ? `<span>Due ${escapeHtml(task.due_date)}</span>` : ""}</div>` : ""}
     <p class="kanban-card-people">${people}</p>
-    ${actions}`;
+    ${latest ? `<p class="kanban-latest-update"><strong>${escapeHtml(latest.full_name)}:</strong> ${escapeHtml(latest.message)}</p>` : ""}
+    ${progressButton}${actions}`;
   return card;
 }
 
@@ -3272,7 +3504,7 @@ const EMP_PAGE_LABELS = {
   schedule: "Roster",
   today: "Today",
   infovalley: "Info-valley",
-  tasks: "Kanban",
+  tasks: "Project / Work updates",
   leave: "Apply leave",
   swap: "Apply swap",
   compoff: "Apply comp-off",
@@ -3461,6 +3693,19 @@ async function pollKanbanActivity() {
     state.taskNotifyItems = items.slice(0, 8);
     updateNotifyBadge(items.length);
     if (state.taskNotifyOpen) renderNotifyPanel();
+    if (items.length && "Notification" in window && Notification.permission === "granted") {
+      const newest = items[0];
+      const notificationKey = `rs_last_system_notice_${state.user.employee_id}`;
+      if (localStorage.getItem(notificationKey) !== newest.id + newest.updated_at) {
+        const notice = new Notification("New RotaShift assignment", {
+          body: `${newest.title}${newest.due_date ? ` · due ${newest.due_date}` : ""}`,
+          icon: "/static/icon.svg",
+          tag: `rotashift-${newest.id}`,
+        });
+        notice.onclick = () => { window.focus(); activateDashTab(state.user.role, "tasks"); notice.close(); };
+        localStorage.setItem(notificationKey, newest.id + newest.updated_at);
+      }
+    }
   } catch {
     /* keep last badge */
   }
@@ -3481,6 +3726,10 @@ function stopKanbanActivityPolling() {
 }
 
 function activateDashTab(dashId, tabId) {
+  if (tabId === "tasks" && !IS_PROJECT_WORKSPACE) {
+    window.open("/app?view=work", "rotashift-project-workspace");
+    return;
+  }
   document.querySelectorAll(`[data-dash="${dashId}"].dash-tab`).forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === tabId);
   });
@@ -3531,7 +3780,7 @@ function activateDashTab(dashId, tabId) {
   }
   if (tabId === "tasks") {
     updateTasksBoardUiForRole();
-    refreshTasksBoard().catch(() => {});
+    Promise.allSettled([refreshProjects(), refreshTasksBoard()]);
     markKanbanActivitySeen();
   }
   if (tabId === "infovalley") {
@@ -3613,9 +3862,13 @@ function applyRoleVisibility() {
     }
   }
   updateDashboardBanner();
-  if (role === "employee") activateDashTab("employee", "schedule");
-  if (role === "manager") activateDashTab("manager", "today");
-  if (role === "admin") activateDashTab("admin", "today");
+  if (IS_PROJECT_WORKSPACE) {
+    activateDashTab(role, "tasks");
+  } else {
+    if (role === "employee") activateDashTab("employee", "schedule");
+    if (role === "manager") activateDashTab("manager", "today");
+    if (role === "admin") activateDashTab("admin", "today");
+  }
 }
 
 document.querySelectorAll(".dash-tab").forEach((btn) => {
@@ -3677,7 +3930,9 @@ async function bootAuthenticated() {
     if (taskDept && state.departments[0] && !taskDept.value) taskDept.value = state.departments[0].id;
     if (taskDept) {
       taskDept.onchange = () => {
-        refreshTasksBoard().catch(() => {});
+        state.projects = [];
+        state.projectScope = null;
+        Promise.allSettled([refreshProjects(true), refreshTasksBoard()]);
       };
     }
     const infoDept = $("infovalley-admin-dept") || $("infovally-admin-dept");
@@ -3703,17 +3958,8 @@ async function bootAuthenticated() {
     $("mgr-roster-hint").textContent = `Everyone registered under your department (${escapeHtml(me.department_name || "")}).`;
   }
   setDefaultTableRange();
-  const refreshSafe = async (label, fn) => {
-    try {
-      await fn();
-    } catch (e) {
-      softFail(label, e);
-    }
-  };
-  if (state.user.role !== "admin") {
-    await refreshSafe("refreshTable", () => refreshTable());
-  }
-  await refreshSafe("refreshCompOffBalance", () => refreshCompOffBalance());
+  // The active tab loads its own data. Avoid downloading the roster and balance
+  // a second time during login (and avoid loading a hidden roster for managers).
 
   const tr = $("table-refresh");
   if (tr) tr.onclick = () => refreshTable();
@@ -3916,6 +4162,7 @@ $("notify-bell-btn")?.addEventListener("click", (event) => {
   show($("notify-panel"), open);
   $("notify-bell-btn")?.setAttribute("aria-expanded", open ? "true" : "false");
   if (open) {
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
     renderNotifyPanel();
     pollKanbanActivity();
   }
@@ -4693,7 +4940,38 @@ $("create-dept-btn").addEventListener("click", async () => {
 });
 
 $("tasks-refresh-btn")?.addEventListener("click", () => {
-  refreshTasksBoard().catch((e) => alert(e.message || String(e)));
+  Promise.allSettled([refreshProjects(true), refreshTasksBoard()]);
+});
+
+show($("project-workspace-close"), IS_PROJECT_WORKSPACE);
+$("project-workspace-close")?.addEventListener("click", () => {
+  window.close();
+  setTimeout(() => { window.location.href = "/app"; }, 120);
+});
+
+$("projects-refresh-btn")?.addEventListener("click", () => refreshProjects(true));
+
+$("project-create-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const message = $("project-form-msg");
+  if (message) message.textContent = "Creating…";
+  const body = {
+    name: $("project-new-name")?.value?.trim() || "",
+    summary: $("project-new-summary")?.value?.trim() || "",
+    start_date: $("project-new-start")?.value,
+    due_date: $("project-new-due")?.value,
+    assignee_employee_ids: [...($("project-new-assignees")?.selectedOptions || [])].map((option) => option.value),
+    department_id: taskScopeKey(),
+  };
+  try {
+    await api("/api/projects", { method: "POST", body: JSON.stringify(body) });
+    form.reset();
+    if (message) message.textContent = "Project created.";
+    await refreshProjects(true);
+  } catch (error) {
+    if (message) message.textContent = error.message || String(error);
+  }
 });
 
 $("tasks-kanban-banner-dismiss")?.addEventListener("click", () => {
@@ -4714,6 +4992,8 @@ $("task-create-btn")?.addEventListener("click", async () => {
     column: $("task-new-column")?.value || "todo",
     priority: parseInt($("task-new-priority")?.value || "3", 10),
     assignee_employee_ids: [...($("task-new-assignees")?.selectedOptions || [])].map((o) => o.value),
+    project_id: $("task-new-project")?.value || null,
+    due_date: $("task-new-due")?.value || null,
   };
   if (state.user.role === "admin") {
     body.department_id = $("tasks-admin-dept")?.value;
@@ -4730,6 +5010,7 @@ $("task-create-btn")?.addEventListener("click", async () => {
     state.tasks = [...state.tasks, created];
     state.taskScope = taskScopeKey();
     renderKanbanFromTasks(state.tasks);
+    refreshProjects(true).catch(() => {});
     pollKanbanActivity().catch(() => {});
     refreshTodayHome().catch(() => {});
   } catch (e) {
@@ -4811,14 +5092,28 @@ $("infovalley-table")?.addEventListener("click", handleInfoValleyCommentClick);
 $("infovally-table")?.addEventListener("click", handleInfoValleyCommentClick);
 $("manpower-summary")?.addEventListener("click", handleManpowerSummaryClick);
 
-$("export-btn").addEventListener("click", async () => {
-  const data = await api("/api/admin/export");
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `rotashift-export-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
+$("export-btn")?.addEventListener("click", async () => {
+  const button = $("export-btn");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Preparing report…";
+  try {
+    const data = await api("/api/admin/export");
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rotashift-report-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    alert(`Report could not be downloaded: ${error.message || error}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 });
 
 $("admin-records-refresh")?.addEventListener("click", () => refreshAdminRequestLog());
@@ -4878,14 +5173,14 @@ function setPasswordModalOpen(open) {
 }
 
 function renderTaskAssigneeOptions(users) {
-  const sel = $("task-new-assignees");
-  if (!sel) return;
-  sel.innerHTML = "";
-  (users || []).forEach((user) => {
-    const option = document.createElement("option");
-    option.value = user.employee_id;
-    option.textContent = `${user.full_name} (${user.employee_id})`;
-    sel.appendChild(option);
+  [$("task-new-assignees"), $("project-new-assignees")].filter(Boolean).forEach((sel) => {
+    sel.innerHTML = "";
+    (users || []).forEach((user) => {
+      const option = document.createElement("option");
+      option.value = user.employee_id;
+      option.textContent = `${user.full_name} (${user.employee_id})`;
+      sel.appendChild(option);
+    });
   });
 }
 

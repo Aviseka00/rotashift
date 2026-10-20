@@ -40,10 +40,13 @@ async def ensure_indexes_and_seed():
         db.shifts.create_index([("department_id", ASCENDING), ("date", ASCENDING)]),
         db.leave_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         db.leave_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+        db.leave_requests.create_index([("status", ASCENDING), ("created_at", DESCENDING)], name="leave_status_created"),
         db.shift_change_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         db.shift_change_requests.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+        db.shift_change_requests.create_index([("status", ASCENDING), ("created_at", DESCENDING)], name="shift_req_status_created"),
         db.comp_off_requests.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),
         db.comp_off_requests.create_index([("user_id", ASCENDING), ("kind", ASCENDING), ("created_at", DESCENDING)]),
+        db.comp_off_requests.create_index([("status", ASCENDING), ("created_at", DESCENDING)], name="co_req_status_created"),
         db.comp_off_credits.create_index([("user_id", ASCENDING), ("status", ASCENDING), ("created_at", ASCENDING)]),
         db.comp_off_credits.create_index("earn_request_id"),
         db.comp_off_credits.create_index("avail_request_id"),
@@ -69,6 +72,12 @@ async def ensure_indexes_and_seed():
         db.tasks.create_index(
             [("department_id", ASCENDING), ("column", ASCENDING), ("priority", DESCENDING), ("updated_at", DESCENDING)]
         ),
+        db.tasks.create_index([("project_id", ASCENDING), ("updated_at", DESCENDING)]),
+        db.tasks.create_index(
+            [("department_id", ASCENDING), ("assignee_employee_ids", ASCENDING), ("updated_at", DESCENDING)],
+            name="tasks_dept_assignee_updated",
+        ),
+        db.projects.create_index([("department_id", ASCENDING), ("status", ASCENDING), ("due_date", ASCENDING)]),
         db.activities.create_index([("department_id", ASCENDING), ("activity_date", DESCENDING), ("created_at", DESCENDING)]),
         db.activity_uploads.create_index([("department_id", ASCENDING), ("uploaded_at", DESCENDING)]),
         db.call_notifications.create_index([("target_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)]),

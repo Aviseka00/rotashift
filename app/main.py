@@ -5,14 +5,12 @@ import tempfile
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
-from starlette.requests import Request
 
 from app.config import CORS_ORIGINS_RAW, DB_NAME, DEFAULT_PLACEHOLDER_SECRET, ROTASHIFT_ENV, SECRET_KEY
 from app.database import close_client
-from app.routers import activities_api, admin_api, assistant_api, auth_api, departments_api, google_api, health_api, meta_api, requests_api, shifts_api, tasks_api, users_api
+from app.routers import activities_api, admin_api, assistant_api, auth_api, departments_api, google_api, health_api, meta_api, projects_api, requests_api, shifts_api, tasks_api, users_api
 from app.seed import ensure_indexes_and_seed
 
 
@@ -60,19 +58,32 @@ if _origins:
 app.add_middleware(GZipMiddleware, minimum_size=900)
 
 
-class _CacheControlMiddleware(BaseHTTPMiddleware):
-    """Long-cache immutable static assets; avoid stale HTML shell after deploy."""
+class _CacheControlMiddleware:
+    """Pure ASGI cache headers, avoiding BaseHTTPMiddleware buffering/dispatch overhead."""
 
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        path = request.url.path
-        if path.startswith("/static/"):
-            response.headers.setdefault("Cache-Control", "public, max-age=31536000, immutable")
-        elif path in ("/manifest.json", "/sw.js"):
-            response.headers.setdefault("Cache-Control", "public, max-age=86400")
-        elif path in ("/", "/app"):
-            response.headers.setdefault("Cache-Control", "private, no-cache")
-        return response
+    def __init__(self, application):
+        self.application = application
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.application(scope, receive, send)
+            return
+        path = scope.get("path", "")
+
+        async def send_with_cache(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                if not any(key.lower() == b"cache-control" for key, _ in headers):
+                    if path.startswith("/static/"):
+                        headers.append((b"cache-control", b"public, max-age=31536000, immutable"))
+                    elif path in ("/manifest.json", "/sw.js"):
+                        headers.append((b"cache-control", b"public, max-age=3600, must-revalidate"))
+                    elif path in ("/", "/app"):
+                        headers.append((b"cache-control", b"private, no-cache"))
+                message["headers"] = headers
+            await send(message)
+
+        await self.application(scope, receive, send_with_cache)
 
 
 app.add_middleware(_CacheControlMiddleware)
@@ -81,6 +92,7 @@ app.include_router(health_api.router)
 app.include_router(assistant_api.router)
 app.include_router(auth_api.router)
 app.include_router(tasks_api.router)
+app.include_router(projects_api.router)
 app.include_router(departments_api.router)
 app.include_router(users_api.router)
 app.include_router(google_api.router)

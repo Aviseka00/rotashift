@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#48426d" />
     <!-- Weekday theme: Mon=A … Sun=G. One synchronous assignment; no timers or listeners. -->
     <script>
       (function () {
@@ -20,13 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=78" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="stylesheet" href="/static/styles.css?v=83" />
   </head>
   <body>
     <header class="topbar">
@@ -34,13 +28,13 @@
       <div id="user-slot" class="hint"></div>
       <div class="topbar-actions">
         <div class="notify-wrap hidden" id="notify-wrap">
-          <button type="button" id="notify-bell-btn" class="notify-bell" aria-label="Kanban activity" aria-expanded="false" aria-controls="notify-panel">
+          <button type="button" id="notify-bell-btn" class="notify-bell" aria-label="Project and work updates" aria-expanded="false" aria-controls="notify-panel">
             <span class="notify-bell-icon" aria-hidden="true">🔔</span>
             <span id="notify-bell-count" class="notify-bell-badge hidden">0</span>
           </button>
           <div id="notify-panel" class="notify-panel hidden" role="menu" aria-label="Kanban updates">
             <header class="notify-panel-head">
-              <strong>Kanban activity</strong>
+              <strong>Project / Work updates</strong>
               <button type="button" id="notify-mark-read" class="btn secondary notify-mark-read">Mark read</button>
             </header>
             <div id="notify-list" class="notify-list"></div>
@@ -196,7 +190,7 @@
                 <button type="button" role="menuitem" data-emp-menu="schedule">Department roster</button>
                 <button type="button" role="menuitem" data-emp-menu="today">Today</button>
                 <button type="button" role="menuitem" data-emp-menu="infovalley">Info-valley</button>
-                <button type="button" role="menuitem" data-emp-menu="tasks">Kanban</button>
+                <button type="button" role="menuitem" data-emp-menu="tasks">Project / Work updates ↗</button>
                 <div class="emp-more-sep" role="separator"></div>
                 <button type="button" role="menuitem" data-emp-menu="meet">Meet calls</button>
                 <button type="button" role="menuitem" data-emp-menu="password">Change password</button>
@@ -209,7 +203,7 @@
             <button type="button" class="dash-tab active" data-dash="employee" data-tab="schedule">My shifts</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="requests">Apply</button>
             <button type="button" class="dash-tab" data-dash="employee" data-tab="infovalley">Info-valley</button>
-            <button type="button" class="dash-tab" data-dash="employee" data-tab="tasks">Kanban</button>
+            <button type="button" class="dash-tab" data-dash="employee" data-tab="tasks">Project / Work updates ↗</button>
           </nav>
           <div class="dash-pane hidden" data-dash="employee" data-tab="today">
             <div id="emp-today-mount" class="today-mount"></div>
@@ -347,7 +341,7 @@
             <button type="button" class="dash-tab" data-dash="manager" data-tab="approvals">Approvals</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="records">Approval log</button>
             <button type="button" class="dash-tab" data-dash="manager" data-tab="infovalley">Info-valley</button>
-            <button type="button" class="dash-tab" data-dash="manager" data-tab="tasks">My Kanban</button>
+            <button type="button" class="dash-tab" data-dash="manager" data-tab="tasks">Project / Work updates ↗</button>
           </nav>
           <div class="dash-pane active" data-dash="manager" data-tab="today">
             <div id="mgr-today-mount" class="today-mount"></div>
@@ -412,7 +406,7 @@
             <button type="button" class="dash-tab" data-dash="admin" data-tab="compoff">Comp-off</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="records">Activity</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="infovalley">Info-valley</button>
-            <button type="button" class="dash-tab" data-dash="admin" data-tab="tasks">My Kanban</button>
+            <button type="button" class="dash-tab" data-dash="admin" data-tab="tasks">Project / Work updates ↗</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="schedule">Schedule</button>
             <button type="button" class="dash-tab" data-dash="admin" data-tab="shifts">Manage shifts</button>
           </nav>
@@ -614,9 +608,9 @@ Amruta Mishra	80100331</pre>
               <p class="hint">Deleting a department removes it from lists; users in that department lose their department link.</p>
               <div id="admin-dept-list"></div>
 
-              <h3 style="margin-top: 1rem; font-size: 1rem">Backup</h3>
-              <p class="hint">Download a JSON snapshot of departments, users (no passwords), shifts, and requests.</p>
-              <button type="button" id="export-btn" class="btn secondary">Download JSON export</button>
+              <h3 style="margin-top: 1rem; font-size: 1rem">Organisation report</h3>
+              <p class="hint">Download a complete JSON report of departments, users (no passwords), projects, tasks, shifts, and requests.</p>
+              <button type="button" id="export-btn" class="btn secondary">Download organisation report</button>
             </div>
           </div>
         </div>
@@ -709,10 +703,11 @@ Amruta Mishra	80100331</pre>
           <header class="my-kanban-hero">
             <div class="my-kanban-hero-text">
               <p class="my-kanban-eyebrow">Department workspace</p>
-              <h2 class="my-kanban-title">My Kanban</h2>
+              <h2 class="my-kanban-title">Project / Work updates</h2>
               <p class="my-kanban-lead" id="tasks-board-hint"></p>
             </div>
             <div class="my-kanban-hero-actions">
+              <button type="button" id="project-workspace-close" class="btn secondary hidden">← Back to RotaShift</button>
               <button type="button" id="tasks-refresh-btn" class="btn my-kanban-refresh">Refresh</button>
             </div>
           </header>
@@ -733,8 +728,34 @@ Amruta Mishra	80100331</pre>
             </div>
           </div>
 
-          <section class="my-kanban-table-section" aria-label="Department Kanban board">
-            <h3 class="my-kanban-section-title">Department board</h3>
+          <section class="project-planner" aria-label="Project planner">
+            <div class="project-planner-head">
+              <div>
+                <p class="my-kanban-eyebrow">Plan · assign · deliver</p>
+                <h3 class="my-kanban-section-title">Projects</h3>
+                <p class="hint">See the owner, timeline, task progress, and current status at a glance.</p>
+              </div>
+              <button type="button" id="projects-refresh-btn" class="btn secondary">Refresh projects</button>
+            </div>
+            <div id="projects-grid" class="projects-grid" aria-live="polite"></div>
+            <form id="project-create-form" class="project-create-panel hidden">
+              <div class="project-create-title">
+                <strong>Create a project</strong>
+                <span class="hint">Administrators can create and assign projects.</span>
+              </div>
+              <div class="project-form-grid">
+                <label>Project name<input id="project-new-name" maxlength="160" required placeholder="e.g. September roster readiness" /></label>
+                <label>Starts<input id="project-new-start" type="date" required /></label>
+                <label>Due<input id="project-new-due" type="date" required /></label>
+              </div>
+              <label>Goal and outcome<textarea id="project-new-summary" maxlength="3000" placeholder="What should the team deliver?"></textarea></label>
+              <label>Project team<select id="project-new-assignees" multiple size="4" class="task-assignee-multi"></select></label>
+              <div class="project-create-actions"><button class="btn" type="submit">Create project</button><span id="project-form-msg" class="hint"></span></div>
+            </form>
+          </section>
+
+          <section class="my-kanban-table-section" aria-label="Department work board">
+            <h3 class="my-kanban-section-title">Work board</h3>
             <p class="hint my-kanban-section-lead">
               Your cards appear first. Drag a card to another column — or use the buttons on a phone.
               Cards assigned to you are outlined.
@@ -773,6 +794,14 @@ Amruta Mishra	80100331</pre>
                   <option value="in_progress">In progress</option>
                   <option value="done">Done</option>
                 </select>
+              </div>
+              <div class="my-kanban-field">
+                <label for="task-new-project">Project</label>
+                <select id="task-new-project" class="my-kanban-select"><option value="">No project</option></select>
+              </div>
+              <div class="my-kanban-field">
+                <label for="task-new-due">Due date</label>
+                <input id="task-new-due" type="date" class="my-kanban-input" />
               </div>
             </div>
             <div class="my-kanban-field">
@@ -928,6 +957,15 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
             <h2>Approvals</h2>
             <p class="hint" id="approvals-scope-hint"></p>
             <p class="hint hidden" id="approvals-history-lead" role="note"></p>
+            <div id="approval-bulk-toolbar" class="approval-bulk-toolbar hidden" aria-label="Bulk approval controls">
+              <label class="approval-select-all" for="approval-select-all">
+                <input id="approval-select-all" type="checkbox" />
+                <span>Select all pending</span>
+              </label>
+              <span id="approval-selected-count" class="badge">0 selected</span>
+              <button type="button" id="approval-bulk-approve" class="btn" disabled>Approve selected</button>
+              <span id="approval-bulk-msg" class="hint" role="status" aria-live="polite"></span>
+            </div>
             <h3 style="font-size: 1rem">Leave requests</h3>
             <div id="mgr-leave-list" class="list-requests"></div>
             <h3 style="margin-top: 1rem; font-size: 1rem">Shift change requests</h3>
@@ -1098,7 +1136,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=78"></script>
+    <script src="/static/app.js?v=83"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
