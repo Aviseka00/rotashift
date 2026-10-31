@@ -528,6 +528,9 @@ async function initCalendar() {
       if (k === "leave") {
         info.el.style.opacity = "0.35";
       }
+      if (k === "holiday") {
+        info.el.title = (info.event.extendedProps.names || []).join(" · ");
+      }
     },
   });
   state.calendar.render();
@@ -984,6 +987,12 @@ function fillRosterRequestSelect(fromCode, dual) {
     earn.textContent = `Earn CO for ${pair}`;
     sel.appendChild(earn);
   });
+  if (fromCode === "WO") {
+    const mv = document.createElement("option");
+    mv.value = "__wo_move";
+    mv.textContent = "Work a shift on this week off and take my week off on another day";
+    sel.appendChild(mv);
+  }
   matrixShiftCodes().forEach((code) => {
     if (code === fromCode || code === "CO" || code === "WO") return;
     const o = document.createElement("option");
@@ -1065,12 +1074,16 @@ function openRosterRequestModal(td) {
     if (["A", "B", "C", "G"].includes(fromCode)) {
       lead.textContent = "Use earned comp-off against this allocated shift, request leave, or swap to another duty. Week off cannot be requested here.";
     } else if (fromCode === "WO") {
-      lead.textContent = "Use earned comp-off against this week off, or record extra duty you worked on this rest day.";
+      lead.textContent =
+        "Use earned comp-off against this week off, record extra duty you worked on this rest day, or work this day and move your week off to another duty day.";
     } else {
       lead.textContent = "Pick leave, a shift swap, or a comp-off action. An administrator reviews it before the roster or bank changes.";
     }
   }
   if ($("roster-request-reason")) $("roster-request-reason").value = "";
+  if ($("wo-move-date")) $("wo-move-date").value = "";
+  if ($("wo-move-shift")) $("wo-move-shift").value = "";
+  syncWoMoveFields();
   const msg = $("roster-request-msg");
   if (msg) msg.textContent = "";
   show($("roster-request-modal"), true);
@@ -1089,7 +1102,16 @@ async function submitRosterCellRequest() {
   if (msg) msg.textContent = "Submitting…";
   try {
     let notice = "";
-    if (toCode.startsWith("__earn_")) {
+    if (toCode === "__wo_move") {
+      const newOff = $("wo-move-date")?.value || "";
+      if (!newOff) throw new Error("Choose the day you want as your new week off.");
+      const workShift = $("wo-move-shift")?.value || null;
+      const res = await api("/api/requests/wo-move", {
+        method: "POST",
+        body: JSON.stringify({ wo_date: req.date, new_off_date: newOff, work_shift: workShift, reason }),
+      });
+      notice = `Week-off move requested: work ${res.work_shift} on ${res.wo_date}, week off on ${res.new_off_date}. An administrator must approve it.`;
+    } else if (toCode.startsWith("__earn_")) {
       const from = req.fromCode || "";
       const rest = toCode.slice(7);
       const isJoint = rest.startsWith("joint_");
@@ -1438,6 +1460,15 @@ async function refreshTable() {
     dow.textContent = formatMatrixWeekdayShort(d);
     th.appendChild(dateL);
     th.appendChild(dow);
+    const hol = data.holidays?.[d];
+    if (hol?.length) {
+      th.classList.add("is-holiday");
+      th.title = hol.join(" · ");
+      const tag = document.createElement("span");
+      tag.className = "matrix-th-holiday";
+      tag.textContent = hol.join(" · ");
+      th.appendChild(tag);
+    }
     hr.appendChild(th);
   });
   thead.appendChild(hr);
@@ -1619,7 +1650,7 @@ async function refreshManagerQueues() {
         ? `<span class="badge">${escapeHtml(r.department_name)}</span> `
         : "";
     div.innerHTML = `${approvalSelectHtml("shift-change", r)}<div>${deptChg}<strong>${r.full_name}</strong> <span class="badge">${r.employee_id}</span></div>
-      <div>${r.date}: ${r.from_shift} → ${r.to_shift}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
+      <div>${escapeHtml(shiftChangeDetail(r))}</div><div class="hint">${escapeHtml(r.reason || "")}</div>
       <div class="coverage-slot" data-coverage-kind="shift" data-coverage-id="${escapeHtml(r.id)}">${loadingSpinnerHTML("Checking coverage…")}</div>`;
     if (!canDecideRequests()) {
       const wait = document.createElement("p");
@@ -1801,7 +1832,7 @@ async function refreshEmployeeRequestLog() {
       rows.push({
         kind: "shift_change",
         sort: r.created_at || "",
-        detail: `${r.date}: shift ${r.from_shift} → ${r.to_shift}`,
+        detail: shiftChangeDetail(r),
         reason: r.reason || "",
         status: r.status,
         created_at: r.created_at,
@@ -2207,7 +2238,7 @@ function renderRequestActivityTables(lv, ch, leaveBox, shiftBox, showDeptColumn)
     const dec = r.decided_by_name
       ? `${escapeHtml(r.decided_by_name)} (${escapeHtml(r.decided_by_employee_id || "")})`
       : "—";
-    const det = `${escapeHtml(r.date)}: ${escapeHtml(r.from_shift)} → ${escapeHtml(r.to_shift)}`;
+    const det = escapeHtml(shiftChangeDetail(r));
     const deptCell = showDeptColumn ? `<td data-label="Department">${escapeHtml(r.department_name || "—")}</td>` : "";
     tr.innerHTML = `${deptCell}<td data-label="Employee"><strong>${escapeHtml(r.full_name)}</strong><br/><span class="hint">${escapeHtml(r.employee_id)}</span></td><td data-label="Shift request"><strong>${det}</strong><br/><span class="hint">${escapeHtml(r.reason || "No reason supplied")}</span></td><td data-label="Status">${requestLogStatusBadge(r.status)}</td><td data-label="Timeline"><span class="activity-time-label">Sent</span> ${escapeHtml(fmtShortDateTime(r.created_at))}<br/><span class="activity-time-label">Done</span> ${escapeHtml(fmtShortDateTime(r.decided_at))}</td><td data-label="Decided by">${dec}</td>`;
     tbS.appendChild(tr);
@@ -2375,7 +2406,7 @@ async function refreshAdminUsers() {
   const tbl = document.createElement("table");
   tbl.className = "matrix";
   tbl.innerHTML =
-    "<thead><tr><th>Employee ID</th><th>Name</th><th>Department</th><th>Set role</th><th>User actions</th></tr></thead>";
+    "<thead><tr><th>Employee ID</th><th>Name</th><th>Department</th><th>Roster category</th><th>Set role</th><th>User actions</th></tr></thead>";
   const tb = document.createElement("tbody");
   const myId = String(state.user.id || "");
   (data.users || []).forEach((u) => {
@@ -2462,6 +2493,7 @@ async function refreshAdminUsers() {
     tr.appendChild(tdEmp);
     tr.appendChild(tdName);
     tr.appendChild(tdDept);
+    tr.appendChild(buildRosterCategoryCell(u));
     tr.appendChild(tdRole);
     tr.appendChild(tdDel);
     tb.appendChild(tr);
@@ -3471,8 +3503,16 @@ async function refreshTodayHome() {
               ? compOffDetail(r)
               : r.start_date
                 ? `${r.start_date} → ${r.end_date}`
-                : `${r.date}: ${r.from_shift} → ${r.to_shift}`;
-            const label = isCo ? (r.kind === "avail" ? "Avail comp-off" : "Earn comp-off") : r.start_date ? "Leave" : "Shift change";
+                : shiftChangeDetail(r);
+            const label = isCo
+              ? r.kind === "avail"
+                ? "Avail comp-off"
+                : "Earn comp-off"
+              : r.start_date
+                ? "Leave"
+                : r.kind === "wo_move"
+                  ? "Week-off move"
+                  : "Shift change";
             return `<div class="today-req-item"><div><strong>${escapeHtml(label)}</strong><div class="hint">${escapeHtml(detail)}</div></div><span class="badge status-pending">pending</span></div>`;
           })
           .join("")
@@ -4001,6 +4041,7 @@ async function bootAuthenticated() {
   mountScheduleForRole(state.user.role);
   mountRequestTools(state.user.role);
   mountShiftPanels(state.user.role);
+  initAutoRoster();
   mountTasksModule(state.user.role);
   mountInfoValleyModule(state.user.role);
 
@@ -4014,7 +4055,10 @@ async function bootAuthenticated() {
     }
     const tableDept = $("table-dept");
     if (tableDept) {
-      tableDept.onchange = () => refreshTable();
+      tableDept.onchange = () => {
+        refreshTable();
+        refreshAutoRosterStatus().catch(() => {});
+      };
       if (!tableDept.value && state.departments[0]) tableDept.value = state.departments[0].id;
     }
     const mgrDept = $("mgr-roster-dept");
@@ -4245,6 +4289,7 @@ $("co-trace-modal")?.addEventListener("click", (event) => {
 });
 $("roster-request-close")?.addEventListener("click", closeRosterRequestModal);
 $("roster-request-cancel")?.addEventListener("click", closeRosterRequestModal);
+$("roster-request-to")?.addEventListener("change", () => syncWoMoveFields());
 $("roster-request-submit")?.addEventListener("click", () => submitRosterCellRequest().catch((e) => {
   const msg = $("roster-request-msg");
   if (msg) msg.textContent = e.message || String(e);
@@ -5696,6 +5741,344 @@ $("assistant-suggestions")?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-assistant-prompt]");
   if (button) askRotaAssistant(button.dataset.assistantPrompt || "");
 });
+
+/* ---------- Monthly auto-roster, staff categories, holidays, week-off moves ---------- */
+
+const ROSTER_CATEGORY_LABELS = {
+  M: "Manager",
+  S: "Supervisor",
+  I: "Incharge",
+  G: "Girl",
+  20: "Facility-20",
+  W: "Worker",
+};
+
+function shiftChangeDetail(r) {
+  if (r.kind === "wo_move") {
+    return `Work ${r.to_shift} on week off ${r.date} · week off moves to ${r.new_off_date} (was ${r.new_off_from_shift || "duty"})`;
+  }
+  return `${r.date}: ${r.from_shift} → ${r.to_shift}`;
+}
+
+function syncWoMoveFields() {
+  const on = $("roster-request-to")?.value === "__wo_move";
+  show($("roster-wo-move"), on);
+}
+
+function buildRosterCategoryCell(u) {
+  const td = document.createElement("td");
+  td.className = "admin-user-cat-cell";
+  const sel = document.createElement("select");
+  sel.setAttribute("aria-label", `Roster category for ${u.full_name}`);
+  [["", "— not set —"], ...Object.entries(ROSTER_CATEGORY_LABELS).map(([k, v]) => [k, `${k} · ${v}`])].forEach(([val, label]) => {
+    const o = document.createElement("option");
+    o.value = val;
+    o.textContent = label;
+    if ((u.roster_category || "") === val) o.selected = true;
+    sel.appendChild(o);
+  });
+  const flagWrap = document.createElement("label");
+  flagWrap.className = "admin-cat-flag";
+  const flag = document.createElement("input");
+  flag.type = "checkbox";
+  flag.checked = Boolean(u.roster_fixed_g_non_batch);
+  flagWrap.appendChild(flag);
+  flagWrap.appendChild(document.createTextNode(" G in Non-Batch"));
+  flagWrap.title = "Keep this Worker on fixed G (WO Sunday) in Non-Batch months";
+  const status = document.createElement("span");
+  status.className = "hint admin-cat-status";
+  const save = async () => {
+    status.textContent = "Saving…";
+    try {
+      await api(`/api/users/${u.id}/roster-profile`, {
+        method: "PATCH",
+        body: JSON.stringify({ roster_category: sel.value, roster_fixed_g_non_batch: flag.checked }),
+      });
+      status.textContent = "Saved";
+      refreshAutoRosterStatus().catch(() => {});
+    } catch (e) {
+      status.textContent = e.message || String(e);
+    }
+  };
+  sel.addEventListener("change", save);
+  flag.addEventListener("change", save);
+  td.appendChild(sel);
+  td.appendChild(flagWrap);
+  td.appendChild(status);
+  return td;
+}
+
+function autoRosterDeptId() {
+  return $("table-dept")?.value || state.departments?.[0]?.id || "";
+}
+
+function selectedAutoRosterMode() {
+  return document.querySelector(".autoroster-mode.is-selected")?.dataset.arMode || "";
+}
+
+function setAutoRosterMode(mode) {
+  document.querySelectorAll(".autoroster-mode").forEach((b) => {
+    const on = b.dataset.arMode === mode;
+    b.classList.toggle("is-selected", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  });
+}
+
+function initAutoRoster() {
+  const card = $("autoroster-card");
+  const isAdmin = state.user?.role === "admin";
+  show(card, isAdmin);
+  if (!isAdmin || !card) return;
+  const monthInput = $("ar-month");
+  if (monthInput && !monthInput.value) monthInput.value = isoLocalDate().slice(0, 7);
+  if (card.dataset.bound !== "1") {
+    card.dataset.bound = "1";
+    document.querySelectorAll(".autoroster-mode").forEach((b) =>
+      b.addEventListener("click", () => setAutoRosterMode(b.dataset.arMode)),
+    );
+    monthInput?.addEventListener("change", () => refreshAutoRosterStatus().catch(() => {}));
+    $("ar-preview")?.addEventListener("click", () => runAutoRoster(true));
+    $("ar-apply")?.addEventListener("click", () => runAutoRoster(false));
+    $("ar-cat-save")?.addEventListener("click", () => saveBulkCategories());
+    $("hol-add")?.addEventListener("click", () => addHoliday());
+    $("ar-holidays-panel")?.addEventListener("toggle", (ev) => {
+      if (ev.target.open) refreshHolidayList().catch(() => {});
+    });
+  }
+  refreshAutoRosterStatus().catch(() => {});
+}
+
+async function refreshAutoRosterStatus() {
+  if (state.user?.role !== "admin") return;
+  const dept = autoRosterDeptId();
+  const month = $("ar-month")?.value;
+  const status = $("ar-status");
+  const deptName = (state.departments || []).find((d) => d.id === dept)?.name || "—";
+  if ($("ar-dept-name")) $("ar-dept-name").textContent = deptName;
+  if (!dept || !month || !status) return;
+  status.textContent = "Checking…";
+  const data = await api(`/api/roster/month?department_id=${encodeURIComponent(dept)}&month=${encodeURIComponent(month)}`);
+  const s = data.setting;
+  if (s) {
+    status.className = "autoroster-status is-set";
+    status.textContent = `${month}: ${s.mode_label} · generated ${fmtShortDateTime(s.generated_at)}`;
+    setAutoRosterMode(s.mode);
+  } else {
+    status.className = "autoroster-status is-unset";
+    status.textContent = `${month}: no mode chosen yet — pick Batch or Non-Batch`;
+  }
+  const missing = $("ar-cat-missing");
+  if (missing) {
+    missing.textContent = data.people_without_category ? `${data.people_without_category} not set` : "";
+    show(missing, Boolean(data.people_without_category));
+  }
+}
+
+async function runAutoRoster(dryRun) {
+  const msg = $("ar-msg");
+  const dept = autoRosterDeptId();
+  const month = $("ar-month")?.value;
+  const mode = selectedAutoRosterMode();
+  if (!dept || !month) {
+    if (msg) msg.textContent = "Choose a month and a department first.";
+    return;
+  }
+  if (!mode) {
+    if (msg) msg.textContent = "Pick Batch or Non-Batch first.";
+    return;
+  }
+  const label = mode === "BATCH" ? "Batch" : "Non-Batch";
+  if (!dryRun) {
+    const ok = confirm(
+      `Generate the ${month} roster for this department in ${label} mode?\n\nExisting A/B/C/G/WO cells in ${month} are replaced. Leave, comp-off and approved swaps are kept.`,
+    );
+    if (!ok) return;
+  }
+  if (msg) msg.textContent = dryRun ? "Building preview…" : "Generating and saving…";
+  try {
+    const data = await api("/api/roster/month/generate", {
+      method: "POST",
+      body: JSON.stringify({
+        department_id: dept,
+        month,
+        mode,
+        dry_run: dryRun,
+      }),
+    });
+    renderAutoRosterResult(data);
+    if (msg) {
+      msg.textContent = dryRun
+        ? `Preview of ${month} in ${label} mode — nothing saved yet.`
+        : `Saved ${data.written} roster cells for ${month} (${label}).`;
+    }
+    if (!dryRun) {
+      const [y, m] = month.split("-").map(Number);
+      const last = new Date(y, m, 0).getDate();
+      if ($("table-start")) $("table-start").value = `${month}-01`;
+      if ($("table-end")) $("table-end").value = `${month}-${String(last).padStart(2, "0")}`;
+      await refreshTable().catch(() => {});
+      state.calendar?.refetchEvents();
+      await refreshAutoRosterStatus().catch(() => {});
+    }
+  } catch (e) {
+    if (msg) msg.textContent = e.message || String(e);
+  }
+}
+
+function renderAutoRosterResult(data) {
+  const root = $("ar-result");
+  if (!root) return;
+  const warnings = (data.warnings || [])
+    .map((w) => `<li>${escapeHtml(w)}</li>`)
+    .join("");
+  const targets = data.targets || {};
+  const codes = ["A", "B", "C", "G", "WO"];
+  const dailyRows = codes
+    .map((code) => {
+      const t = targets[code];
+      const cells = (data.daily || [])
+        .map((d) => {
+          const n = d[code] || 0;
+          const low = t && n < t[0];
+          return `<td class="${low ? "ar-low" : ""}">${n}</td>`;
+        })
+        .join("");
+      const tLabel = t ? (t[0] === t[1] ? `${t[0]}` : `${t[0]}–${t[1]}`) : "";
+      return `<tr><th scope="row" class="sticky">${code}${tLabel ? ` <span class="hint">target ${tLabel}</span>` : ""}</th>${cells}</tr>`;
+    })
+    .join("");
+  const head = (data.dates || [])
+    .map((d) => `<th scope="col"><span class="matrix-th-date">${escapeHtml(d.slice(8))}</span><span class="matrix-th-dow">${escapeHtml(formatMatrixWeekdayShort(d))}</span></th>`)
+    .join("");
+  const cycleLabel = {
+    "fixed-g": "Fixed G",
+    "batch-supervisor-7": "7-day A/B",
+    "batch-rotator-11": "11-day A/B/C",
+    "nonbatch-rotator-17": "17-day B/G/A/C",
+  };
+  const roleLabel = (r) => (r.role === "skipped" ? "No category" : cycleLabel[r.cycle] || r.role) + (r.phase != null ? ` · phase ${r.phase}` : "");
+  const people = (data.rows || [])
+    .map((r) => {
+      const cells = r.cells.length
+        ? r.cells
+            .map((c, i) => {
+              const kept = (r.kept || []).includes(i);
+              return `<td class="cell-${escapeHtml((c || "").toLowerCase())}${kept ? " ar-kept" : ""}" title="${kept ? "kept (leave / comp-off / approved change)" : ""}">${escapeHtml(c || "")}</td>`;
+            })
+            .join("")
+        : `<td colspan="${(data.dates || []).length}" class="hint">Not changed — set a category to include</td>`;
+      const cat = r.category ? `${r.category}` : "—";
+      return `<tr><th scope="row" class="sticky"><strong>${escapeHtml(r.full_name)}</strong> <span class="hint">${escapeHtml(r.employee_id)} · ${escapeHtml(cat)} · ${escapeHtml(roleLabel(r))}</span>${(r.notes || []).length ? `<br/><span class="hint ar-note">${escapeHtml(r.notes.join("; "))}</span>` : ""}</th>${cells}</tr>`;
+    })
+    .join("");
+  root.innerHTML = `
+    ${warnings ? `<div class="ar-warnings"><strong>Check before saving</strong><ul>${warnings}</ul></div>` : `<p class="hint">All rules and daily targets met.</p>`}
+    <h3 class="ar-sub">Daily head-count</h3>
+    <div class="table-scroll ar-scroll"><table class="matrix ar-table"><thead><tr><th class="sticky">Shift</th>${head}</tr></thead><tbody>${dailyRows}</tbody></table></div>
+    <h3 class="ar-sub">${data.dry_run ? "Preview" : "Saved roster"} · ${escapeHtml(data.mode_label || "")}</h3>
+    <div class="table-scroll ar-scroll"><table class="matrix ar-table"><thead><tr><th class="sticky">Staff</th>${head}</tr></thead><tbody>${people}</tbody></table></div>`;
+}
+
+function parseCategoryLines(text) {
+  const items = [];
+  const bad = [];
+  String(text || "")
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const parts = line.split(/[\t,;]+|\s{2,}|\s+/).filter(Boolean);
+      const catIdx = parts.findIndex((p, i) => i > 0 && /^(M|S|I|G|20|W)$/i.test(p));
+      const emp = parts.find((p) => /\d{4,}/.test(p) || /^[A-Z]{1,4}\d{2,}$/i.test(p));
+      if (!emp || catIdx < 0) {
+        bad.push(line);
+        return;
+      }
+      const rest = parts.slice(catIdx + 1).map((p) => p.toUpperCase());
+      items.push({
+        employee_id: emp,
+        roster_category: parts[catIdx].toUpperCase(),
+        roster_fixed_g_non_batch: rest.includes("G") || rest.includes("YES") || rest.includes("Y"),
+      });
+    });
+  return { items, bad };
+}
+
+async function saveBulkCategories() {
+  const msg = $("ar-cat-msg");
+  const { items, bad } = parseCategoryLines($("ar-cat-lines")?.value);
+  if (!items.length) {
+    if (msg) msg.textContent = "Paste rows like: 80400114  W";
+    return;
+  }
+  if (msg) msg.textContent = "Saving…";
+  try {
+    const res = await api("/api/users/roster-categories", { method: "POST", body: JSON.stringify({ items }) });
+    const parts = [`Saved ${res.updated} categories.`];
+    if (res.missing?.length) parts.push(`Not found: ${res.missing.join(", ")}.`);
+    if (bad.length) parts.push(`Could not read ${bad.length} line(s): ${bad.slice(0, 3).join(" | ")}`);
+    if (msg) msg.textContent = parts.join(" ");
+    refreshAutoRosterStatus().catch(() => {});
+    refreshAdminUsers().catch(() => {});
+  } catch (e) {
+    if (msg) msg.textContent = e.message || String(e);
+  }
+}
+
+async function refreshHolidayList() {
+  const root = $("hol-list");
+  if (!root) return;
+  root.innerHTML = loadingSpinnerHTML("Loading holidays…");
+  const data = await api("/api/holidays");
+  const items = (data.holidays || []).slice().sort((a, b) => (a.date || `9999-${a.month_day}`).localeCompare(b.date || `9999-${b.month_day}`));
+  if (!items.length) {
+    root.innerHTML = '<p class="hint">No holidays yet.</p>';
+    return;
+  }
+  root.innerHTML = "";
+  items.forEach((h) => {
+    const row = document.createElement("div");
+    row.className = "hol-item";
+    const when = h.recurring ? `Every year · ${h.month_day}` : h.date;
+    row.innerHTML = `<span><strong>${escapeHtml(h.name)}</strong> <span class="hint">${escapeHtml(when || "")}</span></span>`;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "btn secondary";
+    del.textContent = "Remove";
+    del.addEventListener("click", async () => {
+      if (!confirm(`Remove ${h.name} from the roster?`)) return;
+      await api(`/api/holidays/${h.id}`, { method: "DELETE" });
+      await refreshHolidayList();
+      refreshTable().catch(() => {});
+      state.calendar?.refetchEvents();
+    });
+    row.appendChild(del);
+    root.appendChild(row);
+  });
+}
+
+async function addHoliday() {
+  const msg = $("hol-msg");
+  const date = $("hol-date")?.value;
+  const name = ($("hol-name")?.value || "").trim();
+  if (!date || !name) {
+    if (msg) msg.textContent = "Enter a date and a name.";
+    return;
+  }
+  try {
+    await api("/api/holidays", {
+      method: "POST",
+      body: JSON.stringify({ date, name, recurring: Boolean($("hol-recurring")?.checked) }),
+    });
+    if (msg) msg.textContent = `Added ${name}.`;
+    $("hol-name").value = "";
+    await refreshHolidayList();
+    refreshTable().catch(() => {});
+    state.calendar?.refetchEvents();
+  } catch (e) {
+    if (msg) msg.textContent = e.message || String(e);
+  }
+}
 
 tryRestoreSession();
 document.addEventListener("visibilitychange", () => {

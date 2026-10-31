@@ -86,10 +86,21 @@ async def ensure_indexes_and_seed():
 
     await ensure_default_departments_exist(db)
 
+    from app.routers.holidays_api import seed_default_holidays
+
+    await asyncio.gather(
+        db.roster_months.create_index([("department_id", ASCENDING), ("month", ASCENDING)], unique=True),
+        db.roster_state.create_index(
+            [("department_id", ASCENDING), ("month", ASCENDING), ("user_id", ASCENDING)], unique=True
+        ),
+    )
+    await seed_default_holidays(db)
+
     # Comma- or space-separated IDs, e.g. ROTASHIFT_ADMIN_EMPLOYEE_ID=001,007,MASTER
     # For each existing user: set role to admin. For missing users: insert if ROTASHIFT_ADMIN_PASSWORD is set.
     admin_raw = (os.getenv("ROTASHIFT_ADMIN_EMPLOYEE_ID") or "").strip()
     admin_pw = os.getenv("ROTASHIFT_ADMIN_PASSWORD")
+    admin_reset_pw = (os.getenv("ROTASHIFT_ADMIN_RESET_PASSWORD") or "").strip().lower() in ("1", "true", "yes")
     if admin_raw:
         parts = [p.strip().upper() for p in admin_raw.replace(",", " ").split() if p.strip()]
         seen = set()
@@ -99,7 +110,13 @@ async def ensure_indexes_and_seed():
                 continue
             seen.add(emp_u)
             exists = await db.users.find_one({"employee_id": emp_u})
-            if exists and exists.get("role") != "admin":
+            if exists and admin_pw and admin_reset_pw:
+                # Opt-in: ROTASHIFT_ADMIN_RESET_PASSWORD=1 also resets the password of existing admin IDs.
+                await db.users.update_one(
+                    {"_id": exists["_id"]},
+                    {"$set": {"role": "admin", "password_hash": hash_password(admin_pw)}},
+                )
+            elif exists and exists.get("role") != "admin":
                 await db.users.update_one({"_id": exists["_id"]}, {"$set": {"role": "admin"}})
             elif not exists and admin_pw and dept:
                 await db.users.insert_one(

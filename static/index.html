@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=88" />
+    <link rel="stylesheet" href="/static/styles.css?v=89" />
   </head>
   <body>
     <header class="topbar">
@@ -619,6 +619,88 @@ Amruta Mishra	80100331</pre>
 
         <!-- Moved between dashboards: calendar + table -->
         <div id="schedule-block">
+          <section id="autoroster-card" class="card autoroster-card hidden" aria-labelledby="autoroster-title">
+            <header class="autoroster-head">
+              <div>
+                <span class="eyebrow">Admin · once a month</span>
+                <h2 id="autoroster-title">Monthly auto-roster</h2>
+                <p class="hint">
+                  Pick <strong>Batch</strong> or <strong>Non-Batch</strong> for the month and the whole department roster is filled in
+                  from the shift formula. Everyone continues their own cycle from last month; the memory rules (no repeat of last week,
+                  WO after C, 2+ nights last week → start on B/G/WO) are always kept. Leave, comp-off and approved swaps are kept.
+                  Cells can still be changed afterwards.
+                </p>
+              </div>
+              <p id="ar-status" class="autoroster-status" role="status" aria-live="polite"></p>
+            </header>
+            <div class="row autoroster-controls">
+              <div>
+                <label for="ar-month">Month</label>
+                <input type="month" id="ar-month" />
+              </div>
+              <div class="autoroster-dept">
+                <span class="label-like">Department</span>
+                <strong id="ar-dept-name">—</strong>
+                <span class="hint">(from the roster table below)</span>
+              </div>
+            </div>
+            <div class="autoroster-modes" role="radiogroup" aria-label="Roster mode">
+              <button type="button" class="autoroster-mode" data-ar-mode="BATCH" role="radio" aria-checked="false">
+                <strong>Batch</strong>
+                <span>Action mode · Manager, Girls, Facility-20 on G</span>
+                <span>Supervisors: A A A B B B WO (never C)</span>
+                <span>Incharges + Workers: A A A B B B WO C C C WO</span>
+                <span>Target per day: A 5–7 · B 5–7 · C 3–5</span>
+              </button>
+              <button type="button" class="autoroster-mode" data-ar-mode="NON_BATCH" role="radio" aria-checked="false">
+                <strong>Non-Batch</strong>
+                <span>Normal mode · Manager, Girls, Facility-20, Supervisors on G</span>
+                <span>Incharges + Workers: B B B B G G G A A A A C C C WO WO WO</span>
+                <span>Target per day: B 4 · A 4 · C 3 (17 rotators)</span>
+              </button>
+            </div>
+            <div class="autoroster-actions">
+              <button type="button" id="ar-preview" class="btn secondary">Preview</button>
+              <button type="button" id="ar-apply" class="btn">Generate &amp; save month</button>
+            </div>
+            <div id="ar-msg" class="hint" role="status" aria-live="polite"></div>
+            <div id="ar-result"></div>
+
+            <details class="autoroster-extra" id="ar-categories-panel">
+              <summary>Staff categories <span id="ar-cat-missing" class="badge status-pending hidden"></span></summary>
+              <p class="hint">
+                Categories decide who rotates: <strong>M</strong> Manager, <strong>S</strong> Supervisor, <strong>I</strong> Incharge,
+                <strong>G</strong> Girl, <strong>20</strong> Facility-20, <strong>W</strong> Worker. Set them one by one under People &amp; roles,
+                or paste rows here: <code>Employee ID</code>, <code>Category</code>, and optionally <code>G</code> to keep a Worker on G in Non-Batch.
+              </p>
+              <textarea id="ar-cat-lines" placeholder="80400114	W&#10;80500092	W	G&#10;80100173	M"></textarea>
+              <button type="button" id="ar-cat-save" class="btn secondary">Save categories</button>
+              <div id="ar-cat-msg" class="hint" role="status" aria-live="polite"></div>
+            </details>
+
+            <details class="autoroster-extra" id="ar-holidays-panel">
+              <summary>Holidays on the roster</summary>
+              <p class="hint">Shown as notes on the roster table and calendar. National holidays repeat every year; add festivals for each year.</p>
+              <div class="row">
+                <div>
+                  <label for="hol-date">Date</label>
+                  <input type="date" id="hol-date" />
+                </div>
+                <div style="flex: 2 1 200px">
+                  <label for="hol-name">Name</label>
+                  <input id="hol-name" maxlength="80" placeholder="e.g. Holi" />
+                </div>
+                <div class="autoroster-check">
+                  <label><input type="checkbox" id="hol-recurring" /> Every year</label>
+                </div>
+                <div style="flex: 0 0 auto">
+                  <button type="button" id="hol-add" class="btn secondary">Add holiday</button>
+                </div>
+              </div>
+              <div id="hol-msg" class="hint" role="status" aria-live="polite"></div>
+              <div id="hol-list" class="hol-list"></div>
+            </details>
+          </section>
           <div id="emp-schedule-quick" class="emp-schedule-quick hidden" aria-label="Quick requests">
             <div id="emp-apply-inline"></div>
           </div>
@@ -1044,6 +1126,19 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
           <p class="roster-request-meta" id="roster-request-meta"></p>
           <label for="roster-request-to">Request</label>
           <select id="roster-request-to"></select>
+          <div id="roster-wo-move" class="roster-wo-move hidden">
+            <label for="wo-move-date">Take my week off on</label>
+            <input type="date" id="wo-move-date" />
+            <label for="wo-move-shift">Shift I will work on this week-off day</label>
+            <select id="wo-move-shift">
+              <option value="">Same shift as my new week-off day</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="G">G</option>
+            </select>
+            <p class="hint">The new week off must replace one of your A, B, C or G days and cannot sit next to another week off.</p>
+          </div>
           <label for="roster-request-reason">Reason (optional)</label>
           <textarea id="roster-request-reason" placeholder="e.g. covering for a colleague, personal leave…"></textarea>
           <div id="roster-request-msg" class="hint" role="status" aria-live="polite"></div>
@@ -1154,7 +1249,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=88"></script>
+    <script src="/static/app.js?v=89"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

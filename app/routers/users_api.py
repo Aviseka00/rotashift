@@ -73,7 +73,15 @@ async def list_users(
 
     users = await db.users.find(
         q,
-        {"employee_id": 1, "full_name": 1, "role": 1, "department_id": 1, "gmail": 1},
+        {
+            "employee_id": 1,
+            "full_name": 1,
+            "role": 1,
+            "department_id": 1,
+            "gmail": 1,
+            "roster_category": 1,
+            "roster_fixed_g_non_batch": 1,
+        },
     ).sort("employee_id", 1).to_list(length=None)
     dept_ids = {u["department_id"] for u in users if u.get("department_id")}
     departments = {}
@@ -95,6 +103,8 @@ async def list_users(
                 "department_id": str(u["department_id"]) if u.get("department_id") else None,
                 "department_name": dept_name,
                 "gmail": u.get("gmail"),
+                "roster_category": u.get("roster_category") or None,
+                "roster_fixed_g_non_batch": bool(u.get("roster_fixed_g_non_batch")),
             }
         )
     return {"users": out}
@@ -242,3 +252,75 @@ async def reset_user_password(
     new_hash = hash_password(body.password)
     await db.users.update_one({"_id": oid}, {"$set": {"password_hash": new_hash}})
     return {"ok": True}
+
+
+ROSTER_CATEGORY_CODES = ("M", "S", "I", "G", "20", "W")
+
+
+class RosterProfileBody(BaseModel):
+    roster_category: Optional[str] = None
+    roster_fixed_g_non_batch: Optional[bool] = None
+
+
+class RosterCategoryItem(BaseModel):
+    employee_id: str
+    roster_category: str
+    roster_fixed_g_non_batch: Optional[bool] = None
+
+
+class RosterCategoryBulkBody(BaseModel):
+    items: list[RosterCategoryItem]
+
+
+def _clean_category(value: Optional[str]) -> Optional[str]:
+    cat = (value or "").strip().upper()
+    if not cat:
+        return None
+    if cat not in ROSTER_CATEGORY_CODES:
+        raise HTTPException(status_code=400, detail="Category must be one of M, S, I, G, 20, W")
+    return cat
+
+
+@router.patch("/{target_id}/roster-profile")
+async def set_roster_profile(
+    target_id: str,
+    body: RosterProfileBody,
+    user=Depends(require_roles("admin")),
+):
+    """Admin sets the auto-roster category (M/S/I/G/20/W) and the G-in-Non-Batch flag."""
+    db = get_db()
+    try:
+        oid = ObjectId(target_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid id")
+    update: dict = {}
+    if body.roster_category is not None:
+        update["roster_category"] = _clean_category(body.roster_category)
+    if body.roster_fixed_g_non_batch is not None:
+        update["roster_fixed_g_non_batch"] = bool(body.roster_fixed_g_non_batch)
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    r = await db.users.update_one({"_id": oid}, {"$set": update})
+    if r.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, **update}
+
+
+@router.post("/roster-categories")
+async def bulk_set_roster_categories(
+    body: RosterCategoryBulkBody,
+    user=Depends(require_roles("admin")),
+):
+    """Set many categories at once (e.g. pasted from the staff sheet)."""
+    db = get_db()
+    updated, missing = 0, []
+    for item in body.items:
+        update: dict = {"roster_category": _clean_category(item.roster_category)}
+        if item.roster_fixed_g_non_batch is not None:
+            update["roster_fixed_g_non_batch"] = bool(item.roster_fixed_g_non_batch)
+        r = await db.users.update_one({"employee_id": item.employee_id.strip().upper()}, {"$set": update})
+        if r.matched_count:
+            updated += 1
+        else:
+            missing.append(item.employee_id)
+    return {"updated": updated, "missing": missing}

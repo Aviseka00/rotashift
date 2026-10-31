@@ -11,6 +11,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from app.config import CORS_ORIGINS_RAW, DB_NAME, DEFAULT_PLACEHOLDER_SECRET, ROTASHIFT_ENV, SECRET_KEY
 from app.database import close_client
 from app.routers import activities_api, admin_api, assistant_api, auth_api, departments_api, google_api, health_api, meta_api, projects_api, requests_api, shifts_api, tasks_api, users_api
+from app.routers import holidays_api, roster_api
 from app.seed import ensure_indexes_and_seed
 
 
@@ -101,6 +102,8 @@ app.include_router(requests_api.router)
 app.include_router(meta_api.router)
 app.include_router(admin_api.router)
 app.include_router(activities_api.router)
+app.include_router(roster_api.router)
+app.include_router(holidays_api.router)
 
 app.mount("/static", StaticFiles(directory=str(ROOT / "static")), name="static")
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_ROOT)), name="uploads")

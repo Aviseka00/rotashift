@@ -5181,3 +5181,208 @@ table.matrix.roster-matrix thead th.sticky {
     width: 100%;
   }
 }
+
+/* ---------- Monthly auto-roster (admin) ---------- */
+.autoroster-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.autoroster-card > * {
+  min-width: 0;
+}
+.autoroster-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+.autoroster-head h2 {
+  margin: 0.15rem 0 0.35rem;
+}
+.autoroster-head .hint {
+  max-width: 62ch;
+  margin: 0;
+}
+.autoroster-status {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+.autoroster-status.is-set {
+  border-color: rgba(34, 197, 94, 0.55);
+  color: var(--accent2);
+}
+.autoroster-status.is-unset {
+  border-color: rgba(234, 179, 8, 0.6);
+  color: #eab308;
+}
+.autoroster-dept {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.15rem;
+}
+.autoroster-dept .label-like {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.autoroster-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+.autoroster-mode {
+  display: grid;
+  gap: 0.25rem;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel-soft);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.autoroster-mode strong {
+  font-size: 1.1rem;
+}
+.autoroster-mode span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.autoroster-mode:hover {
+  border-color: var(--card-hover-border, var(--accent));
+}
+.autoroster-mode.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+.autoroster-mode:focus-visible {
+  outline: 2px solid var(--focus-border, var(--accent));
+  outline-offset: 2px;
+}
+.autoroster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.autoroster-advanced summary,
+.autoroster-extra summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.autoroster-extra {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+.autoroster-extra textarea {
+  min-height: 6rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.autoroster-check {
+  display: flex;
+  align-items: flex-end;
+}
+.ar-warnings {
+  border: 1px solid rgba(234, 179, 8, 0.55);
+  background: rgba(234, 179, 8, 0.08);
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+}
+.ar-warnings ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+.ar-sub {
+  margin: 0.9rem 0 0.4rem;
+  font-size: 1rem;
+}
+.ar-scroll {
+  max-height: 420px;
+}
+.ar-table td,
+.ar-table th {
+  text-align: center;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.ar-table th.sticky {
+  text-align: left;
+}
+.ar-table td.ar-low {
+  color: #eab308;
+  font-weight: 700;
+}
+.ar-table td.ar-kept {
+  outline: 2px dashed rgba(255, 255, 255, 0.75);
+  outline-offset: -3px;
+}
+.hol-list {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.hol-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* Holiday notes on the roster table and calendar */
+table.matrix th.is-holiday {
+  background: rgba(234, 179, 8, 0.18);
+  box-shadow: inset 0 -3px 0 #eab308;
+}
+.matrix-th-holiday {
+  display: block;
+  max-width: 6.5rem;
+  margin: 0.15rem auto 0;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #eab308;
+  white-space: normal;
+}
+.fc .evt-holiday,
+.fc .evt-holiday .fc-event-main {
+  background: rgba(234, 179, 8, 0.2);
+  border-color: #eab308;
+  color: #eab308;
+  font-weight: 700;
+}
+
+/* Roster category in People & roles */
+.admin-user-cat-cell select {
+  min-width: 9.5rem;
+}
+.admin-cat-flag {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  margin-top: 0.3rem;
+  white-space: nowrap;
+}
+.admin-cat-status {
+  display: block;
+  font-size: 0.72rem;
+}
+.roster-wo-move {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.25rem 0 0.5rem;
+}
