@@ -10,7 +10,7 @@ if (-not (Test-Path $envFile)) {
         Write-Error ".env.example is missing. Cannot create .env."
     }
     Copy-Item $example $envFile
-    Write-Host "Created .env from .env.example — edit MONGO_URI if you use MongoDB Atlas (shared data on every PC)."
+    Write-Host "Created .env from .env.example - edit MONGO_URI if you use MongoDB Atlas (shared data on every PC)."
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {

@@ -164,6 +164,14 @@ def _request_row(x: dict, kind: str, users: dict, departments: dict) -> dict:
         )
     else:
         row.update({"date": x["date"], "from_shift": x["from_shift"], "to_shift": x["to_shift"]})
+        if x.get("kind") == "wo_move":
+            row.update(
+                {
+                    "kind": "wo_move",
+                    "new_off_date": x.get("new_off_date"),
+                    "new_off_from_shift": x.get("new_off_from_shift"),
+                }
+            )
     return row
 
 
@@ -177,6 +185,13 @@ class ShiftChangeCreate(BaseModel):
     date: str
     from_shift: str = Field(..., pattern="^(A|B|C|G|L|WO)$")
     to_shift: str = Field(..., pattern="^(A|B|C|G|L|WO)$")
+    reason: str = Field("", max_length=2000)
+
+
+class WoMoveCreate(BaseModel):
+    wo_date: str = Field(..., description="Your rostered week off that you will work instead")
+    new_off_date: str = Field(..., description="Your rostered A/B/C/G day that becomes the week off")
+    work_shift: Optional[str] = Field(None, pattern="^(A|B|C|G)$", description="Shift to work on wo_date (default: the shift from new_off_date)")
     reason: str = Field("", max_length=2000)
 
 
@@ -379,6 +394,100 @@ async def create_shift_change(body: ShiftChangeCreate, user=Depends(get_current_
     return {"id": str(res.inserted_id), "status": "pending"}
 
 
+async def _wo_move_plan(db, *, uid: ObjectId, dept_id: ObjectId, wo_date: str, new_off_date: str, work_shift: Optional[str]) -> dict:
+    """Validate a week-off move against the live roster. Raises 400 with a clear reason."""
+    wo_day = _parse_iso_day(wo_date)
+    off_day = _parse_iso_day(new_off_date)
+    if wo_day == off_day:
+        raise HTTPException(status_code=400, detail="Choose a different day for your new week off")
+    lo = min(wo_day, off_day) - timedelta(days=3)
+    hi = max(wo_day, off_day) + timedelta(days=3)
+    roster = {
+        str(d["date"])[:10]: str(d.get("shift_code") or "").strip().upper()
+        for d in await db.shifts.find(
+            {"user_id": uid, "department_id": dept_id, "date": {"$gte": lo.isoformat(), "$lte": hi.isoformat()}},
+            {"date": 1, "shift_code": 1},
+        ).to_list(length=None)
+    }
+    wo_iso, off_iso = wo_day.isoformat(), off_day.isoformat()
+    if roster.get(wo_iso) != "WO":
+        raise HTTPException(status_code=400, detail=f"{wo_iso} is not a week off on your roster")
+    off_from = roster.get(off_iso, "")
+    if off_from not in DUTY_SHIFT_CODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Your new week off must replace an allocated A, B, C, or G shift ({off_iso} is {off_from or 'blank'})",
+        )
+    shift = (work_shift or off_from).strip().upper()
+    if shift not in DUTY_SHIFT_CODES:
+        raise HTTPException(status_code=400, detail="Shift to work must be A, B, C, or G")
+
+    after = dict(roster)
+    after[wo_iso] = shift
+    after[off_iso] = "WO"
+
+    def code(d) -> str:
+        return after.get(d.isoformat(), "")
+
+    # No clubbing: the new week off may not touch another week off.
+    for nb in (off_day - timedelta(days=1), off_day + timedelta(days=1)):
+        if code(nb) == "WO":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Week offs cannot be clubbed together: {nb.isoformat()} is already a week off. Pick a day that is not next to another week off.",
+            )
+    # After a night (C) the next day must stay a week off.
+    if roster.get((wo_day - timedelta(days=1)).isoformat()) == "C":
+        raise HTTPException(
+            status_code=400,
+            detail=f"{wo_iso} is your rest day after a C night and cannot be worked",
+        )
+    if shift == "C" and code(wo_day + timedelta(days=1)) != "WO":
+        raise HTTPException(status_code=400, detail="If you work C on your week off, the next day must be a week off")
+    return {"wo_date": wo_iso, "new_off_date": off_iso, "work_shift": shift, "new_off_from_shift": off_from}
+
+
+@router.post("/wo-move")
+async def create_wo_move(body: WoMoveCreate, user=Depends(get_current_user)):
+    """Work a shift on your rostered week off and take the week off on another duty day instead."""
+    db = get_db()
+    if not user.get("department_id"):
+        raise HTTPException(status_code=400, detail="User must belong to a department")
+    uid = ObjectId(user["_id"])
+    dept_id = ObjectId(user["department_id"])
+    plan = await _wo_move_plan(
+        db, uid=uid, dept_id=dept_id, wo_date=body.wo_date, new_off_date=body.new_off_date, work_shift=body.work_shift
+    )
+    dup = await db.shift_change_requests.find_one(
+        {
+            "user_id": uid,
+            "kind": "wo_move",
+            "status": "pending",
+            "$or": [
+                {"date": {"$in": [plan["wo_date"], plan["new_off_date"]]}},
+                {"new_off_date": {"$in": [plan["wo_date"], plan["new_off_date"]]}},
+            ],
+        }
+    )
+    if dup:
+        raise HTTPException(status_code=400, detail="You already have a pending week-off move for one of these days")
+    doc = {
+        "kind": "wo_move",
+        "user_id": uid,
+        "department_id": dept_id,
+        "date": plan["wo_date"],
+        "from_shift": "WO",
+        "to_shift": plan["work_shift"],
+        "new_off_date": plan["new_off_date"],
+        "new_off_from_shift": plan["new_off_from_shift"],
+        "reason": body.reason.strip(),
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc),
+    }
+    res = await db.shift_change_requests.insert_one(doc)
+    return {"id": str(res.inserted_id), "status": "pending", **plan}
+
+
 @router.get("/shift-change")
 async def list_shift_change(
     department_id: str | None = Query(None),
@@ -429,6 +538,16 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
         raise HTTPException(status_code=400, detail="This request was already decided")
 
     new_status = body.status
+    if new_status == "approved" and req.get("kind") == "wo_move":
+        # Roster may have changed since the request; check the move is still valid.
+        await _wo_move_plan(
+            db,
+            uid=req["user_id"],
+            dept_id=req["department_id"],
+            wo_date=req["date"],
+            new_off_date=req["new_off_date"],
+            work_shift=req["to_shift"],
+        )
     await db.shift_change_requests.update_one(
         {"_id": oid},
         {
@@ -464,6 +583,23 @@ async def decide_shift_change(rid: str, body: DecideBody, user=Depends(require_r
             },
             upsert=True,
         )
+        if req.get("kind") == "wo_move" and req.get("new_off_date"):
+            await db.shifts.update_one(
+                {"department_id": dept_id, "user_id": uid, "date": req["new_off_date"]},
+                {
+                    "$set": {
+                        "department_id": dept_id,
+                        "user_id": uid,
+                        "date": req["new_off_date"],
+                        "shift_code": "WO",
+                        "assigned_by": actor,
+                        "updated_at": now,
+                        "change_request_id": oid,
+                    },
+                    "$unset": dict(ROSTER_DUAL_UNSET),
+                },
+                upsert=True,
+            )
 
     return {"ok": True, "status": new_status}
 

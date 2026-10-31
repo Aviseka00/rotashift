@@ -22,6 +22,7 @@ from app.comp_off import (
 from app.config import SHIFT_DEFINITIONS
 from app.database import get_db
 from app.deps import get_current_user, require_roles
+from app.routers.holidays_api import holidays_between
 from app.shift_utils import calendar_event_for_shift, calendar_event_leave, parse_iso_date
 
 router = APIRouter(prefix="/api/shifts", tags=["shifts"])
@@ -250,6 +251,19 @@ async def calendar_feed(
             )
         )
 
+    for day_iso, names in (await holidays_between(db, d0, d1)).items():
+        events.append(
+            {
+                "id": f"holiday-{day_iso}",
+                "title": "🎉 " + " · ".join(names),
+                "start": day_iso,
+                "allDay": True,
+                "display": "block",
+                "classNames": ["evt-holiday"],
+                "extendedProps": {"kind": "holiday", "names": names},
+            }
+        )
+
     return {"events": events}
 
 
@@ -307,7 +321,7 @@ async def table_matrix(
             {"span_end_date": {"$gte": d0_iso, "$lte": d1_iso}},
         ],
     }
-    users_list, shifts_docs, credit_docs, pending_earn_docs, dept = await asyncio.gather(
+    users_list, shifts_docs, credit_docs, pending_earn_docs, dept, holidays = await asyncio.gather(
         db.users.find({"department_id": dept_oid}, {"employee_id": 1, "full_name": 1, "role": 1})
         .sort("employee_id", 1)
         .to_list(length=500),
@@ -315,6 +329,7 @@ async def table_matrix(
         db.comp_off_credits.find(credit_q).to_list(length=4000),
         db.comp_off_requests.find(pending_earn_q).to_list(length=500),
         db.departments.find_one({"_id": dept_oid}, {"name": 1}),
+        holidays_between(db, d0, d1),
     )
 
     shifts_by_user: Dict[ObjectId, Dict[str, str]] = {}
@@ -473,6 +488,7 @@ async def table_matrix(
         "dates": dates,
         "shift_legend": SHIFT_DEFINITIONS,
         "rows": rows,
+        "holidays": holidays,
     }
 
 
