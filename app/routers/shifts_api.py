@@ -40,6 +40,9 @@ class BulkBody(BaseModel):
     # Grid imports are additive by default. Existing allocations, approved
     # leave, and cells referenced by pending requests remain untouched.
     overwrite_existing: bool = False
+    # When overwriting, keep cells that hold approved leave (shift_code "L"
+    # written by a leave approval) instead of replacing them.
+    preserve_leave: bool = False
 
 
 class SelfRosterDayBody(BaseModel):
@@ -93,6 +96,20 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin"))):
         {"employee_id": 1},
     ).to_list(length=max(len(employee_ids), 1))
     users_by_employee_id = {str(item.get("employee_id") or "").upper(): item for item in users}
+    leave_cells: set[tuple[ObjectId, str]] = set()
+    if body.overwrite_existing and body.preserve_leave and users:
+        days = sorted({row.date[:10] for row, _, _ in valid_rows})
+        async for cell in db.shifts.find(
+            {
+                "department_id": dept_id,
+                "user_id": {"$in": [u["_id"] for u in users]},
+                "date": {"$gte": days[0], "$lte": days[-1]},
+                "leave_request_id": {"$exists": True},
+            },
+            {"user_id": 1, "date": 1},
+        ):
+            leave_cells.add((cell["user_id"], cell["date"]))
+    protected = 0
     operations = []
     seen_cells: set[tuple[ObjectId, str]] = set()
     for row, employee_id, code in valid_rows:
@@ -106,6 +123,9 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin"))):
             errors.append({"employee_id": row.employee_id, "date": day, "error": "duplicate employee/date cell skipped"})
             continue
         seen_cells.add(cell_key)
+        if cell_key in leave_cells:
+            protected += 1
+            continue
         doc = {
             "department_id": dept_id,
             "user_id": target["_id"],
@@ -128,12 +148,18 @@ async def bulk_assign(body: BulkBody, user=Depends(require_roles("admin"))):
         )
 
     if not operations:
-        return {"upserted": 0, "updated": 0, "preserved": 0, "errors": errors}
+        return {"upserted": 0, "updated": 0, "preserved": protected, "leave_kept": protected, "errors": errors}
     result = await db.shifts.bulk_write(operations, ordered=False)
     upserted = int(result.upserted_count)
     updated = int(result.modified_count) if body.overwrite_existing else 0
-    preserved = 0 if body.overwrite_existing else int(result.matched_count)
-    return {"upserted": upserted, "updated": updated, "preserved": preserved, "errors": errors}
+    preserved = protected if body.overwrite_existing else int(result.matched_count)
+    return {
+        "upserted": upserted,
+        "updated": updated,
+        "preserved": preserved,
+        "leave_kept": protected,
+        "errors": errors,
+    }
 
 
 @router.post("/mine")

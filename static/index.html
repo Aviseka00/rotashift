@@ -20,7 +20,7 @@
     <title>RotaShift</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=89" />
+    <link rel="stylesheet" href="/static/styles.css?v=90" />
   </head>
   <body>
     <header class="topbar">
@@ -1045,6 +1045,10 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
                 <input id="bulk-year" type="number" min="2000" max="2100" step="1" style="width: 8rem" />
               </div>
             </div>
+            <label class="hint" style="display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0">
+              <input id="bulk-overwrite" type="checkbox" checked style="width: auto" />
+              Replace shifts that are already allotted (approved leave is kept)
+            </label>
             <textarea id="bulk-lines" placeholder="Paste the roster grid here (headers + one row per person), or EMP001,2026-04-21,A per line"></textarea>
             <div id="bulk-preview" class="bulk-preview hidden"></div>
             <button type="button" id="bulk-submit" class="btn">Apply bulk assignment</button>
@@ -1249,7 +1253,7 @@ Aviseka Acharya	80100173	G	G	G	WO</pre>
       <p class="assistant-privacy">Teammate shifts search everyone in RotaShift. Other questions race Groq and Gemini.</p>
     </aside>
 
-    <script src="/static/app.js?v=89"></script>
+    <script src="/static/app.js?v=90"></script>
     <script>
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.register("/sw.js").catch(() => {});

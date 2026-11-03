@@ -4756,7 +4756,8 @@ $("bulk-submit").addEventListener("click", async () => {
     $("bulk-msg").textContent = errs.join(" ");
     return;
   }
-  const payload = { assignments };
+  const overwrite = $("bulk-overwrite") ? $("bulk-overwrite").checked : true;
+  const payload = { assignments, overwrite_existing: overwrite, preserve_leave: true };
   if (state.user.role === "admin") {
     payload.department_id = $("bulk-dept").value;
     if (!payload.department_id) {
@@ -4770,7 +4771,9 @@ $("bulk-submit").addEventListener("click", async () => {
   const confirmed = window.confirm(
     `Apply ${assignments.length} shift code${assignments.length === 1 ? "" : "s"} for ${empCount} ` +
       `employee${empCount === 1 ? "" : "s"} from ${dates[0]} to ${dates[dates.length - 1]}?\n\n` +
-      `Existing employee/date cells will be preserved. Only empty roster cells will be filled.`
+      (overwrite
+        ? `Shifts already allotted on these dates will be REPLACED. Approved leave is kept.`
+        : `Existing employee/date cells will be preserved. Only empty roster cells will be filled.`)
   );
   if (!confirmed) {
     $("bulk-msg").textContent = "Cancelled — nothing was saved.";
@@ -4784,7 +4787,12 @@ $("bulk-submit").addEventListener("click", async () => {
   });
   const serverErrs = res.errors || [];
   let msg = `Added ${res.upserted} new shift${res.upserted === 1 ? "" : "s"}.`;
-  if (res.preserved) {
+  if (res.updated) {
+    msg += ` Changed ${res.updated} existing shift${res.updated === 1 ? "" : "s"}.`;
+  }
+  if (res.leave_kept) {
+    msg += ` Kept ${res.leave_kept} approved leave day${res.leave_kept === 1 ? "" : "s"}.`;
+  } else if (res.preserved) {
     msg += ` Preserved ${res.preserved} existing roster cell${res.preserved === 1 ? "" : "s"}.`;
   }
   if (serverErrs.length) {
