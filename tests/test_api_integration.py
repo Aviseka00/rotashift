@@ -1052,3 +1052,78 @@ def test_overnight_ca_then_follow_on_b(
     assert final_row["duals"][a_day]["extra"] == "B"
     assert final_row["duals"][a_day]["pair"] == "C→A+B"
     assert final_row["duals"][c_day]["pair"] == "C→A+B"
+
+
+def test_bulk_roster_overwrite_replaces_allotted_shifts_but_keeps_leave(
+    client: TestClient, require_mongo, admin_headers: dict[str, str], unique_employee_id: str
+):
+    department_id = client.get("/api/departments").json()["departments"][0]["id"]
+    password = "overwrite-roster-pass-9x"
+    created = client.post(
+        "/api/users",
+        json={
+            "employee_id": unique_employee_id,
+            "password": password,
+            "full_name": "Overwrite Roster QA",
+            "department_id": department_id,
+            "role": "employee",
+        },
+        headers=admin_headers,
+    )
+    assert created.status_code == 200, created.text
+    login = client.post("/api/auth/login", json={"employee_id": unique_employee_id, "password": password})
+    employee_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    first_day = (date.today() + timedelta(days=15)).isoformat()
+    leave_day = (date.today() + timedelta(days=16)).isoformat()
+
+    initial = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "assignments": [
+                {"employee_id": unique_employee_id, "date": first_day, "shift_code": "A"},
+                {"employee_id": unique_employee_id, "date": leave_day, "shift_code": "B"},
+            ],
+        },
+        headers=admin_headers,
+    )
+    assert initial.status_code == 200, initial.text
+    leave = client.post(
+        "/api/requests/leave",
+        json={"start_date": leave_day, "end_date": leave_day, "reason": "Advance leave"},
+        headers=employee_headers,
+    )
+    assert leave.status_code == 200, leave.text
+    approved = client.patch(
+        f"/api/requests/leave/{leave.json()['id']}/decide",
+        json={"status": "approved"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    replaced = client.post(
+        "/api/shifts/bulk",
+        json={
+            "department_id": department_id,
+            "overwrite_existing": True,
+            "preserve_leave": True,
+            "assignments": [
+                {"employee_id": unique_employee_id, "date": first_day, "shift_code": "C"},
+                {"employee_id": unique_employee_id, "date": leave_day, "shift_code": "G"},
+            ],
+        },
+        headers=admin_headers,
+    )
+    assert replaced.status_code == 200, replaced.text
+    assert replaced.json()["updated"] == 1
+    assert replaced.json()["leave_kept"] == 1
+
+    table = client.get(
+        "/api/shifts/table",
+        params={"start": first_day, "end": leave_day, "department_id": department_id},
+        headers=admin_headers,
+    )
+    assert table.status_code == 200, table.text
+    row = next(item for item in table.json()["rows"] if item["employee_id"] == unique_employee_id)
+    assert row["cells"][first_day] == "C"
+    assert row["cells"][leave_day] == "L"
